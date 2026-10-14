@@ -8,6 +8,18 @@ window {
   font-family: "Roboto Flex", "Roboto", "Google Sans Text", "Inter", sans-serif;
 }
 
+/* -- Einheitliche Knopfform ------------------------------------------------ */
+
+/* Alle Knöpfe voll abgerundet wie „Nicht stören“: mit Text als Pille,
+   nur mit Symbol als Kreis. Gilt auch für libadwaita-Standardknöpfe. */
+button,
+menubutton > button,
+dropdown > button,
+splitbutton > button,
+splitbutton > menubutton > button {
+  border-radius: 9999px;
+}
+
 /* -- Allgemeine Komponenten ---------------------------------------------- */
 
 headerbar {
@@ -85,7 +97,7 @@ button.fab {
   min-width: 56px;
   min-height: 56px;
   padding: 0;
-  border-radius: 16px;
+  border-radius: 9999px;
   background-color: var(--md-primary-container);
   color: var(--md-on-primary-container);
   box-shadow: 0 1px 3px alpha(black, 0.3), 0 4px 8px 3px alpha(black, 0.15);
@@ -201,7 +213,7 @@ avatar {
   box-shadow: 0 1px 3px alpha(black, 0.3), 0 4px 8px 3px alpha(black, 0.15);
 }
 .round-action.call {
-  border-radius: 24px;
+  border-radius: 9999px;
   min-width: 96px;
   background-color: var(--md-call-container);
   color: var(--md-on-call-container);
@@ -234,7 +246,7 @@ avatar {
   -gtk-icon-size: 24px;
   background-color: var(--md-surface-container-highest);
   color: var(--md-on-surface);
-  transition: border-radius 200ms, background-color 200ms;
+  transition: background-color 200ms;
 }
 /* Menüknöpfe (Weiterleiten) wie die übrigen runden Gesprächsknöpfe darstellen */
 menubutton.call-toggle {
@@ -257,7 +269,7 @@ menubutton.call-toggle > button:checked {
   background-color: var(--md-secondary-container);
 }
 .call-toggle:checked {
-  border-radius: 20px;
+  border-radius: 9999px;
   background-color: var(--md-primary);
   color: var(--md-on-primary);
 }
@@ -417,7 +429,7 @@ entry.time-entry {
   background-color: var(--md-surface-container);
 }
 .favorite-tile {
-  border-radius: 16px;
+  border-radius: 9999px;
   padding: 8px 4px;
 }
 .quick-dial entry {
@@ -513,7 +525,7 @@ levelbar.mic-level block.filled {
   color: var(--md-on-surface-variant);
 }
 button.filter-chip {
-  border-radius: 8px;
+  border-radius: 9999px;
   padding: 4px 14px;
   border: 1px solid var(--md-outline-variant);
   background: none;
