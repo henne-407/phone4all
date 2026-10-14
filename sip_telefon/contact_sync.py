@@ -179,6 +179,8 @@ class ContactSync(GObject.Object):
         settings = dict(self.settings)
         accounts = [dict(c) for c in settings.get("carddav", [])]
         passwords = {c["id"]: self.store.get_secret(f"carddav:{c['id']}") for c in accounts}
+        sql_sources = [dict(c) for c in settings.get("sql", [])]
+        sql_passwords = {c["id"]: self.store.get_secret(f"mssql:{c['id']}") for c in sql_sources}
         disabled = set(settings.get("disabled", []))
 
         def work():
@@ -196,6 +198,10 @@ class ContactSync(GObject.Object):
                 except CalendarError as e:
                     errors.append(f"{conf.get('name') or conf['url']}: {e}")
                     keep.append(f"carddav:{conf['id']}:")
+            from .sql_source import MsSqlSource  # hier importiert, um Zirkelimporte zu vermeiden
+
+            for conf in sql_sources:
+                books += MsSqlSource(conf, sql_passwords[conf["id"]]).list_books()
             for book in books:
                 if book.id in disabled:
                     continue

@@ -34,13 +34,16 @@ Name (z. B. `620`).
 
 ## Funktionen
 
+- Anpassbare Startseite: Status mit „Nicht stören“ und Schnellwahl, Favoriten,
+  letzte Anrufe, nächste Termine – Karten ein-/ausblenden und sortieren, Startansicht wählbar
 - Wähltastatur mit Tastatureingabe, Kontaktvorschlägen und Wahlwiederholung
   (Anruftaste bei leerem Feld holt die letzte Nummer)
 - Kontakte (Name, Telefon, Mobil, weitere Nummern, Firma) mit Suche; Anrufer werden erkannt
 - Kontakt-Import aus vCard (.vcf) und CSV (Google, iCloud, Outlook, Thunderbird, Android);
   Dubletten (gleiche Nummer oder gleicher Name) werden ergänzt statt doppelt angelegt
-- Adressbücher aus GNOME Online-Konten und per CardDAV werden alle 30 Minuten abgeglichen
-  (nur lesend) und für Kontaktliste und Anrufererkennung genutzt
+- Adressbücher aus GNOME Online-Konten, per CardDAV und aus Microsoft-SQL-Server-Datenbanken
+  (z. B. CRM/Warenwirtschaft) werden alle 30 Minuten abgeglichen (nur lesend) und für
+  Kontaktliste und Anrufererkennung genutzt
 - Pop-up-Fenster und Benachrichtigung mit *Annehmen*/*Ablehnen* bei Anrufen,
   Benachrichtigung bei verpassten Anrufen mit *Zurückrufen*
 - Während des Gesprächs: Stummschalten, Halten, DTMF-Tastatur (auch per Tastatur)
@@ -77,6 +80,20 @@ möglich). Adressbücher verbindest du unter Einstellungen → **Kontakte**; fü
 Nextcloud & Co. lassen sich die Zugangsdaten eines vorhandenen Kalenderkontos
 übernehmen. Kontakte aus Adressbüchern sind schreibgeschützt, können aber per
 „Als eigenen Kontakt übernehmen“ kopiert werden.
+
+## SQL-Server-Datenbank anbinden
+
+```sh
+sudo dnf install python3-pymssql
+```
+
+Einstellungen → **Kontakte** → *SQL-Server-Datenbanken* → „+“. Server, Port,
+Datenbank und Zugangsdaten eintragen, **Verbinden**, Tabelle oder Sicht wählen –
+Name-, Firma- und Telefonspalten werden anhand der Spaltennamen vorgeschlagen.
+Alternativ eine eigene `SELECT`-Abfrage mit Spalten wie `name`, `company`,
+`phone`, `mobile`. Es wird nur gelesen; am besten einen Datenbankbenutzer mit
+reinen Leserechten (`db_datareader`) verwenden. Es werden höchstens 50 000 Zeilen
+pro Quelle gelesen.
 
 ## Dateien
 

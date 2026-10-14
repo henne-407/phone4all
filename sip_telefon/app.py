@@ -55,7 +55,8 @@ class App(Adw.Application):
         self.calendar = CalendarManager(self.store)
         self.contact_sync = ContactSync(self.store, self.calendar.run)
         self.reminded = set()
-        self.upcoming = []
+        self.upcoming = []  # Termine mit Uhrzeit für Erinnerungen
+        self.upcoming_week = []  # alle Termine der nächsten 7 Tage für die Startseite
         self.engine = Baresip(RUNTIME_DIR, os.path.join(STATE_DIR, "baresip.log"))
         self.engine.connect("event", self.on_event)
         self.engine.connect("engine-state", self.on_engine_state)
@@ -140,7 +141,23 @@ class App(Adw.Application):
 
     def set_reg_state(self, text, kind):
         self.reg_state = (text, kind)
-        self.window.set_status(text, kind)
+        shown = f"{text} · Nicht stören" if self.dnd and kind == "ok" else text
+        self.window.set_status(shown, "dnd" if self.dnd and kind == "ok" else kind)
+        self.window.home.refresh()
+
+    @property
+    def dnd(self):
+        return bool(self.store.settings.get("dnd", False))
+
+    def set_dnd(self, active):
+        if active == self.dnd:
+            return
+        self.store.settings["dnd"] = active
+        self.store.save_settings()
+        self.engine.send("dnd", "yes" if active else "no")
+        self.set_reg_state(*self.reg_state)
+        self.window.toast("Nicht stören ist an – Anrufe werden abgewiesen" if active
+                          else "Nicht stören ist aus")
 
     def on_engine_state(self, _engine, state, message):
         if state == "error":
@@ -153,6 +170,8 @@ class App(Adw.Application):
         elif state == "running":
             # Die erste Anmeldung kann vor dem Verbindungsaufbau passiert sein
             self.engine.send("reginfo", "", self._on_reginfo)
+        if state == "running" and self.dnd:
+            self.engine.send("dnd", "yes")
 
     def _on_reginfo(self, ok, data):
         if ok and re.search(r"\sOK\s", re.sub(r"\x1b\[[0-9;]*m", "", data)):
@@ -165,6 +184,23 @@ class App(Adw.Application):
             self._on_register(kind, ev.get("param", ""))
         elif cls == "call":
             self._on_call_event(kind, ev)
+        elif cls == "sip" and ev.get("param", "").startswith("menu,rejected"):
+            self._on_rejected(ev)
+
+    def _on_rejected(self, ev):
+        """Bei „Nicht stören“ abgewiesener Anruf: als verpasst eintragen."""
+        number = number_from_uri(ev.get("from", ""))
+        contact = self.store.find_contact(number)
+        name = contact["name"] if contact else ""
+        self.store.add_history("in", number, name, 0, True)
+        self.window.history_changed(missed=True)
+        n = Gio.Notification.new(f"Abgewiesen (Nicht stören): {name or number}")
+        n.set_body(number if name else "")
+        n.set_priority(Gio.NotificationPriority.LOW)
+        n.set_icon(Gio.ThemedIcon.new("call-missed-symbolic"))
+        n.add_button_with_target("Zurückrufen", "app.call-back", GLib.Variant.new_string(number))
+        n.set_default_action("app.show")
+        self.send_notification(f"rejected-{GLib.get_real_time()}", n)
 
     def _on_register(self, kind, param):
         if kind == "REGISTER_OK":
@@ -441,13 +477,16 @@ class App(Adw.Application):
         now = datetime.now()
 
         def done(events, _errors):
-            self.upcoming = [e for e in events if not e.all_day]
+            self.upcoming_week = events
+            self.upcoming = [e for e in events if not e.all_day and e.start < now + timedelta(days=1)]
             self._check_reminders()
+            self.window.home.refresh()
 
         if self.calendar.enabled_calendars():
-            self.calendar.fetch(now - timedelta(hours=1), now + timedelta(days=1), done)
+            self.calendar.fetch(now - timedelta(hours=1), now + timedelta(days=7), done)
         else:
-            self.upcoming = []
+            self.upcoming = self.upcoming_week = []
+            self.window.home.refresh()
 
     def _check_reminders(self):
         minutes = int(self.store.settings["calendar"].get("reminder_minutes", 10))

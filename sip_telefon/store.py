@@ -50,6 +50,7 @@ DEFAULT_SETTINGS = {
     "addressbooks": {
         "use_eds": True,
         "carddav": [],  # [{"id", "name", "url", "user"}]
+        "sql": [],  # Microsoft SQL Server, siehe sql_source.py
         "disabled": [],  # IDs ausgeblendeter Adressbücher
     },
     "run_in_background": True,
@@ -138,6 +139,7 @@ class Store:
         # Zwischenspeicher der Adressbuch-Kontakte, damit Anrufer auch offline erkannt werden
         self.external_path = os.path.join(DATA_DIR, "addressbooks.json")
         self.external = _load_json(self.external_path, [])
+        self._number_index = None
 
     # -- Einstellungen -----------------------------------------------------
 
@@ -199,6 +201,7 @@ class Store:
     # -- Kontakte ----------------------------------------------------------
 
     def save_contacts(self):
+        self._invalidate()
         self.contacts.sort(key=lambda c: c["name"].lower())
         _save_json(self.contacts_path, self.contacts)
 
@@ -219,19 +222,40 @@ class Store:
         self.contacts = [c for c in self.contacts if c["id"] != contact_id]
         self.save_contacts()
 
+    def _index(self):
+        """Nummernindex für schnelle Anrufererkennung (auch bei zehntausenden Kontakten)."""
+        if self._number_index is None:
+            index = {}
+            for prio, group in enumerate((self.contacts, self.external)):
+                for c in group:
+                    for n in contact_numbers(c):
+                        d = _digits(n)
+                        # Rufnummern über die letzten Ziffern, SIP-Namen wie „alice“ exakt
+                        key = d[-6:] if d else "=" + n.strip().lower()
+                        index.setdefault(key, []).append((prio, n, c))
+            self._number_index = index
+        return self._number_index
+
+    def _invalidate(self):
+        self._number_index = None
+
+    def find_contact(self, number, local_only=False):
+        d = _digits(number)
+        # numbers_match verlangt bei unterschiedlicher Länge mind. 6 gleiche Endziffern
+        key = d[-6:] if d else "=" + number.strip().lower()
+        candidates = sorted(self._index().get(key, []), key=lambda x: x[0])
+        for prio, n, c in candidates:
+            if local_only and prio:
+                break
+            if numbers_match(n, number):
+                return c
+        return None
+
     def all_contacts(self):
         """Eigene Kontakte plus Kontakte aus synchronisierten Adressbüchern (ohne Dubletten)."""
-        local_numbers = [n for c in self.contacts for n in contact_numbers(c)]
         external = [c for c in self.external
-                    if not any(numbers_match(n, m) for n in contact_numbers(c) for m in local_numbers)]
+                    if not any(self.find_contact(n, local_only=True) for n in contact_numbers(c))]
         return sorted(self.contacts + external, key=lambda c: c["name"].lower())
-
-    def find_contact(self, number):
-        for group in (self.contacts, self.external):
-            for c in group:
-                if any(numbers_match(n, number) for n in contact_numbers(c)):
-                    return c
-        return None
 
     def search_contacts(self, text):
         contacts = self.all_contacts()
@@ -257,6 +281,7 @@ class Store:
 
     def set_external(self, contacts):
         self.external = contacts
+        self._invalidate()
         _save_json(self.external_path, contacts, private=True)
 
     # -- Verlauf -----------------------------------------------------------

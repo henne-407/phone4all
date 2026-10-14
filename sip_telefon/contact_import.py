@@ -122,12 +122,14 @@ def _dedupe(numbers):
 
 # -- CSV --------------------------------------------------------------------------
 
-NAME_COLS = re.compile(r"^(name|display ?name|anzeigename|full ?name|vollständiger name|kontakt)$")
+NAME_COLS = re.compile(r"^(name|name1|display ?name|anzeigename|full ?name|vollständiger name|kontakt|"
+                       r"kontaktname|ansprechpartner|kurzname|bezeichnung)$")
 FIRST_COLS = re.compile(r"^(first ?name|given ?name|vorname)$")
 MIDDLE_COLS = re.compile(r"^(middle ?name|additional ?name|weitere vornamen|zweiter vorname)$")
 LAST_COLS = re.compile(r"^(last ?name|family ?name|surname|nachname)$")
-COMPANY_COLS = re.compile(r"^(company|firma|organi[sz]ation( 1)?( - )?( ?name)?|unternehmen)$")
-PHONE_COLS = re.compile(r"phone|telefon|tel\b|rufnummer|nummer|handy|mobil|mobile|cell")
+COMPANY_COLS = re.compile(r"^(company|firma|firmenname|organi[sz]ation( 1)?( - )?( ?name)?|unternehmen|"
+                          r"kunde|kundenname|name2)$")
+PHONE_COLS = re.compile(r"phone|telefon|(^|[^a-z])tel($|[^a-z]|nr)|rufnummer|durchwahl|handy|mobil|mobile|cell")
 MOBILE_HINT = re.compile(r"mobil|mobile|handy|cell")
 
 
@@ -152,48 +154,66 @@ def parse_csv(text):
     rows = [r for r in reader if any(cell.strip() for cell in r)]
     if len(rows) < 2:
         return [], 0
-    headers = [h.strip().lower() for h in rows[0]]
+    return rows_to_contacts(rows[0], rows[1:]), len(rows) - 1
+
+
+def guess_columns(headers):
+    """Ordnet Spaltennamen den Kontaktfeldern zu (für CSV und Datenbanktabellen)."""
+    headers = [str(h).strip().lower() for h in headers]
 
     def cols(pattern):
         return [i for i, h in enumerate(headers) if pattern.search(h)]
 
-    name_c, first_c, middle_c, last_c = cols(NAME_COLS), cols(FIRST_COLS), cols(MIDDLE_COLS), cols(LAST_COLS)
     company_c = cols(COMPANY_COLS)
-    # Google: "Phone 1 - Type"/"Phone 1 - Label" + "Phone 1 - Value"
-    type_cols = {}
-    phone_c = []
+    type_cols, phone_c = {}, []
     for i, h in enumerate(headers):
+        # Google: "Phone 1 - Type"/"Phone 1 - Label" + "Phone 1 - Value"
         m = re.match(r"(.*?)\s*-\s*(type|label|typ|bezeichnung)$", h)
         if m:
             type_cols[m.group(1)] = i
         elif PHONE_COLS.search(h) and "fax" not in h and i not in company_c:
             phone_c.append(i)
+    return {
+        "headers": headers,
+        "name": cols(NAME_COLS),
+        "first": cols(FIRST_COLS),
+        "middle": cols(MIDDLE_COLS),
+        "last": cols(LAST_COLS),
+        "company": company_c,
+        "phone": phone_c,
+        "types": type_cols,
+    }
 
+
+def rows_to_contacts(headers, rows):
+    """Tabellenzeilen (Listen von Werten) mit Kopfzeile -> Kontakte."""
+    g = guess_columns(headers)
     contacts = []
-    for row in rows[1:]:
-        row += [""] * (len(headers) - len(row))
+    for row in rows:
+        row = ["" if v is None else str(v) for v in row]
+        row += [""] * (len(g["headers"]) - len(row))
 
         def first(indices):
             return next((row[i].strip() for i in indices if row[i].strip()), "")
 
-        name = first(name_c) or " ".join(
-            p for p in (first(first_c), first(middle_c), first(last_c)) if p)
+        name = first(g["name"]) or " ".join(
+            p for p in (first(g["first"]), first(g["middle"]), first(g["last"])) if p)
         phones, mobiles = [], []
-        for i in phone_c:
-            header = headers[i]
+        for i in g["phone"]:
+            header = g["headers"][i]
             base = re.sub(r"\s*-\s*(value|wert)$", "", header)
             kind = header
-            if base in type_cols:
-                kind = row[type_cols[base]].lower()
+            if base in g["types"]:
+                kind = row[g["types"][base]].lower()
                 if "fax" in kind:
                     continue
             for number in re.split(r"\s*:::\s*", row[i]):
                 if number.strip():
                     (mobiles if MOBILE_HINT.search(kind) else phones).append(number.strip())
-        contact = _contact(name, first(company_c), phones, mobiles)
+        contact = _contact(name, first(g["company"]), phones, mobiles)
         if contact:
             contacts.append(contact)
-    return contacts, len(rows) - 1
+    return contacts
 
 
 def parse_file(path):

@@ -131,6 +131,12 @@ class ContactDialog(Adw.Dialog):
         group.set_sensitive(not readonly)
         if not readonly:
             page.add(group)
+            fav_group = Adw.PreferencesGroup()
+            self.favorite = Adw.SwitchRow(title="Favorit", subtitle="Auf der Startseite als Kurzwahl anzeigen",
+                                          active=bool(self.contact.get("favorite")))
+            self.favorite.add_prefix(Gtk.Image(icon_name="starred-symbolic"))
+            fav_group.add(self.favorite)
+            page.add(fav_group)
 
         if readonly:
             copy_group = Adw.PreferencesGroup()
@@ -163,6 +169,7 @@ class ContactDialog(Adw.Dialog):
     def _values(self):
         values = {key: row.get_text().strip() for key, row in self.rows.items()}
         values["other"] = [n.strip() for n in values["other"].split(",") if n.strip()]
+        values["favorite"] = self.favorite.get_active()
         return values
 
     def _save(self, *_):
@@ -174,5 +181,6 @@ class ContactDialog(Adw.Dialog):
 
     def _copy(self, *_):
         contact = {k: v for k, v in self.contact.items() if k not in ("id", "source", "readonly")}
+        contact["favorite"] = False
         self.on_save(contact)
         self.close()

@@ -8,6 +8,7 @@ from gi.repository import Adw, Gio, Gtk
 from .calendar_page import color_class
 from .calendars import CalDavBackend
 from .contact_sync import CardDavBackend
+from .sql_source import MsSqlSource
 
 TRANSPORTS = [("udp", "UDP"), ("tcp", "TCP"), ("tls", "TLS")]
 MEDIAENC = [("", "Keine"), ("srtp", "SRTP (wenn möglich)"), ("srtp-mand", "SRTP (erzwingen)"),
@@ -202,6 +203,49 @@ class PreferencesDialog(Adw.PreferencesDialog):
         page.add(goa)
 
         page.add(self._account_group("carddav"))
+
+        self.sql_group = Adw.PreferencesGroup(
+            title="SQL-Server-Datenbanken",
+            description="Kontakte aus einer Microsoft-SQL-Server-Datenbank, z. B. CRM oder Warenwirtschaft "
+                        "(nur lesend; ein Datenbankbenutzer mit Leserechten genügt).")
+        add = Gtk.Button(icon_name="list-add-symbolic", tooltip_text="Datenbank hinzufügen",
+                         css_classes=["flat"], valign=Gtk.Align.CENTER)
+        add.connect("clicked", lambda *_: self.push_subpage(SqlSourcePage(self)))
+        self.sql_group.set_header_suffix(add)
+        page.add(self.sql_group)
+        self.sql_rows = []
+        self._fill_sql()
+
+    def _fill_sql(self):
+        for row in self.sql_rows:
+            self.sql_group.remove(row)
+        self.sql_rows = []
+        sources = self.app.contact_sync.settings.setdefault("sql", [])
+        if not sources:
+            row = Adw.ActionRow(title="Datenbank hinzufügen", subtitle="Microsoft SQL Server", activatable=True)
+            row.add_suffix(Gtk.Image(icon_name="go-next-symbolic"))
+            row.connect("activated", lambda *_: self.push_subpage(SqlSourcePage(self)))
+            self.sql_rows.append(row)
+        for conf in sources:
+            what = "eigene Abfrage" if conf.get("mode") == "query" else conf.get("table", "")
+            row = Adw.ActionRow(title=conf.get("name") or conf["database"], activatable=True, use_markup=False,
+                                subtitle=f"{conf['user']}@{conf['host']}/{conf['database']} · {what}")
+            row.connect("activated", lambda _r, c=conf: self.push_subpage(SqlSourcePage(self, c)))
+            delete = Gtk.Button(icon_name="user-trash-symbolic", tooltip_text="Datenbank entfernen",
+                                valign=Gtk.Align.CENTER, css_classes=["flat", "circular"])
+            delete.connect("clicked", lambda _b, c=conf: self._remove_sql(c))
+            row.add_suffix(delete)
+            self.sql_rows.append(row)
+        for row in self.sql_rows:
+            self.sql_group.add(row)
+
+    def _remove_sql(self, conf):
+        settings = self.app.contact_sync.settings
+        settings["sql"] = [c for c in settings.get("sql", []) if c["id"] != conf["id"]]
+        self.app.store.delete_secret(f"mssql:{conf['id']}")
+        self.app.store.save_settings()
+        self._fill_sql()
+        self.app.contact_sync.sync()
 
     def _fill_books(self):
         sync = self.app.contact_sync
@@ -494,3 +538,216 @@ class DavAccountPage(Adw.NavigationPage):
         backend = self.info["backend"]
         discover = self.info["discover"]
         self.app.calendar.run(lambda: discover(backend(conf, password)), done)
+
+
+class SqlSourcePage(Adw.NavigationPage):
+    """SQL-Server-Kontaktquelle einrichten oder bearbeiten."""
+
+    def __init__(self, dialog, conf=None):
+        super().__init__(title="SQL-Server-Datenbank")
+        self.dialog = dialog
+        self.app = dialog.app
+        self.existing = conf
+        conf = dict(conf or {"id": uuid.uuid4().hex[:8], "port": 1433, "mode": "table"})
+        self.conf = conf
+        self.tables = []
+
+        page = Adw.PreferencesPage()
+        conn = Adw.PreferencesGroup(title="Verbindung")
+        self.host = Adw.EntryRow(title="Server (Name oder IP, ggf. server\\instanz)", text=conf.get("host", ""))
+        self.port = Adw.SpinRow.new_with_range(1, 65535, 1)
+        self.port.set_title("Port")
+        self.port.set_value(int(conf.get("port") or 1433))
+        self.database = Adw.EntryRow(title="Datenbank", text=conf.get("database", ""))
+        self.user = Adw.EntryRow(title="Benutzer (SQL-Login oder DOMÄNE\\benutzer)", text=conf.get("user", ""))
+        self.password = Adw.PasswordEntryRow(title="Passwort")
+        if self.existing:
+            self.password.set_text(self.app.store.get_secret(f"mssql:{conf['id']}"))
+        self.name = Adw.EntryRow(title="Anzeigename (optional, z. B. CRM)", text=conf.get("name", ""))
+        for row in (self.host, self.port, self.database, self.user, self.password, self.name):
+            conn.add(row)
+        for row in (self.host, self.database, self.user, self.password):
+            row.connect("changed", self._validate)
+        page.add(conn)
+
+        connect_group = Adw.PreferencesGroup()
+        self.connect_button = Gtk.Button(label="Verbinden", halign=Gtk.Align.CENTER, css_classes=["pill"])
+        self.connect_button.connect("clicked", self._load_tables)
+        connect_group.add(self.connect_button)
+        page.add(connect_group)
+
+        data = Adw.PreferencesGroup(
+            title="Kontaktdaten",
+            description="Spalten werden anhand ihrer Namen vorgeschlagen. Mehrere Spalten durch Komma trennen; "
+                        "Spalten mit „Handy“/„Mobil“ im Namen gelten als Mobilnummer.")
+        self.custom = Adw.SwitchRow(title="Eigene SQL-Abfrage verwenden",
+                                    subtitle="Spalten wie name, company, phone, mobile benennen",
+                                    active=conf.get("mode") == "query")
+        self.custom.connect("notify::active", lambda *_: self._update_mode())
+        data.add(self.custom)
+        self.table = Adw.ComboRow(title="Tabelle oder Sicht", model=Gtk.StringList.new([]))
+        self.table.connect("notify::selected", self._on_table)
+        data.add(self.table)
+        self.table_hint = Adw.ActionRow(title=conf.get("table") or "Erst „Verbinden“ drücken",
+                                        subtitle="Gewählte Tabelle", use_markup=False)
+        data.add(self.table_hint)
+        self.name_cols = Adw.EntryRow(title="Spalte(n) für den Namen", text=conf.get("name_cols", ""))
+        self.company_col = Adw.EntryRow(title="Spalte für die Firma (optional)", text=conf.get("company_col", ""))
+        self.phone_cols = Adw.EntryRow(title="Spalten mit Telefonnummern", text=conf.get("phone_cols", ""))
+        for row in (self.name_cols, self.company_col, self.phone_cols):
+            data.add(row)
+        page.add(data)
+
+        query_group = Adw.PreferencesGroup(title="SQL-Abfrage")
+        self.query = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR, monospace=True, css_classes=["notes"],
+                                  top_margin=12, bottom_margin=12, left_margin=12, right_margin=12)
+        self.query.get_buffer().set_text(conf.get("query") or
+                                         "SELECT Name AS name, Firma AS company, Telefon AS phone, "
+                                         "Handy AS mobile\nFROM dbo.Kontakte")
+        self.query.set_size_request(-1, 110)
+        frame = Gtk.Frame(child=self.query, css_classes=["view"])
+        query_group.add(frame)
+        self.query_group = query_group
+        page.add(query_group)
+        self.data_rows = (self.table, self.table_hint, self.name_cols, self.company_col, self.phone_cols)
+
+        actions = Adw.PreferencesGroup()
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        self.save_button = Gtk.Button(label="Testen und speichern", halign=Gtk.Align.CENTER,
+                                      css_classes=["pill", "suggested-action"])
+        self.save_button.connect("clicked", self._test_and_save)
+        box.append(self.save_button)
+        self.status = Gtk.Label(wrap=True, visible=False, xalign=0.5)
+        box.append(self.status)
+        actions.add(box)
+        page.add(actions)
+
+        view = Adw.ToolbarView(content=page)
+        view.add_top_bar(Adw.HeaderBar())
+        self.set_child(view)
+        self._update_mode()
+        self._validate()
+
+    # -- Hilfen ------------------------------------------------------------
+
+    def _current_conf(self):
+        buf = self.query.get_buffer()
+        conf = dict(self.conf)
+        conf.update(
+            host=self.host.get_text().strip(),
+            port=int(self.port.get_value()),
+            database=self.database.get_text().strip(),
+            user=self.user.get_text().strip(),
+            name=self.name.get_text().strip(),
+            mode="query" if self.custom.get_active() else "table",
+            name_cols=self.name_cols.get_text().strip(),
+            company_col=self.company_col.get_text().strip(),
+            phone_cols=self.phone_cols.get_text().strip(),
+            query=buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False).strip(),
+        )
+        return conf
+
+    def _source(self):
+        return MsSqlSource(self._current_conf(), self.password.get_text())
+
+    def _validate(self, *_):
+        ok = all(r.get_text().strip() for r in (self.host, self.database, self.user, self.password))
+        self.connect_button.set_sensitive(ok)
+        self.save_button.set_sensitive(ok)
+        return ok
+
+    def _update_mode(self):
+        custom = self.custom.get_active()
+        for row in self.data_rows:
+            row.set_visible(not custom)
+        self.table.set_visible(not custom and bool(self.tables))
+        self.query_group.set_visible(custom)
+
+    def _show(self, text, error=False):
+        self.status.set_label(text)
+        self.status.set_visible(bool(text))
+        (self.status.add_css_class if error else self.status.remove_css_class)("error")
+
+    def _busy(self, button, text):
+        button.set_sensitive(False)
+        button.set_label(text)
+
+    # -- Ablauf ------------------------------------------------------------
+
+    def _load_tables(self, *_):
+        self._busy(self.connect_button, "Verbinde …")
+        self._show("")
+        source = self._source()
+
+        def done(tables, error):
+            self.connect_button.set_label("Verbinden")
+            self._validate()
+            if error:
+                self._show(error, error=True)
+                return
+            self.tables = [name for name, _view in tables]
+            labels = [f"{name}  (Sicht)" if view else name for name, view in tables]
+            current = self.conf.get("table", "")
+            self.table.set_model(Gtk.StringList.new(labels))
+            self._update_mode()
+            if current in self.tables:
+                self.table.set_selected(self.tables.index(current))
+            self._show(f"Verbunden – {len(tables)} Tabellen und Sichten gefunden")
+
+        self.app.calendar.run(source.tables, done)
+
+    def _on_table(self, row, _pspec):
+        index = row.get_selected()
+        if not self.tables or index >= len(self.tables):
+            return
+        table = self.tables[index]
+        self.table_hint.set_title(table)
+        if table == self.conf.get("table") and self.phone_cols.get_text():
+            return  # gespeicherte Zuordnung nicht überschreiben
+        self.conf["table"] = table
+        source = self._source()
+
+        def done(columns, error):
+            if error:
+                self._show(error, error=True)
+                return
+            suggestion = MsSqlSource.suggest(columns)
+            self.name_cols.set_text(suggestion["name_cols"])
+            self.company_col.set_text(suggestion["company_col"])
+            self.phone_cols.set_text(suggestion["phone_cols"])
+            self._show("Spalten: " + ", ".join(columns))
+
+        self.app.calendar.run(lambda: source.columns(table), done)
+
+    def _test_and_save(self, *_):
+        if not self._validate():
+            return
+        conf = self._current_conf()
+        password = self.password.get_text()
+        self._busy(self.save_button, "Teste …")
+        self._show("")
+
+        def done(result, error):
+            self.save_button.set_label("Testen und speichern")
+            self._validate()
+            if error:
+                self._show(error, error=True)
+                return
+            contacts, rows = result
+            if not contacts:
+                self._show(f"{rows} Zeilen gelesen, aber keine mit Telefonnummer – bitte Spalten prüfen",
+                           error=True)
+                return
+            store = self.app.store
+            sources = self.app.contact_sync.settings.setdefault("sql", [])
+            sources[:] = [c for c in sources if c["id"] != conf["id"]] + [conf]
+            store.set_secret(f"mssql:{conf['id']}", password, f"SIP-Telefon SQL Server {conf['user']}")
+            store.save_settings()
+            self.dialog._fill_sql()
+            self.app.contact_sync.sync()
+            self.dialog.pop_subpage()
+            sample = contacts[0]
+            self.dialog.add_toast(Adw.Toast(
+                title=f"{len(contacts)} Kontakte gefunden, z. B. {sample['name']}", timeout=4))
+
+        self.app.calendar.run(lambda: MsSqlSource(conf, password).fetch(), done)

@@ -374,3 +374,44 @@ entry.time-entry {
   background-color: var(--md-surface-container-highest);
   font-size: 15px;
 }
+
+/* -- Startseite ------------------------------------------------------------ */
+
+.home-card {
+  background-color: var(--md-surface-container-low);
+  border-radius: 24px;
+  padding: 16px;
+}
+.home-card-title {
+  font-size: 16px;
+  font-weight: 500;
+}
+.home-card-icon {
+  color: var(--md-primary);
+}
+.home-card-action {
+  font-size: 13px;
+  padding: 2px 12px;
+}
+.home-card .inner-list {
+  background-color: var(--md-surface-container);
+}
+.favorite-tile {
+  border-radius: 16px;
+  padding: 8px 4px;
+}
+.quick-dial entry {
+  border-radius: 9999px;
+  min-height: 44px;
+  padding: 0 16px;
+  background-color: var(--md-surface-container-high);
+}
+button.quick-call {
+  min-width: 44px;
+  min-height: 44px;
+  background-color: var(--md-call-container);
+  color: var(--md-on-call-container);
+}
+.status-dot.dnd {
+  background-color: #9141ac;
+}

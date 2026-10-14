@@ -3,6 +3,7 @@
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from .calendar_page import CalendarPage
+from .home_page import HomePage
 from .calls import format_duration
 from .store import normalize_number
 from .widgets import (
@@ -139,6 +140,8 @@ class DialPage(Gtk.Box):
 
 # -- Kontakte ----------------------------------------------------------------
 
+MAX_LIST = 200  # mehr Zeilen machen die Liste bei großen Datenbanken träge
+
 
 class ContactsPage(Gtk.Box):
     def __init__(self, app, window):
@@ -194,8 +197,12 @@ class ContactsPage(Gtk.Box):
         self.listbox.remove_all()
         contacts = self.app.store.search_contacts(self.search.get_text())
         self.visible_contacts = contacts
-        for c in contacts:
+        for c in contacts[:MAX_LIST]:
             self.listbox.append(self._row(c))
+        if len(contacts) > MAX_LIST:
+            more = Adw.ActionRow(title=f"… und {len(contacts) - MAX_LIST} weitere",
+                                 subtitle="Suchfeld verwenden, um sie zu finden", css_classes=["dim-label"])
+            self.listbox.append(more)
         if contacts:
             self.stack.set_visible_child_name("list")
         else:
@@ -486,12 +493,15 @@ class MainWindow(Adw.ApplicationWindow):
         contacts_page.add_overlay(fab)
         self.calendar = CalendarPage(app, self)
         self.history = HistoryPage(app, self)
+        self.home = HomePage(app, self)  # nutzt Zeilen aus Verlauf und Kalender, daher zuletzt
         self.views = Adw.ViewStack()
+        self.views.add_titled_with_icon(self.home, "home", "Start", "go-home-symbolic")
         self.views.add_titled_with_icon(_scrolled(self.dialer), "dial", "Wählen", "input-dialpad-symbolic")
         self.views.add_titled_with_icon(contacts_page, "contacts", "Kontakte", "x-office-address-book-symbolic")
         self.views.add_titled_with_icon(self.calendar, "calendar", "Kalender", "x-office-calendar-symbolic")
         self.history_page = self.views.add_titled_with_icon(
             self.history, "history", "Verlauf", "document-open-recent-symbolic")
+        self.views.set_visible_child_name(app.store.settings.get("home", {}).get("start_tab", "home"))
         self.views.connect("notify::visible-child-name", self._on_page_changed)
 
         self.call_view = CallView(app)
@@ -547,7 +557,7 @@ class MainWindow(Adw.ApplicationWindow):
     def set_status(self, text, kind):
         """kind: ok | busy | error | off"""
         self.window_title.set_subtitle(text)
-        for k in ("ok", "busy", "error", "off"):
+        for k in ("ok", "busy", "error", "off", "dnd"):
             self.status_dot.remove_css_class(k)
         self.status_dot.add_css_class(kind)
         self.status_dot.set_tooltip_text(text)
@@ -574,12 +584,14 @@ class MainWindow(Adw.ApplicationWindow):
 
     def history_changed(self, missed=False):
         self.history.refresh()
+        self.home.refresh()
         if missed and self.views.get_visible_child_name() != "history":
             self.history_page.set_needs_attention(True)
 
     def contacts_changed(self):
         self.contacts.refresh()
         self.history.refresh()
+        self.home.refresh()
 
     def toast(self, text):
         self.toasts.add_toast(Adw.Toast(title=text, timeout=3))
