@@ -3,9 +3,10 @@
 import shutil
 import uuid
 
-from gi.repository import Adw, Gio, Gtk
+from gi.repository import Adw, Gio, GLib, Gtk
 
 from .calendar_page import color_class
+from .ringtones import CACHE_DIR as RINGTONE_DIR, RINGTONES
 from .themes import SCHEMES, THEMES, swatch
 from .calendars import CalDavBackend
 from .contact_sync import CardDavBackend
@@ -97,6 +98,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
         general = Adw.PreferencesPage(title="Allgemein", icon_name="emblem-system-symbolic", name="general")
         self.add(general)
         general.add(self._appearance_group())
+        general.add(self._ringtone_group())
         behaviour = Adw.PreferencesGroup(title="Verhalten")
         general.add(behaviour)
         self.background = Adw.SwitchRow(
@@ -172,6 +174,77 @@ class PreferencesDialog(Adw.PreferencesDialog):
         mini.connect("notify::active", lambda r, _p: self._set("mini_call", r.get_active()))
         group.add(mini)
         return group
+
+    def _ringtone_group(self):
+        group = Adw.PreferencesGroup(title="Klingelton",
+                                     description="Wird auf dem Gerät abgespielt, das unter „Klingeln auf“ gewählt ist.")
+        current = self.app.store.settings.get("ringtone", "marimba")
+        first = None
+        self.custom_row = None
+        for key, name, desc in RINGTONES:
+            row = Adw.ActionRow(title=name, subtitle=desc, activatable=True)
+            check = Gtk.CheckButton(active=key == current, valign=Gtk.Align.CENTER)
+            if first is None:
+                first = check
+            else:
+                check.set_group(first)
+            check.connect("toggled", lambda c, k=key: c.get_active() and self._choose_ringtone(k, c))
+            row.add_prefix(check)
+            row.set_activatable_widget(check)
+            if key == "custom":
+                self.custom_row, self.custom_check = row, check
+                pick = Gtk.Button(label="Datei wählen …", valign=Gtk.Align.CENTER, css_classes=["flat"])
+                pick.connect("clicked", lambda *_: self._pick_ringtone())
+                row.add_suffix(pick)
+            play = Gtk.Button(icon_name="media-playback-start-symbolic", tooltip_text="Probehören",
+                              valign=Gtk.Align.CENTER, css_classes=["flat", "circular"])
+            play.connect("clicked", lambda _b, k=key: self.app.preview_ringtone(k))
+            row.add_suffix(play)
+            group.add(row)
+        self._update_custom_row()
+        return group
+
+    def _update_custom_row(self):
+        from .ringtones import ringtone_path
+
+        has_custom = ringtone_path("custom", RINGTONE_DIR, None) is not None
+        self.custom_check.set_sensitive(has_custom)
+        if has_custom:
+            self.custom_row.set_subtitle("Eigene Audiodatei")
+
+    def _choose_ringtone(self, key, check):
+        self.app.set_ringtone(key)
+        self.app.preview_ringtone(key)
+
+    def _pick_ringtone(self):
+        dialog = Gtk.FileDialog(title="Klingelton wählen", modal=True)
+        audio = Gtk.FileFilter(name="Audiodateien")
+        audio.add_mime_type("audio/*")
+        filters = Gio.ListStore.new(Gtk.FileFilter)
+        filters.append(audio)
+        dialog.set_filters(filters)
+        dialog.open(self.app.window, None, self._on_ringtone_file)
+
+    def _on_ringtone_file(self, dialog, result):
+        try:
+            path = dialog.open_finish(result).get_path()
+        except GLib.Error:
+            return
+        self.import_ringtone(path)
+
+    def import_ringtone(self, path):
+        from .ringtones import convert_custom
+
+        def done(error):
+            if error:
+                self.add_toast(Adw.Toast(title=error, timeout=5))
+                return
+            self._update_custom_row()
+            self.custom_check.set_active(True)
+            self.app.set_ringtone("custom")
+            self.add_toast(Adw.Toast(title="Eigener Klingelton übernommen", timeout=3))
+
+        convert_custom(path, RINGTONE_DIR, done)
 
     def _set(self, key, value):
         self.app.store.settings[key] = value

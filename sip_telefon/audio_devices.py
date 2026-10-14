@@ -99,6 +99,18 @@ class ToneTest:
         self.pipeline.get_bus().add_watch(GLib.PRIORITY_DEFAULT, self._on_bus)
         self.pipeline.set_state(Gst.State.PLAYING)
 
+    def play_file(self, path, node):
+        """WAV-Datei einmal abspielen (Klingelton-Vorschau)."""
+        if Gst is None:
+            return
+        self.stop()
+        target = f' target-object="{node}"' if node else ""
+        self.pipeline = Gst.parse_launch(
+            f"filesrc name=src ! wavparse ! audioconvert ! audioresample ! pipewiresink{target}")
+        self.pipeline.get_by_name("src").set_property("location", path)
+        self.pipeline.get_bus().add_watch(GLib.PRIORITY_DEFAULT, self._on_bus)
+        self.pipeline.set_state(Gst.State.PLAYING)
+
     def _on_bus(self, _bus, message):
         if message.type in (Gst.MessageType.EOS, Gst.MessageType.ERROR):
             self.stop()

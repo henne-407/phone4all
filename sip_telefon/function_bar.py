@@ -1,4 +1,8 @@
-"""Funktionsleiste unter der Titelleiste: Anmeldung, Nicht stören, Mikrofon, Lautsprecher."""
+"""Bedienelemente der Titelleiste: Anmeldung, Nicht stören, Mikrofon, Lautsprecher.
+
+Die Elemente sitzen in zwei Gruppen links (start) und rechts (end) in der
+Titelleiste des Hauptfensters, neben App-Titel, Menü und Fensterknöpfen.
+"""
 
 from gi.repository import Gtk
 
@@ -17,11 +21,12 @@ def _heading(text):
     return Gtk.Label(label=text, xalign=0, css_classes=["heading", "popover-heading"])
 
 
-class FunctionBar(Gtk.Box):
+class FunctionBar:
     def __init__(self, app):
-        super().__init__(spacing=6, css_classes=["function-bar"])
         self.app = app
         self.labels = []
+        self.start = Gtk.Box(spacing=4)
+        self.end = Gtk.Box(spacing=4)
 
         # -- Anmeldung -----------------------------------------------------
         content = Gtk.Box(spacing=8)
@@ -33,7 +38,7 @@ class FunctionBar(Gtk.Box):
         self.account = Gtk.MenuButton(child=content, css_classes=["flat", "bar-chip"],
                                       tooltip_text="Anmeldung an der Telefonanlage")
         self.account.set_popover(self._account_popover())
-        self.append(self.account)
+        self.start.append(self.account)
 
         # -- Nicht stören --------------------------------------------------
         dnd_content, dnd_label = _icon_label("notifications-disabled-symbolic", "Nicht stören")
@@ -41,9 +46,7 @@ class FunctionBar(Gtk.Box):
         self.dnd = Gtk.ToggleButton(child=dnd_content, css_classes=["flat", "bar-chip", "dnd-toggle"],
                                     tooltip_text="Nicht stören: Anrufe abweisen")
         self.dnd_handler = self.dnd.connect("toggled", lambda b: app.set_dnd(b.get_active()))
-        self.append(self.dnd)
-
-        self.append(Gtk.Box(hexpand=True))
+        self.start.append(self.dnd)
 
         # -- Audio ---------------------------------------------------------
         self.tone = ToneTest()
@@ -55,8 +58,8 @@ class FunctionBar(Gtk.Box):
                                   tooltip_text="Lautsprecher und Klingelton")
         self.mic.set_popover(self._device_popover(self._fill_mic))
         self.spk.set_popover(self._device_popover(self._fill_speaker))
-        self.append(self.mic)
-        self.append(self.spk)
+        self.end.append(self.mic)
+        self.end.append(self.spk)
         if not app.audio.available:
             self.mic.set_visible(False)
             self.spk.set_visible(False)

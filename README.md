@@ -40,7 +40,9 @@ Name (z. B. `620`).
 - Weiterleiten (Blind Transfer) auch direkt beim Klingeln, mit Kontaktvorschlägen
 - Farbthemen (Violett, Blau, Türkis, Grün, Senf, Orange, Koralle, Pink, Graphit oder die
   Akzentfarbe des Systems) und Hell/Dunkel/System, Kontrast nach WCAG AA geprüft
-- Funktionsleiste: Anmeldestatus (neu anmelden, ab-/anmelden, Konto), „Nicht stören“,
+- Klingeltöne: Marimba (Standard), Glocken, Klassisch, Dezent, baresip-Original oder eine
+  eigene Audiodatei (WAV/MP3/OGG …), mit Probehören; ausgehend deutsches Freizeichen
+- Titelleiste mit Anmeldestatus (neu anmelden, ab-/anmelden, Konto), „Nicht stören“,
   Mikrofon mit Pegelanzeige, Lautsprecher mit Testton und separates Gerät zum Klingeln –
   Umschalten wirkt sofort, auch im laufenden Gespräch
 - Anpassbare Startseite (füllt das Fenster, Karten in bis zu drei Spalten nebeneinander): Status mit „Nicht stören“ und Schnellwahl, Favoriten,

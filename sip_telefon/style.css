@@ -436,15 +436,19 @@ button.quick-call {
   background-color: #9141ac;
 }
 
-/* -- Funktionsleiste ------------------------------------------------------- */
+/* -- Titelleiste mit Bedienelementen -------------------------------------- */
 
-/* Schwebende, abgesetzte Leiste mit eigener Fläche und leichtem Schatten */
-.function-bar {
-  margin: 2px 12px 10px;
-  padding: 6px;
+/* Eine abgesetzte Leiste: Titel, Status, Audio, Menü und Fensterknöpfe */
+headerbar.main-header {
+  margin: 8px 10px 6px;
+  padding: 0 6px;
+  min-height: 52px;
   border-radius: 9999px;
   background-color: var(--md-surface-container-highest);
   box-shadow: 0 1px 2px alpha(black, 0.18), 0 3px 10px alpha(black, 0.10);
+}
+headerbar.main-header windowcontrols button {
+  margin: 0 1px;
 }
 button.bar-chip {
   border-radius: 9999px;

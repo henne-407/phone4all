@@ -151,7 +151,7 @@ class Baresip(GObject.Object):
         ]
         if local_port:
             lines.append(f"sip_listen 0.0.0.0:{local_port}")
-        audio_dir = find_audio_dir()
+        audio_dir = audio.get("sound_dir") or find_audio_dir()
         if audio_dir:
             lines.append(f"audio_path {audio_dir}")
         for m in CODECS + [driver] + OPTIONAL_MODULES:

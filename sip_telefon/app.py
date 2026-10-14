@@ -8,16 +8,17 @@ from datetime import datetime, timedelta
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from . import APP_ID, VERSION
-from .audio_devices import AudioDevices
-from .baresip import Baresip, account_line
+from .audio_devices import AudioDevices, ToneTest
+from .baresip import Baresip, account_line, find_audio_dir
 from .calendars import CalendarManager
+from .calls import Call
 from .contact_import import parse_file
 from .contact_sync import ContactSync
-from .calls import Call
 from .incoming import IncomingCallWindow
-from .themes import SCHEMES, palette_css
 from .preferences import PreferencesDialog
+from .ringtones import CACHE_DIR as RINGTONE_DIR, prepare_sound_dir, ringtone_path
 from .store import RUNTIME_DIR, STATE_DIR, Store, normalize_number, number_from_uri
+from .themes import SCHEMES, palette_css
 from .window import MainWindow
 
 CSS_DIR = os.path.dirname(__file__)
@@ -58,6 +59,7 @@ class App(Adw.Application):
         self.calendar = CalendarManager(self.store)
         self.contact_sync = ContactSync(self.store, self.calendar.run)
         self.audio = AudioDevices()
+        self.tone_preview = ToneTest()
         self.restart_after_call = False
         self.reminded = set()
         self.upcoming = []  # Termine mit Uhrzeit für Erinnerungen
@@ -148,7 +150,9 @@ class App(Adw.Application):
         else:
             self.window.show_banner(None)
             self.set_reg_state("Verbinde …", "busy")
-        self.engine.start(line, int(acc.get("local_port") or 0), dict(self.store.settings.get("audio", {})))
+        audio = dict(self.store.settings.get("audio", {}))
+        audio["sound_dir"] = self.prepare_sounds()
+        self.engine.start(line, int(acc.get("local_port") or 0), audio)
 
     # -- Engine-Events -----------------------------------------------------
 
@@ -172,6 +176,25 @@ class App(Adw.Application):
         else:
             self.engine.send("uareg", "0")
             self.set_reg_state("Abgemeldet – keine Anrufe", "off")
+
+    def prepare_sounds(self):
+        """Eigenes Sound-Verzeichnis mit dem gewählten Klingelton (und deutschem Freizeichen)."""
+        try:
+            return prepare_sound_dir(os.path.join(RUNTIME_DIR, "sounds"), find_audio_dir(),
+                                     self.store.settings.get("ringtone", "marimba"), RINGTONE_DIR)
+        except OSError:
+            return None  # dann eben die Originaltöne von baresip
+
+    def set_ringtone(self, key):
+        self.store.settings["ringtone"] = key
+        self.store.save_settings()
+        self.prepare_sounds()  # baresip öffnet die Datei bei jedem Klingeln neu
+
+    def preview_ringtone(self, key):
+        audio = self.store.settings.get("audio", {})
+        path = ringtone_path(key, RINGTONE_DIR, find_audio_dir())
+        if path:
+            self.tone_preview.play_file(path, audio.get("alert") or audio.get("sink", ""))
 
     def set_audio(self, kind, node):
         """kind: "source" (Mikrofon), "sink" (Lautsprecher), "alert" (Klingeln)."""

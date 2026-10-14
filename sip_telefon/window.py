@@ -738,7 +738,10 @@ class MainWindow(Adw.ApplicationWindow):
         self.app = app
 
         self.window_title = Adw.WindowTitle(title="SIP-Telefon")
-        header = Adw.HeaderBar(title_widget=self.window_title)
+        # Eine gemeinsame Leiste: Status und Bedienelemente sitzen direkt in der Titelleiste
+        header = Adw.HeaderBar(title_widget=self.window_title, css_classes=["main-header"])
+        self.function_bar = FunctionBar(app)
+        header.pack_start(self.function_bar.start)
         # Status steht jetzt in der Funktionsleiste; der Punkt bleibt für set_status erhalten, aber unsichtbar
         self.status_dot = Gtk.Box(css_classes=["status-dot"], valign=Gtk.Align.CENTER, visible=False)
         header.pack_start(self.status_dot)
@@ -764,6 +767,7 @@ class MainWindow(Adw.ApplicationWindow):
         ).get_object("m")
         header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu,
                                        primary=True, tooltip_text="Hauptmenü"))
+        header.pack_end(self.function_bar.end)
 
         self.banner = Adw.Banner(button_label="Einrichten", action_name="app.preferences")
 
@@ -803,10 +807,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.toasts = Adw.ToastOverlay(child=self.main_stack)
         self.switcher = Adw.ViewSwitcherBar(stack=self.views, reveal=True)
 
-        self.function_bar = FunctionBar(app)
         view = Adw.ToolbarView(content=self.toasts)
         view.add_top_bar(header)
-        view.add_top_bar(self.function_bar)
         view.add_top_bar(self.banner)
         view.add_bottom_bar(self.switcher)
         self.set_content(view)
@@ -830,6 +832,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _apply_layout(self):
         layout = self.layouts.get(self.get_current_breakpoint(), "normal")
         self.function_bar.set_compact(layout == "narrow")
+        self.window_title.set_visible(layout != "narrow")  # im schmalen Fenster Platz für die Knöpfe
         self.home.set_columns({"two": 2, "three": 3}.get(layout, 1))
         wide = layout in ("two", "three")
         self.dial_suggestions.set_visible(wide)
@@ -870,7 +873,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def set_status(self, text, kind):
         """kind: ok | busy | error | off"""
-        self.window_title.set_subtitle(text)
+        # Der Status steht im Anmelde-Chip der Titelleiste, nicht mehr als Untertitel
         for k in ("ok", "busy", "error", "off", "dnd"):
             self.status_dot.remove_css_class(k)
         self.status_dot.add_css_class(kind)
