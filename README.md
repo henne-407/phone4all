@@ -1,9 +1,10 @@
 # SIP-Telefon
 
-Schlanker SIP-Softphone-Client für Linux (GTK4/libadwaita). Verbindet sich mit
-einer SIP-Telefonanlage (z. B. FRITZ!Box, Asterisk, 3CX, Starface, Sipgate),
-wählt Nummern, verwaltet Kontakte und meldet eingehende Anrufe per Pop-up und
-Desktop-Benachrichtigung.
+Schlanker SIP-Softphone-Client für Linux (GTK4/libadwaita im Material-3-Design).
+Verbindet sich mit einer SIP-Telefonanlage (z. B. FRITZ!Box, Asterisk, 3CX,
+Starface, Sipgate), wählt Nummern, verwaltet Kontakte, meldet eingehende Anrufe
+per Pop-up und Desktop-Benachrichtigung und zeigt deinen Kalender (CalDAV oder
+GNOME Online-Konten) inklusive Einwahlnummern zum direkten Anrufen.
 
 Die SIP- und Audio-Arbeit macht [baresip](https://github.com/baresip/baresip),
 das als Hintergrundprozess gestartet und über sein `ctrl_tcp`-Modul gesteuert wird.
@@ -12,6 +13,7 @@ das als Hintergrundprozess gestartet und über sein `ctrl_tcp`-Modul gesteuert w
 
 ```sh
 sudo dnf install baresip baresip-pipewire baresip-opus baresip-g722
+sudo dnf install google-roboto-fonts   # optional: Material-Schrift
 ./install.sh          # Startmenü-Eintrag + Befehl "sip-telefon"
 ```
 
@@ -39,9 +41,30 @@ Name (z. B. `620`).
   Benachrichtigung bei verpassten Anrufen mit *Zurückrufen*
 - Während des Gesprächs: Stummschalten, Halten, DTMF-Tastatur (auch per Tastatur)
 - Anrufverlauf (ein-/ausgehend/verpasst), Nummern direkt als Kontakt speichern
+- Kalender-Tab: Monatsansicht mit Terminpunkten, Termine anlegen/ändern/löschen,
+  Telefonnummern in Terminen (z. B. Einwahlnummern) per Klick anrufen
+- „Rückruf planen“ aus dem Verlauf (⋮-Menü) und während des Gesprächs
+- Erinnerung vor Terminen als Benachrichtigung, mit Anrufknopf bei erkannter Nummer
+- Material-3-Design mit hellem und dunklem Farbschema (folgt der Systemeinstellung)
 - Läuft beim Schließen im Hintergrund weiter (abschaltbar), optionaler Autostart
 - Passwort im GNOME-Schlüsselbund (libsecret); ohne Schlüsselbund in
   `~/.config/sip-telefon/settings.json` mit Rechten 0600
+
+## Kalender
+
+Menü → **Einstellungen** → **Kalender**:
+
+- **CalDAV**: „+“ bei *CalDAV-Konten*, Server-URL, Benutzer und Passwort eintragen.
+  Die Kalender werden automatisch gefunden. Beispiele: Nextcloud
+  `https://cloud.example.de/remote.php/dav`, iCloud `https://caldav.icloud.com`
+  (app-spezifisches Passwort), mailbox.org `https://dav.mailbox.org`.
+- **GNOME Online-Konten** (Google, Microsoft 365, …): Konto in den
+  GNOME-Einstellungen unter *Online-Konten* einrichten; die Kalender erscheinen
+  dann automatisch (über den Evolution Data Server). Lokale Evolution-Kalender
+  werden ebenfalls angezeigt.
+
+Serientermine werden angezeigt, lassen sich aber nur in der Kalender-App des
+Anbieters bearbeiten.
 
 ## Dateien
 

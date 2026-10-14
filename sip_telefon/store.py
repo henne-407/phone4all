@@ -15,6 +15,8 @@ try:
     from gi.repository import Secret
 except (ImportError, ValueError):
     Secret = None
+if os.environ.get("SIP_TELEFON_NO_KEYRING"):
+    Secret = None  # Passwörter nur in settings.json (z. B. für Tests ohne Schlüsselbund)
 
 APP_DIR = "sip-telefon"
 CONFIG_DIR = os.path.join(GLib.get_user_config_dir(), APP_DIR)
@@ -37,6 +39,13 @@ DEFAULT_SETTINGS = {
         "stun": "",
         "mediaenc": "",
         "regint": 600,
+    },
+    "calendar": {
+        "use_eds": True,
+        "caldav": [],  # [{"id", "name", "url", "user"}]
+        "disabled": [],  # IDs ausgeblendeter Kalender
+        "default": "",  # Kalender für neue Termine
+        "reminder_minutes": 10,  # 0 = keine Erinnerung
     },
     "run_in_background": True,
     "autostart": False,
@@ -127,39 +136,53 @@ class Store:
     def save_settings(self):
         _save_json(self.settings_path, self.settings, private=True)
 
-    def _secret_attrs(self):
-        return {"account": f"{self.account['user']}@{self.account['domain']}"}
+    def _sip_key(self):
+        return f"{self.account['user']}@{self.account['domain']}"
 
     def get_password(self):
+        return self.get_secret(self._sip_key(), fallback_key="password")
+
+    def set_password(self, password):
+        """Speichert das SIP-Passwort im Schlüsselbund, sonst in settings.json (0600)."""
+        return self.set_secret(self._sip_key(), password, "SIP-Telefon Passwort", fallback_key="password")
+
+    def get_secret(self, key, fallback_key=None):
         if Secret is not None:
             try:
-                pw = Secret.password_lookup_sync(SECRET_SCHEMA, self._secret_attrs(), None)
+                pw = Secret.password_lookup_sync(SECRET_SCHEMA, {"account": key}, None)
                 if pw is not None:
                     return pw
             except GLib.Error:
                 pass
-        return self.settings.get("password", "")
+        return self.settings.get("secrets", {}).get(key) or self.settings.get(fallback_key or "", "")
 
-    def set_password(self, password):
-        """Speichert das Passwort im Schlüsselbund, sonst in settings.json (0600)."""
+    def set_secret(self, key, value, label, fallback_key=None):
+        """Gibt False zurück, wenn kein Schlüsselbund verfügbar war (Ablage in settings.json)."""
+        secrets = self.settings.setdefault("secrets", {})
         if Secret is not None:
             try:
                 Secret.password_store_sync(
-                    SECRET_SCHEMA,
-                    self._secret_attrs(),
-                    Secret.COLLECTION_DEFAULT,
-                    "SIP-Telefon Passwort",
-                    password,
-                    None,
+                    SECRET_SCHEMA, {"account": key}, Secret.COLLECTION_DEFAULT, label, value, None
                 )
-                self.settings.pop("password", None)
+                secrets.pop(key, None)
+                if fallback_key:
+                    self.settings.pop(fallback_key, None)
                 self.save_settings()
                 return True
             except GLib.Error:
                 pass
-        self.settings["password"] = password
+        secrets[key] = value
         self.save_settings()
         return False
+
+    def delete_secret(self, key):
+        self.settings.get("secrets", {}).pop(key, None)
+        if Secret is not None:
+            try:
+                Secret.password_clear_sync(SECRET_SCHEMA, {"account": key}, None)
+            except GLib.Error:
+                pass
+        self.save_settings()
 
     # -- Kontakte ----------------------------------------------------------
 

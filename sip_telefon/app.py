@@ -3,18 +3,20 @@
 import os
 import re
 import shlex
+from datetime import datetime, timedelta
 
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from . import APP_ID, VERSION
 from .baresip import Baresip, account_line
+from .calendars import CalendarManager
 from .calls import Call
 from .incoming import IncomingCallWindow
 from .preferences import PreferencesDialog
 from .store import RUNTIME_DIR, STATE_DIR, Store, normalize_number, number_from_uri
 from .window import MainWindow
 
-CSS_PATH = os.path.join(os.path.dirname(__file__), "style.css")
+CSS_DIR = os.path.dirname(__file__)
 LAUNCHER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sip-telefon")
 AUTOSTART_PATH = os.path.join(GLib.get_user_config_dir(), "autostart", f"{APP_ID}.desktop")
 
@@ -45,13 +47,12 @@ class App(Adw.Application):
 
     def do_startup(self):
         Adw.Application.do_startup(self)
-        provider = Gtk.CssProvider()
-        provider.load_from_path(CSS_PATH)
-        Gtk.StyleContext.add_provider_for_display(
-            Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-        )
+        self._load_css()
 
         self.store = Store()
+        self.calendar = CalendarManager(self.store)
+        self.reminded = set()
+        self.upcoming = []
         self.engine = Baresip(RUNTIME_DIR, os.path.join(STATE_DIR, "baresip.log"))
         self.engine.connect("event", self.on_event)
         self.engine.connect("engine-state", self.on_engine_state)
@@ -66,6 +67,7 @@ class App(Adw.Application):
             ("accept", lambda _a, p: self.accept(p.get_string()), "s"),
             ("decline", lambda _a, p: self.hangup(p.get_string()), "s"),
             ("call-back", lambda _a, p: self.dial(p.get_string()), "s"),
+            ("show-calendar", lambda *_: self.show_page("calendar"), None),
         ]:
             action = Gio.SimpleAction.new(name, GLib.VariantType.new(ptype) if ptype else None)
             action.connect("activate", handler)
@@ -75,8 +77,35 @@ class App(Adw.Application):
         self.set_accels_for_action("window.close", ["<Control>w"])
 
         self.window = MainWindow(self)
+        self.calendar.connect("calendars-changed", lambda *_: self._refresh_upcoming())
+        self.calendar.connect("events-changed", lambda *_: self._refresh_upcoming())
+        self.calendar.reload()
+        GLib.timeout_add_seconds(30, self._check_reminders)
+        GLib.timeout_add_seconds(600, lambda: (self._refresh_upcoming(), True)[1])
         self.hold()  # auch ohne sichtbares Fenster erreichbar bleiben
         self.restart_engine()
+
+    def _load_css(self):
+        """Material-Stylesheet plus Farbpalette passend zum Hell/Dunkel-Modus."""
+        display = Gdk.Display.get_default()
+        prio = Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        for name, offset in (("colors-light.css", 0), ("style.css", 2)):
+            provider = Gtk.CssProvider()
+            provider.load_from_path(os.path.join(CSS_DIR, name))
+            Gtk.StyleContext.add_provider_for_display(display, provider, prio + offset)
+        self.dark_provider = Gtk.CssProvider()
+        self.dark_provider.load_from_path(os.path.join(CSS_DIR, "colors-dark.css"))
+        style = Adw.StyleManager.get_default()
+        style.connect("notify::dark", lambda *_: self._apply_color_scheme())
+        self._apply_color_scheme()
+
+    def _apply_color_scheme(self):
+        display = Gdk.Display.get_default()
+        if Adw.StyleManager.get_default().get_dark():
+            Gtk.StyleContext.add_provider_for_display(
+                display, self.dark_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+        else:
+            Gtk.StyleContext.remove_provider_for_display(display, self.dark_provider)
 
     def do_command_line(self, cmdline):
         options = cmdline.get_options_dict().end().unpack()
@@ -317,9 +346,64 @@ class App(Adw.Application):
 
     # -- Sonstiges ---------------------------------------------------------
 
-    def show_preferences(self):
+    def show_preferences(self, page=None):
         self.window.present()
-        PreferencesDialog(self).present(self.window)
+        dialog = PreferencesDialog(self)
+        if page:
+            dialog.set_visible_page_name(page)
+        dialog.present(self.window)
+
+    def show_page(self, name):
+        self.window.views.set_visible_child_name(name)
+        self.window.present()
+
+    # -- Kalender ----------------------------------------------------------
+
+    def schedule_callback(self, number, name=""):
+        """Rückruf-Termin für die nächste volle Stunde vorschlagen."""
+        start = (datetime.now() + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+        self.show_page("calendar")
+        self.window.calendar.new_event(
+            summary=f"Rückruf: {name or number}",
+            description=f"Telefon: {number}",
+            start=start,
+            duration=timedelta(minutes=15),
+        )
+
+    def _refresh_upcoming(self):
+        now = datetime.now()
+
+        def done(events, _errors):
+            self.upcoming = [e for e in events if not e.all_day]
+            self._check_reminders()
+
+        if self.calendar.enabled_calendars():
+            self.calendar.fetch(now - timedelta(hours=1), now + timedelta(days=1), done)
+        else:
+            self.upcoming = []
+
+    def _check_reminders(self):
+        minutes = int(self.store.settings["calendar"].get("reminder_minutes", 10))
+        if minutes <= 0:
+            return True
+        now = datetime.now()
+        for ev in self.upcoming:
+            key = (ev.uid, ev.start)
+            if key in self.reminded or not (now <= ev.start <= now + timedelta(minutes=minutes)):
+                continue
+            self.reminded.add(key)
+            mins = max(1, round((ev.start - now).total_seconds() / 60))
+            n = Gio.Notification.new(f"In {mins} Min.: {ev.summary}")
+            body = ev.start.strftime("%H:%M") + (f" · {ev.location}" if ev.location else "")
+            n.set_body(body)
+            n.set_icon(Gio.ThemedIcon.new("x-office-calendar-symbolic"))
+            n.set_default_action("app.show-calendar")
+            numbers = ev.numbers
+            if numbers:
+                n.add_button_with_target(f"{numbers[0]} anrufen", "app.call-back",
+                                         GLib.Variant.new_string(numbers[0]))
+            self.send_notification(f"reminder-{hash(key)}", n)
+        return True
 
     def clear_history(self):
         self.store.clear_history()

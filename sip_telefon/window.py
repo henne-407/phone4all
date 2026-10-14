@@ -2,6 +2,7 @@
 
 from gi.repository import Adw, Gdk, GLib, Gtk
 
+from .calendar_page import CalendarPage
 from .calls import format_duration
 from .store import normalize_number
 from .widgets import (
@@ -155,16 +156,14 @@ class ContactsPage(Gtk.Box):
         self.search.connect("search-changed", lambda *_: self.refresh())
         self.search.connect("activate", self._call_first)
         bar.append(self.search)
-        add = Gtk.Button(icon_name="contact-new-symbolic", tooltip_text="Neuer Kontakt",
-                         css_classes=["suggested-action"])
-        add.connect("clicked", lambda *_: self.edit({}))
-        bar.append(add)
         self.append(clamp)
 
         self.listbox = Gtk.ListBox(css_classes=["boxed-list"], selection_mode=Gtk.SelectionMode.NONE,
                                    valign=Gtk.Align.START)
         self.stack = Gtk.Stack(vexpand=True)
-        self.stack.add_named(_scrolled_list(self.listbox), "list")
+        contacts_list = _scrolled_list(self.listbox)
+        contacts_list.get_child().get_child().set_margin_bottom(96)  # Platz für den FAB
+        self.stack.add_named(contacts_list, "list")
         empty = Adw.StatusPage(
             icon_name="x-office-address-book-symbolic",
             title="Noch keine Kontakte",
@@ -291,13 +290,27 @@ class HistoryPage(Gtk.Box):
             row.add_css_class("missed")
         row.add_prefix(img)
         row.connect("activated", lambda *_: self.app.dial(e["number"]))
-        if not contact:
-            add = Gtk.Button(icon_name="contact-new-symbolic", tooltip_text="Als Kontakt speichern",
-                             valign=Gtk.Align.CENTER, css_classes=["flat", "circular"])
-            add.connect("clicked", lambda *_: self.window.contacts.edit(
-                {"name": e.get("name") or "", "phone": e["number"]}))
-            row.add_suffix(add)
+        row.add_suffix(self._menu(e, name, contact))
         return row
+
+    def _menu(self, e, name, contact):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        pop = Gtk.Popover(child=box, css_classes=["menu-popover"])
+        items = [("appointment-new-symbolic", "Rückruf planen",
+                  lambda: self.app.schedule_callback(e["number"], name if name != e["number"] else ""))]
+        if not contact:
+            items.append(("contact-new-symbolic", "Als Kontakt speichern",
+                          lambda: self.window.contacts.edit({"name": e.get("name") or "", "phone": e["number"]})))
+        for icon, text, action in items:
+            item = Gtk.Button(css_classes=["flat"])
+            content = Gtk.Box(spacing=12)
+            content.append(Gtk.Image(icon_name=icon))
+            content.append(Gtk.Label(label=text, xalign=0))
+            item.set_child(content)
+            item.connect("clicked", lambda _b, a=action: (pop.popdown(), a()))
+            box.append(item)
+        return Gtk.MenuButton(icon_name="view-more-symbolic", popover=pop, tooltip_text="Weitere Aktionen",
+                              valign=Gtk.Align.CENTER, css_classes=["flat", "circular"])
 
 
 # -- Laufender Anruf ---------------------------------------------------------
@@ -332,7 +345,7 @@ class CallView(Gtk.Box):
         self.append(self.dtmf_revealer)
 
         # Steuerelemente während des Gesprächs
-        self.controls = Gtk.Box(spacing=28, halign=Gtk.Align.CENTER)
+        self.controls = Gtk.Box(spacing=20, halign=Gtk.Align.CENTER)
         self.controls.set_margin_top(28)
         box, self.mute = labeled_toggle("microphone-sensitivity-muted-symbolic", "Stumm")
         self.mute_handler = self.mute.connect("toggled", lambda *_: self.app.set_mute(self.mute.get_active()))
@@ -342,6 +355,11 @@ class CallView(Gtk.Box):
         self.controls.append(box)
         box, self.keypad = labeled_toggle("input-dialpad-symbolic", "Tastatur")
         self.keypad.connect("toggled", self._on_keypad_toggled)
+        self.controls.append(box)
+        box, schedule = labeled_toggle("appointment-new-symbolic", "Termin", toggle=False)
+        schedule.set_tooltip_text("Rückruf oder Folgetermin planen")
+        schedule.connect("clicked", lambda *_: self.call and self.app.schedule_callback(
+            self.call.number, self.call.name))
         self.controls.append(box)
         self.append(self.controls)
 
@@ -442,10 +460,19 @@ class MainWindow(Adw.ApplicationWindow):
 
         self.dialer = DialPage(app)
         self.contacts = ContactsPage(app, self)
+        contacts_page = Gtk.Overlay(child=self.contacts)
+        fab = Gtk.Button(icon_name="contact-new-symbolic", tooltip_text="Neuer Kontakt",
+                         halign=Gtk.Align.END, valign=Gtk.Align.END, css_classes=["fab"])
+        fab.set_margin_end(18)
+        fab.set_margin_bottom(18)
+        fab.connect("clicked", lambda *_: self.contacts.edit({}))
+        contacts_page.add_overlay(fab)
+        self.calendar = CalendarPage(app, self)
         self.history = HistoryPage(app, self)
         self.views = Adw.ViewStack()
         self.views.add_titled_with_icon(_scrolled(self.dialer), "dial", "Wählen", "input-dialpad-symbolic")
-        self.views.add_titled_with_icon(self.contacts, "contacts", "Kontakte", "x-office-address-book-symbolic")
+        self.views.add_titled_with_icon(contacts_page, "contacts", "Kontakte", "x-office-address-book-symbolic")
+        self.views.add_titled_with_icon(self.calendar, "calendar", "Kalender", "x-office-calendar-symbolic")
         self.history_page = self.views.add_titled_with_icon(
             self.history, "history", "Verlauf", "document-open-recent-symbolic")
         self.views.connect("notify::visible-child-name", self._on_page_changed)

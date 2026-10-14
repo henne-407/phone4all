@@ -40,9 +40,10 @@ def round_button(icon, css_class, tooltip, size="large"):
     return button
 
 
-def labeled_toggle(icon, label):
-    """Runder Umschalter mit Beschriftung darunter (für die Anrufansicht)."""
-    toggle = Gtk.ToggleButton(icon_name=icon, css_classes=["call-toggle"], halign=Gtk.Align.CENTER)
+def labeled_toggle(icon, label, toggle=True):
+    """Runder (Umschalt-)Knopf mit Beschriftung darunter (für die Anrufansicht)."""
+    cls = Gtk.ToggleButton if toggle else Gtk.Button
+    toggle = cls(icon_name=icon, css_classes=["call-toggle"], halign=Gtk.Align.CENTER)
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
     box.append(toggle)
     box.append(Gtk.Label(label=label, css_classes=["caption", "dim-label"]))

@@ -1,102 +1,264 @@
-/* Wähltastatur */
-.dial-entry {
-  font-size: 30px;
-  font-weight: 300;
-  min-height: 52px;
-  background: none;
+/* Material Design 3 für GTK4/libadwaita
+ *
+ * Die Farbrollen (M3-Baseline-Palette) stehen in colors-light.css/colors-dark.css;
+ * die App lädt je nach Hell/Dunkel-Modus die passende Datei dazu.
+ */
+
+window {
+  font-family: "Roboto Flex", "Roboto", "Google Sans Text", "Inter", sans-serif;
+}
+
+/* -- Allgemeine Komponenten ---------------------------------------------- */
+
+headerbar {
   box-shadow: none;
+  min-height: 56px;
 }
 
-.dial-key {
-  min-width: 70px;
-  min-height: 70px;
-  padding: 0;
+/* Gefüllte Buttons: Pill-Form wie M3 */
+button.suggested-action,
+button.destructive-action,
+button.pill {
   border-radius: 9999px;
+  padding: 10px 24px;
+  font-weight: 500;
 }
-.dial-key.compact {
-  min-width: 60px;
-  min-height: 60px;
+button.suggested-action {
+  background-color: var(--md-primary);
+  color: var(--md-on-primary);
 }
-.dial-key .digit {
-  font-size: 26px;
-  font-weight: 400;
+button.pill:not(.suggested-action):not(.destructive-action) {
+  background-color: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
 }
-.dial-key.compact .digit {
-  font-size: 21px;
-}
-.dial-key .letters {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 1.5px;
-  opacity: 0.55;
-}
-
-.match-button {
-  font-weight: 600;
-  color: var(--accent-color);
-}
-
-/* Runde Anruf-Buttons */
-.round-action {
+button.pill-small {
   border-radius: 9999px;
-  min-width: 68px;
-  min-height: 68px;
-  padding: 0;
-  color: white;
-  -gtk-icon-size: 26px;
-}
-.round-action.call {
-  background-color: #2ec27e;
-}
-.round-action.call:hover {
-  background-color: #33d17a;
-}
-.round-action.call:active {
-  background-color: #26a269;
-}
-.round-action.hangup {
-  background-color: #e01b24;
-}
-.round-action.hangup:hover {
-  background-color: #f03c43;
-}
-.round-action.hangup:active {
-  background-color: #c01c28;
+  padding: 4px 14px;
+  border: 1px solid var(--md-outline);
+  font-weight: 500;
 }
 
-.row-call {
-  color: #26a269;
+/* Listen als M3-Karten */
+.boxed-list,
+list.boxed-list,
+preferencesgroup list.boxed-list {
+  border-radius: 20px;
+  background-color: var(--md-surface-container-low);
+  box-shadow: none;
+  border: none;
+}
+.boxed-list > row {
+  min-height: 64px;
+}
+.boxed-list > row:first-child {
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+}
+.boxed-list > row:last-child {
+  border-bottom-left-radius: 20px;
+  border-bottom-right-radius: 20px;
+}
+row.missed .title {
+  color: var(--md-error);
 }
 
-/* Anrufansicht */
-.call-toggle {
+/* Suchfeld als M3-Search-Bar */
+searchentry,
+entry.search {
   border-radius: 9999px;
+  min-height: 48px;
+  padding: 0 16px;
+  background-color: var(--md-surface-container-high);
+}
+
+/* Dialoge und Popover: große Radien */
+dialog.floating sheet,
+floating-sheet > sheet {
+  border-radius: 28px;
+}
+popover > contents {
+  border-radius: 16px;
+}
+
+/* Floating Action Button */
+button.fab {
   min-width: 56px;
   min-height: 56px;
   padding: 0;
-  -gtk-icon-size: 22px;
+  border-radius: 16px;
+  background-color: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+  box-shadow: 0 1px 3px alpha(black, 0.3), 0 4px 8px 3px alpha(black, 0.15);
+  -gtk-icon-size: 24px;
+}
+button.fab:hover {
+  background-image: linear-gradient(alpha(var(--md-on-primary-container), 0.08),
+                                    alpha(var(--md-on-primary-container), 0.08));
+}
+
+/* Navigationsleiste: aktive Seite mit Pill-Indikator hinter dem Icon */
+viewswitcherbar actionbar > revealer > box {
+  background-color: var(--md-surface-container);
+  border-top: none;
+  box-shadow: none;
+  min-height: 80px;
+  padding: 0;
+}
+viewswitcher button.toggle {
+  background: none;
+  border-radius: 0;
+  padding: 12px 0 14px;
+  min-width: 64px;
+}
+viewswitcher button.toggle indicatorbin {
+  border-radius: 9999px;
+  padding: 4px 20px;
+  transition: background-color 200ms;
+}
+viewswitcher button.toggle:checked indicatorbin {
+  background-color: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+viewswitcher button.toggle label {
+  font-size: 12px;
+  font-weight: 500;
+  margin-top: 4px;
+  color: var(--md-on-surface-variant);
+}
+viewswitcher button.toggle:checked label {
+  color: var(--md-on-surface);
+  font-weight: 700;
+}
+viewswitcher button.toggle:hover indicatorbin {
+  background-color: alpha(var(--md-on-surface), 0.08);
+}
+viewswitcher button.toggle:checked:hover indicatorbin {
+  background-color: var(--md-secondary-container);
+}
+
+/* Avatare in Material-Tönen */
+avatar {
+  font-weight: 500;
+}
+
+/* -- Wähltastatur --------------------------------------------------------- */
+
+.dial-entry,
+.dial-entry:focus-within {
+  font-size: 34px;
+  font-weight: 400;
+  min-height: 56px;
+  background: none;
+  box-shadow: none;
+  outline-color: transparent;
+}
+
+.dial-key {
+  min-width: 72px;
+  min-height: 64px;
+  padding: 0;
+  border-radius: 9999px;
+  background-color: var(--md-surface-container-high);
+  color: var(--md-on-surface);
+}
+.dial-key:hover {
+  background-color: var(--md-surface-container-highest);
+}
+.dial-key:active {
+  background-color: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+}
+.dial-key.compact {
+  min-width: 60px;
+  min-height: 52px;
+}
+.dial-key .digit {
+  font-size: 28px;
+  font-weight: 400;
+}
+.dial-key.compact .digit {
+  font-size: 22px;
+}
+.dial-key .letters {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  color: var(--md-on-surface-variant);
+}
+
+.match-button {
+  font-weight: 500;
+  color: var(--md-primary);
+  border-radius: 9999px;
+}
+
+/* Anrufen: großer grüner FAB (abgerundetes Quadrat), Auflegen: rote Pill */
+.round-action {
+  min-width: 72px;
+  min-height: 72px;
+  padding: 0;
+  -gtk-icon-size: 28px;
+  box-shadow: 0 1px 3px alpha(black, 0.3), 0 4px 8px 3px alpha(black, 0.15);
+}
+.round-action.call {
+  border-radius: 24px;
+  min-width: 96px;
+  background-color: var(--md-call-container);
+  color: var(--md-on-call-container);
+}
+.round-action.call:hover {
+  background-image: linear-gradient(alpha(var(--md-on-call-container), 0.08),
+                                    alpha(var(--md-on-call-container), 0.08));
+}
+.round-action.hangup {
+  border-radius: 9999px;
+  min-width: 96px;
+  background-color: var(--md-hangup);
+  color: var(--md-on-hangup);
+}
+.round-action.hangup:hover {
+  background-image: linear-gradient(alpha(var(--md-on-hangup), 0.1), alpha(var(--md-on-hangup), 0.1));
+}
+
+.row-call {
+  color: var(--md-call);
+}
+
+/* -- Gesprächsansicht ------------------------------------------------------ */
+
+.call-toggle {
+  border-radius: 9999px;
+  min-width: 64px;
+  min-height: 64px;
+  padding: 0;
+  -gtk-icon-size: 24px;
+  background-color: var(--md-surface-container-highest);
+  color: var(--md-on-surface);
+  transition: border-radius 200ms, background-color 200ms;
 }
 .call-toggle:checked {
-  background-color: var(--accent-bg-color);
-  color: var(--accent-fg-color);
+  border-radius: 20px;
+  background-color: var(--md-primary);
+  color: var(--md-on-primary);
 }
 .call-status {
-  font-size: 15px;
-  opacity: 0.8;
+  font-size: 16px;
+  color: var(--md-on-surface-variant);
 }
 .dtmf-digits {
-  font-size: 22px;
-  min-height: 30px;
+  font-size: 24px;
+  min-height: 32px;
   letter-spacing: 2px;
 }
 
-/* Registrierungsstatus */
+/* -- Registrierungsstatus ---------------------------------------------------- */
+
 .status-dot {
   min-width: 10px;
   min-height: 10px;
   border-radius: 9999px;
-  margin: 0 6px;
-  background-color: #9a9996;
+  margin: 0 8px;
+  background-color: var(--md-outline);
 }
 .status-dot.ok {
   background-color: #2ec27e;
@@ -105,16 +267,17 @@
   background-color: #e5a50a;
 }
 .status-dot.error {
-  background-color: #e01b24;
+  background-color: var(--md-error);
 }
 
-/* Pop-up für eingehende Anrufe */
+/* -- Pop-up für eingehende Anrufe ------------------------------------------- */
+
 @keyframes ring-pulse {
   from {
-    box-shadow: 0 0 0 0 alpha(#2ec27e, 0.55);
+    box-shadow: 0 0 0 0 alpha(var(--md-primary), 0.5);
   }
   to {
-    box-shadow: 0 0 0 26px alpha(#2ec27e, 0);
+    box-shadow: 0 0 0 28px alpha(var(--md-primary), 0);
   }
 }
 .ringing {
@@ -122,7 +285,92 @@
   animation: ring-pulse 1.3s ease-out infinite;
 }
 
-.dial-entry,
-.dial-entry:focus-within {
-  outline-color: transparent;
+/* -- Kalender ------------------------------------------------------------- */
+
+.month-view {
+  background-color: var(--md-surface-container-low);
+  border-radius: 28px;
+  padding: 12px 12px 16px;
+}
+.month-title {
+  font-size: 22px;
+  font-weight: 400;
+  margin-left: 8px;
+}
+.weekday {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--md-on-surface-variant);
+  margin: 6px 0 2px;
+}
+button.day {
+  min-height: 44px;
+  padding: 2px 0;
+  border-radius: 9999px;
+  background: none;
+}
+button.day:hover {
+  background-color: alpha(var(--md-on-surface), 0.08);
+}
+button.day .day-number {
+  font-size: 14px;
+  min-width: 32px;
+  min-height: 28px;
+  border-radius: 9999px;
+}
+button.day.other-month .day-number {
+  color: alpha(var(--md-on-surface), 0.38);
+}
+button.day.today .day-number {
+  color: var(--md-primary);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px var(--md-primary);
+}
+button.day.selected .day-number {
+  background-color: var(--md-primary);
+  color: var(--md-on-primary);
+  box-shadow: none;
+}
+button.day.selected {
+  background: none;
+}
+.dots {
+  min-height: 5px;
+}
+.event-dot {
+  min-width: 5px;
+  min-height: 5px;
+  border-radius: 9999px;
+}
+.day-title {
+  font-size: 16px;
+  font-weight: 500;
+}
+.cal-bar {
+  min-width: 4px;
+  min-height: 36px;
+  border-radius: 9999px;
+}
+.cal-dot {
+  min-width: 12px;
+  min-height: 12px;
+  border-radius: 9999px;
+}
+textview.notes,
+textview.notes > text {
+  background: none;
+}
+.error-row .subtitle {
+  color: var(--md-error);
+}
+button.tonal-small {
+  padding: 6px 16px 6px 12px;
+  background-color: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+entry.time-entry {
+  border-radius: 8px;
+  min-height: 40px;
+  background-color: var(--md-surface-container-highest);
+  font-size: 15px;
 }
