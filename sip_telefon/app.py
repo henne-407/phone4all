@@ -10,6 +10,8 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 from . import APP_ID, VERSION
 from .baresip import Baresip, account_line
 from .calendars import CalendarManager
+from .contact_import import parse_file
+from .contact_sync import ContactSync
 from .calls import Call
 from .incoming import IncomingCallWindow
 from .preferences import PreferencesDialog
@@ -51,6 +53,7 @@ class App(Adw.Application):
 
         self.store = Store()
         self.calendar = CalendarManager(self.store)
+        self.contact_sync = ContactSync(self.store, self.calendar.run)
         self.reminded = set()
         self.upcoming = []
         self.engine = Baresip(RUNTIME_DIR, os.path.join(STATE_DIR, "baresip.log"))
@@ -68,6 +71,9 @@ class App(Adw.Application):
             ("decline", lambda _a, p: self.hangup(p.get_string()), "s"),
             ("call-back", lambda _a, p: self.dial(p.get_string()), "s"),
             ("show-calendar", lambda *_: self.show_page("calendar"), None),
+            ("import-contacts", lambda *_: self.import_contacts(), None),
+            ("sync-contacts", lambda *_: self.sync_contacts(manual=True), None),
+            ("addressbooks", lambda *_: self.show_preferences("contacts"), None),
         ]:
             action = Gio.SimpleAction.new(name, GLib.VariantType.new(ptype) if ptype else None)
             action.connect("activate", handler)
@@ -80,6 +86,8 @@ class App(Adw.Application):
         self.calendar.connect("calendars-changed", lambda *_: self._refresh_upcoming())
         self.calendar.connect("events-changed", lambda *_: self._refresh_upcoming())
         self.calendar.reload()
+        self.contact_sync.connect("synced", lambda *_: self._on_contacts_synced())
+        self.contact_sync.sync()
         GLib.timeout_add_seconds(30, self._check_reminders)
         GLib.timeout_add_seconds(600, lambda: (self._refresh_upcoming(), True)[1])
         self.hold()  # auch ohne sichtbares Fenster erreichbar bleiben
@@ -356,6 +364,65 @@ class App(Adw.Application):
     def show_page(self, name):
         self.window.views.set_visible_child_name(name)
         self.window.present()
+
+    # -- Kontakte ----------------------------------------------------------
+
+    def import_contacts(self):
+        dialog = Gtk.FileDialog(title="Kontakte importieren", modal=True)
+        filters = Gio.ListStore.new(Gtk.FileFilter)
+        for name, patterns in (("Kontakte (vCard, CSV)", ["*.vcf", "*.vcard", "*.csv"]),
+                               ("vCard", ["*.vcf", "*.vcard"]), ("CSV", ["*.csv"])):
+            f = Gtk.FileFilter(name=name)
+            for pattern in patterns:
+                f.add_suffix(pattern[2:])
+            filters.append(f)
+        dialog.set_filters(filters)
+        self.window.present()
+        dialog.open_multiple(self.window, None, self._on_import_chosen)
+
+    def _on_import_chosen(self, dialog, result):
+        try:
+            files = dialog.open_multiple_finish(result)
+        except GLib.Error:
+            return  # abgebrochen
+        self.import_files([files.get_item(i).get_path() for i in range(files.get_n_items())])
+
+    def import_files(self, paths):
+        imported, skipped, failed = [], 0, []
+        for path in paths:
+            try:
+                contacts, without = parse_file(path)
+            except (OSError, ValueError) as e:
+                failed.append(f"{os.path.basename(path)}: {e}")
+                continue
+            imported += contacts
+            skipped += without
+        if failed:
+            self.window.toast("Import fehlgeschlagen: " + "; ".join(failed))
+        if not imported:
+            if not failed:
+                self.window.toast("Keine Kontakte mit Telefonnummer gefunden")
+            return
+        added, merged, _unchanged = self.store.import_contacts(imported)
+        self.window.contacts_changed()
+        if not added and not merged:
+            self.window.toast("Alle Kontakte waren schon vorhanden")
+        else:
+            parts = [f"{added} neu", f"{merged} ergänzt"] + ([f"{skipped} ohne Nr."] if skipped else [])
+            self.window.toast("Import: " + " · ".join(parts))
+        self.show_page("contacts")
+
+    def sync_contacts(self, manual=False):
+        self.manual_sync = manual
+        self.contact_sync.sync()
+
+    def _on_contacts_synced(self):
+        self.window.contacts_changed()
+        if getattr(self, "manual_sync", False):
+            self.manual_sync = False
+            errors = self.contact_sync.errors
+            n = len(self.store.external)
+            self.window.toast("Adressbuch: " + errors[0] if errors else f"Adressbücher abgeglichen ({n} Kontakte)")
 
     # -- Kalender ----------------------------------------------------------
 

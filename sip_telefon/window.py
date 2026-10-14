@@ -1,6 +1,6 @@
 """Hauptfenster: Wählen, Kontakte, Verlauf und die Ansicht für laufende Anrufe."""
 
-from gi.repository import Adw, Gdk, GLib, Gtk
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from .calendar_page import CalendarPage
 from .calls import format_duration
@@ -156,6 +156,12 @@ class ContactsPage(Gtk.Box):
         self.search.connect("search-changed", lambda *_: self.refresh())
         self.search.connect("activate", self._call_first)
         bar.append(self.search)
+        menu = Gio.Menu()
+        menu.append("Aus Datei importieren …", "app.import-contacts")
+        menu.append("Adressbücher aktualisieren", "app.sync-contacts")
+        menu.append("Adressbücher verwalten …", "app.addressbooks")
+        bar.append(Gtk.MenuButton(icon_name="view-more-symbolic", menu_model=menu, valign=Gtk.Align.CENTER,
+                                  tooltip_text="Importieren und Adressbücher", css_classes=["flat", "circular"]))
         self.append(clamp)
 
         self.listbox = Gtk.ListBox(css_classes=["boxed-list"], selection_mode=Gtk.SelectionMode.NONE,
@@ -167,12 +173,16 @@ class ContactsPage(Gtk.Box):
         empty = Adw.StatusPage(
             icon_name="x-office-address-book-symbolic",
             title="Noch keine Kontakte",
-            description="Lege Kontakte an, um sie mit einem Klick anzurufen und eingehende Anrufer zu erkennen.",
+            description="Lege Kontakte an, importiere sie aus einer Datei (vCard, CSV) oder verbinde ein "
+                        "Adressbuch, um Anrufer zu erkennen und mit einem Klick anzurufen.",
         )
-        empty_btn = Gtk.Button(label="Kontakt anlegen", css_classes=["pill", "suggested-action"],
-                               halign=Gtk.Align.CENTER)
-        empty_btn.connect("clicked", lambda *_: self.edit({}))
-        empty.set_child(empty_btn)
+        empty_buttons = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, halign=Gtk.Align.CENTER)
+        for text, css, action in (("Kontakt anlegen", "suggested-action", lambda *_: self.edit({})),
+                                  ("Aus Datei importieren", "pill", lambda *_: self.app.import_contacts())):
+            b = Gtk.Button(label=text, css_classes=["pill", css])
+            b.connect("clicked", action)
+            empty_buttons.append(b)
+        empty.set_child(empty_buttons)
         self.stack.add_named(empty, "empty")
         self.stack.add_named(
             Adw.StatusPage(icon_name="system-search-symbolic", title="Keine Treffer"), "nomatch"
@@ -189,13 +199,17 @@ class ContactsPage(Gtk.Box):
         if contacts:
             self.stack.set_visible_child_name("list")
         else:
-            self.stack.set_visible_child_name("nomatch" if self.app.store.contacts else "empty")
+            has_any = self.app.store.contacts or self.app.store.external
+            self.stack.set_visible_child_name("nomatch" if has_any else "empty")
 
     def _row(self, c):
         numbers = [(k, c[k]) for k in ("phone", "mobile") if c.get(k)]
+        numbers += [("other", n) for n in c.get("other", [])]
         subtitle = " · ".join(n for _, n in numbers)
         if c.get("company"):
             subtitle = f"{c['company']} — {subtitle}"
+        if c.get("source"):
+            subtitle = f"{c['source']} — {subtitle}"
         row = Adw.ActionRow(title=c["name"], subtitle=subtitle, activatable=True,
                             use_markup=False, title_lines=1, subtitle_lines=1)
         row.add_prefix(Adw.Avatar(size=40, text=c["name"], show_initials=True))
@@ -210,22 +224,25 @@ class ContactsPage(Gtk.Box):
             pop = Gtk.Popover(child=box)
             for key, number in numbers:
                 item = Gtk.Button(css_classes=["flat"])
-                item.set_child(Gtk.Label(label=f"{'Telefon' if key == 'phone' else 'Mobil'}:  {number}",
-                                         xalign=0))
+                kind = {"phone": "Telefon", "mobile": "Mobil"}.get(key, "Weitere")
+                item.set_child(Gtk.Label(label=f"{kind}:  {number}", xalign=0))
                 item.connect("clicked", lambda _b, n=number: (pop.popdown(), self.app.dial(n)))
                 box.append(item)
             btn = Gtk.MenuButton(icon_name="call-start-symbolic", popover=pop, tooltip_text="Anrufen",
                                  valign=Gtk.Align.CENTER, css_classes=["flat", "circular", "row-call"])
+        if c.get("readonly"):
+            row.add_suffix(Gtk.Image(icon_name="x-office-address-book-symbolic", css_classes=["dim-label"],
+                                     tooltip_text=f"Aus Adressbuch: {c.get('source', '')}"))
         row.add_suffix(btn)
         return row
 
     def _call_first(self, *_):
         if self.visible_contacts:
             c = self.visible_contacts[0]
-            self.app.dial(c.get("phone") or c.get("mobile"))
+            self.app.dial(c.get("phone") or c.get("mobile") or (c.get("other") or [""])[0])
 
     def edit(self, contact):
-        dialog = ContactDialog(contact, self._save, self._delete)
+        dialog = ContactDialog(contact, self._save, self._delete, on_call=self.app.dial)
         dialog.present(self.window)
 
     def _save(self, contact):

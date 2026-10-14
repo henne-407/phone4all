@@ -71,22 +71,24 @@ def label(text, *css, **kwargs):
 
 
 class ContactDialog(Adw.Dialog):
-    """Kontakt anlegen oder bearbeiten."""
+    """Kontakt anlegen oder bearbeiten; Kontakte aus Adressbüchern nur ansehen."""
 
-    def __init__(self, contact, on_save, on_delete=None):
-        super().__init__(content_width=420, content_height=520)
+    def __init__(self, contact, on_save, on_delete=None, on_call=None):
+        super().__init__(content_width=420, content_height=560)
         self.contact = dict(contact or {})
         self.on_save = on_save
+        readonly = bool(self.contact.get("readonly"))
         is_new = not self.contact.get("id")
-        self.set_title("Neuer Kontakt" if is_new else "Kontakt bearbeiten")
+        self.set_title("Kontakt" if readonly else ("Neuer Kontakt" if is_new else "Kontakt bearbeiten"))
 
-        header = Adw.HeaderBar(show_end_title_buttons=False, show_start_title_buttons=False)
-        cancel = Gtk.Button(label="Abbrechen")
-        cancel.connect("clicked", lambda *_: self.close())
-        header.pack_start(cancel)
+        header = Adw.HeaderBar(show_end_title_buttons=readonly, show_start_title_buttons=False)
         self.save_button = Gtk.Button(label="Speichern", css_classes=["suggested-action"])
-        self.save_button.connect("clicked", self._save)
-        header.pack_end(self.save_button)
+        if not readonly:
+            cancel = Gtk.Button(label="Abbrechen")
+            cancel.connect("clicked", lambda *_: self.close())
+            header.pack_start(cancel)
+            self.save_button.connect("clicked", self._save)
+            header.pack_end(self.save_button)
 
         page = Adw.PreferencesPage()
         avatar_group = Adw.PreferencesGroup()
@@ -95,23 +97,49 @@ class ContactDialog(Adw.Dialog):
         avatar_group.add(self.avatar)
         page.add(avatar_group)
 
+        if readonly:
+            info = Adw.PreferencesGroup()
+            info.add(Adw.ActionRow(title=f"Aus Adressbuch: {self.contact.get('source', '')}",
+                                   subtitle="Änderungen bitte im Adressbuch vornehmen",
+                                   icon_name="x-office-address-book-symbolic", use_markup=False))
+            page.add(info)
+            calls = Adw.PreferencesGroup(title="Anrufen")
+            for number in [n for n in [self.contact.get("phone"), self.contact.get("mobile"),
+                                       *self.contact.get("other", [])] if n]:
+                row = Adw.ActionRow(title=number, activatable=True, use_markup=False)
+                row.add_prefix(Gtk.Image(icon_name="call-start-symbolic", css_classes=["row-call"]))
+                row.connect("activated", lambda _r, n=number: (self.close(), on_call and on_call(n)))
+                calls.add(row)
+            page.add(calls)
+
         group = Adw.PreferencesGroup()
         self.rows = {}
         for key, title, purpose in [
             ("name", "Name", Gtk.InputPurpose.NAME),
             ("phone", "Telefon", Gtk.InputPurpose.PHONE),
             ("mobile", "Mobil", Gtk.InputPurpose.PHONE),
+            ("other", "Weitere Nummern (durch Komma getrennt)", Gtk.InputPurpose.PHONE),
             ("company", "Firma", Gtk.InputPurpose.FREE_FORM),
         ]:
             row = Adw.EntryRow(title=title, input_purpose=purpose)
-            row.set_text(self.contact.get(key, ""))
+            value = self.contact.get(key, "")
+            row.set_text(", ".join(value) if isinstance(value, list) else value)
             row.connect("changed", self._validate)
             row.connect("entry-activated", self._save)
             group.add(row)
             self.rows[key] = row
-        page.add(group)
+        group.set_sensitive(not readonly)
+        if not readonly:
+            page.add(group)
 
-        if not is_new and on_delete:
+        if readonly:
+            copy_group = Adw.PreferencesGroup()
+            copy = Gtk.Button(label="Als eigenen Kontakt übernehmen", css_classes=["pill"],
+                              halign=Gtk.Align.CENTER)
+            copy.connect("clicked", self._copy)
+            copy_group.add(copy)
+            page.add(copy_group)
+        elif not is_new and on_delete:
             del_group = Adw.PreferencesGroup()
             delete = Gtk.Button(label="Kontakt löschen", css_classes=["destructive-action", "pill"],
                                 halign=Gtk.Align.CENTER)
@@ -122,19 +150,29 @@ class ContactDialog(Adw.Dialog):
         view = Adw.ToolbarView(content=page)
         view.add_top_bar(header)
         self.set_child(view)
-        self._validate()
-        self.set_focus(self.rows["name"])
+        if not readonly:
+            self._validate()
+            self.set_focus(self.rows["name"])
 
     def _validate(self, *_):
         name = self.rows["name"].get_text().strip()
         self.avatar.set_text(name)
-        has_number = any(self.rows[k].get_text().strip() for k in ("phone", "mobile"))
+        has_number = any(self.rows[k].get_text().strip() for k in ("phone", "mobile", "other"))
         self.save_button.set_sensitive(bool(name and has_number))
+
+    def _values(self):
+        values = {key: row.get_text().strip() for key, row in self.rows.items()}
+        values["other"] = [n.strip() for n in values["other"].split(",") if n.strip()]
+        return values
 
     def _save(self, *_):
         if not self.save_button.get_sensitive():
             return
-        for key, row in self.rows.items():
-            self.contact[key] = row.get_text().strip()
+        self.contact.update(self._values())
         self.on_save(self.contact)
+        self.close()
+
+    def _copy(self, *_):
+        contact = {k: v for k, v in self.contact.items() if k not in ("id", "source", "readonly")}
+        self.on_save(contact)
         self.close()

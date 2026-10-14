@@ -7,6 +7,7 @@ from gi.repository import Adw, Gio, Gtk
 
 from .calendar_page import color_class
 from .calendars import CalDavBackend
+from .contact_sync import CardDavBackend
 
 TRANSPORTS = [("udp", "UDP"), ("tcp", "TCP"), ("tls", "TLS")]
 MEDIAENC = [("", "Keine"), ("srtp", "SRTP (wenn möglich)"), ("srtp-mand", "SRTP (erzwingen)"),
@@ -87,7 +88,9 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self.regint.set_value(int(acc.get("regint") or 600))
         expander.add_row(self.regint)
 
+        self.account_groups = {}
         self._build_calendar_page()
+        self._build_contacts_page()
 
         general = Adw.PreferencesPage(title="Allgemein", icon_name="emblem-system-symbolic", name="general")
         self.add(general)
@@ -149,14 +152,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
                 ["gnome-control-center", "online-accounts"], Gio.SubprocessFlags.NONE))
             goa.add(row)
 
-        self.caldav_group = Adw.PreferencesGroup(title="CalDAV-Konten")
-        add = Gtk.Button(icon_name="list-add-symbolic", tooltip_text="CalDAV-Konto hinzufügen",
-                         css_classes=["flat"], valign=Gtk.Align.CENTER)
-        add.connect("clicked", lambda *_: self._add_caldav())
-        self.caldav_group.set_header_suffix(add)
-        page.add(self.caldav_group)
-        self.caldav_rows = []
-        self._fill_caldav()
+        page.add(self._account_group("caldav"))
 
         rem = Adw.PreferencesGroup(title="Erinnerungen")
         page.add(rem)
@@ -165,6 +161,77 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self.reminder.set_subtitle("Benachrichtigung mit Anrufknopf, wenn der Termin eine Nummer enthält. 0 = aus")
         self.reminder.set_value(settings.get("reminder_minutes", 10))
         rem.add(self.reminder)
+
+    # -- Kontakte ----------------------------------------------------------
+
+    def _build_contacts_page(self):
+        sync = self.app.contact_sync
+        page = Adw.PreferencesPage(title="Kontakte", icon_name="x-office-address-book-symbolic", name="contacts")
+        self.add(page)
+
+        imp = Adw.PreferencesGroup(title="Import",
+                                   description="Vorhandene Kontakte werden ergänzt (gleiche Nummer oder gleicher "
+                                               "Name), nichts wird überschrieben.")
+        row = Adw.ActionRow(title="Aus Datei importieren", subtitle="vCard (.vcf) oder CSV, z. B. Export aus "
+                            "Google Kontakte, iCloud, Outlook oder Thunderbird", activatable=True)
+        row.add_suffix(Gtk.Image(icon_name="document-open-symbolic"))
+        row.connect("activated", lambda *_: (self.close(), self.app.import_contacts()))
+        imp.add(row)
+        page.add(imp)
+
+        self.book_group = Adw.PreferencesGroup(
+            title="Adressbücher",
+            description="Kontakte aus Adressbüchern werden alle 30 Minuten abgeglichen, erscheinen in der "
+                        "Kontaktliste und dienen zur Anrufererkennung. Bearbeitet werden sie im Adressbuch.")
+        refresh = Gtk.Button(icon_name="view-refresh-symbolic", tooltip_text="Jetzt abgleichen",
+                             css_classes=["flat"], valign=Gtk.Align.CENTER)
+        refresh.connect("clicked", lambda *_: sync.sync())
+        self.book_group.set_header_suffix(refresh)
+        page.add(self.book_group)
+        self.book_rows = []
+        self._fill_books()
+        self.sync_handler = sync.connect("synced", lambda *_: self._fill_books())
+
+        goa = Adw.PreferencesGroup(title="GNOME Online-Konten")
+        use_eds = Adw.SwitchRow(title="Adressbücher aus GNOME Online-Konten verwenden",
+                                subtitle="Google, Microsoft 365, Nextcloud u. a. sowie GNOME Kontakte",
+                                active=sync.settings.get("use_eds", True))
+        use_eds.set_sensitive(sync.eds is not None)
+        use_eds.connect("notify::active", self._on_books_use_eds)
+        goa.add(use_eds)
+        page.add(goa)
+
+        page.add(self._account_group("carddav"))
+
+    def _fill_books(self):
+        sync = self.app.contact_sync
+        for row in self.book_rows:
+            self.book_group.remove(row)
+        self.book_rows = []
+        counts = {}
+        for c in self.app.store.external:
+            book_id = c["id"].split("#", 1)[0]
+            counts[book_id] = counts.get(book_id, 0) + 1
+        if sync.syncing and not sync.books:
+            self.book_rows.append(Adw.ActionRow(title="Adressbücher werden abgeglichen …"))
+        elif not sync.books:
+            self.book_rows.append(Adw.ActionRow(title="Keine Adressbücher verbunden"))
+        for book in sync.books:
+            n = counts.get(book.id, 0)
+            row = Adw.SwitchRow(title=book.name, use_markup=False, active=sync.is_enabled(book),
+                                subtitle=f"{book.group} · {n} Kontakt{'e' if n != 1 else ''} mit Nummer")
+            row.connect("notify::active", lambda r, _p, b=book: sync.set_enabled(b, r.get_active()))
+            self.book_rows.append(row)
+        for err in sync.errors:
+            self.book_rows.append(Adw.ActionRow(title="Fehler", subtitle=err, css_classes=["error-row"],
+                                                use_markup=False))
+        for row in self.book_rows:
+            self.book_group.add(row)
+
+    def _on_books_use_eds(self, row, _pspec):
+        self.app.contact_sync.settings["use_eds"] = row.get_active()
+        self.app.store.save_settings()
+        self.app.contact_sync.sync()
 
     def _fill_calendars(self):
         manager = self.app.calendar
@@ -207,42 +274,51 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self.app.store.save_settings()
         self.app.calendar.reload()
 
-    def _fill_caldav(self):
-        for row in self.caldav_rows:
-            self.caldav_group.remove(row)
-        self.caldav_rows = []
-        accounts = self.app.calendar.settings.get("caldav", [])
+    def _fill_accounts(self, kind):
+        info = ACCOUNT_KINDS[kind]
+        group, rows = self.account_groups[kind]
+        for row in rows:
+            group.remove(row)
+        rows.clear()
+        accounts = _account_list(self.app.store, kind)
         if not accounts:
-            empty = Adw.ActionRow(title="CalDAV-Konto hinzufügen", subtitle="Nextcloud, iCloud, mailbox.org, Radicale …",
-                                  activatable=True)
+            empty = Adw.ActionRow(title=f"{info['title']} hinzufügen", subtitle=info["hint"], activatable=True)
             empty.add_suffix(Gtk.Image(icon_name="go-next-symbolic"))
-            empty.connect("activated", lambda *_: self._add_caldav())
-            accounts_rows = [empty]
-        else:
-            accounts_rows = []
-            for conf in accounts:
-                row = Adw.ActionRow(title=conf.get("name") or conf["url"], use_markup=False,
-                                    subtitle=f"{conf['user']} · {conf['url']}")
-                delete = Gtk.Button(icon_name="user-trash-symbolic", tooltip_text="Konto entfernen",
-                                    valign=Gtk.Align.CENTER, css_classes=["flat", "circular"])
-                delete.connect("clicked", lambda _b, c=conf: self._remove_caldav(c))
-                row.add_suffix(delete)
-                accounts_rows.append(row)
-        for row in accounts_rows:
-            self.caldav_group.add(row)
-            self.caldav_rows.append(row)
+            empty.connect("activated", lambda *_: self._add_account(kind))
+            rows.append(empty)
+        for conf in accounts:
+            row = Adw.ActionRow(title=conf.get("name") or conf["url"], use_markup=False,
+                                subtitle=f"{conf['user']} · {conf['url']}")
+            delete = Gtk.Button(icon_name="user-trash-symbolic", tooltip_text="Konto entfernen",
+                                valign=Gtk.Align.CENTER, css_classes=["flat", "circular"])
+            delete.connect("clicked", lambda _b, c=conf: self._remove_account(kind, c))
+            row.add_suffix(delete)
+            rows.append(row)
+        for row in rows:
+            group.add(row)
 
-    def _remove_caldav(self, conf):
-        settings = self.app.calendar.settings
-        settings["caldav"] = [c for c in settings.get("caldav", []) if c["id"] != conf["id"]]
-        self.app.store.delete_secret(f"caldav:{conf['id']}")
+    def _account_group(self, kind):
+        info = ACCOUNT_KINDS[kind]
+        group = Adw.PreferencesGroup(title=info["group"])
+        add = Gtk.Button(icon_name="list-add-symbolic", tooltip_text=f"{info['title']} hinzufügen",
+                         css_classes=["flat"], valign=Gtk.Align.CENTER)
+        add.connect("clicked", lambda *_: self._add_account(kind))
+        group.set_header_suffix(add)
+        self.account_groups[kind] = (group, [])
+        self._fill_accounts(kind)
+        return group
+
+    def _remove_account(self, kind, conf):
+        section, key = ACCOUNT_KINDS[kind]["settings"]
+        settings = self.app.store.settings[section]
+        settings[key] = [c for c in settings.get(key, []) if c["id"] != conf["id"]]
+        self.app.store.delete_secret(f"{kind}:{conf['id']}")
         self.app.store.save_settings()
-        self._fill_caldav()
-        self.app.calendar.reload()
+        self._fill_accounts(kind)
+        ACCOUNT_KINDS[kind]["after"](self.app)
 
-    def _add_caldav(self):
-        page = CalDavAccountPage(self)
-        self.push_subpage(page)
+    def _add_account(self, kind):
+        self.push_subpage(DavAccountPage(self, kind))
 
     def _check_password(self, *_):
         if ";" in self.password.get_text():
@@ -263,6 +339,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
         acc["local_port"] = int(self.local_port.get_value())
         acc["regint"] = int(self.regint.get_value())
         self.app.calendar.disconnect(self.cal_handler)
+        self.app.contact_sync.disconnect(self.sync_handler)
         store.settings["calendar"]["reminder_minutes"] = int(self.reminder.get_value())
         store.settings["run_in_background"] = self.background.get_active()
         store.settings["autostart"] = self.autostart.get_active()
@@ -278,22 +355,69 @@ class PreferencesDialog(Adw.PreferencesDialog):
             self.app.restart_engine()
 
 
-class CalDavAccountPage(Adw.NavigationPage):
-    """Unterseite zum Hinzufügen eines CalDAV-Kontos inkl. Verbindungstest."""
+def _account_list(store, kind):
+    section, key = ACCOUNT_KINDS[kind]["settings"]
+    return store.settings[section].setdefault(key, [])
 
-    def __init__(self, dialog):
-        super().__init__(title="CalDAV-Konto")
+
+ACCOUNT_KINDS = {
+    "caldav": {
+        "title": "CalDAV-Konto",
+        "group": "CalDAV-Konten",
+        "hint": "Nextcloud, iCloud, mailbox.org, Radicale …",
+        "settings": ("calendar", "caldav"),
+        "backend": CalDavBackend,
+        "discover": lambda b: b.discover(),
+        "found": "{} Kalender gefunden",
+        "after": lambda app: app.calendar.reload(),
+        "examples": "Beispiele:\n"
+                    "• Nextcloud: https://cloud.example.de/remote.php/dav\n"
+                    "• iCloud: https://caldav.icloud.com (app-spezifisches Passwort)\n"
+                    "• mailbox.org: https://dav.mailbox.org\n"
+                    "Google-Kalender bitte über GNOME Online-Konten einbinden.",
+    },
+    "carddav": {
+        "title": "CardDAV-Konto",
+        "group": "CardDAV-Konten",
+        "hint": "Nextcloud, iCloud, mailbox.org, Radicale …",
+        "settings": ("addressbooks", "carddav"),
+        "backend": CardDavBackend,
+        "discover": lambda b: b.list_books(),
+        "found": "{} Adressbücher gefunden",
+        "after": lambda app: app.contact_sync.sync(),
+        "examples": "Beispiele:\n"
+                    "• Nextcloud: https://cloud.example.de/remote.php/dav\n"
+                    "• iCloud: https://contacts.icloud.com (app-spezifisches Passwort)\n"
+                    "• mailbox.org: https://dav.mailbox.org\n"
+                    "Google Kontakte bitte über GNOME Online-Konten einbinden.",
+    },
+}
+
+
+class DavAccountPage(Adw.NavigationPage):
+    """Unterseite zum Hinzufügen eines CalDAV-/CardDAV-Kontos inkl. Verbindungstest."""
+
+    def __init__(self, dialog, kind):
+        self.info = ACCOUNT_KINDS[kind]
+        super().__init__(title=self.info["title"])
+        self.kind = kind
         self.dialog = dialog
         self.app = dialog.app
 
         page = Adw.PreferencesPage()
-        group = Adw.PreferencesGroup(
-            description="Beispiele:\n"
-                        "• Nextcloud: https://cloud.example.de/remote.php/dav\n"
-                        "• iCloud: https://caldav.icloud.com (app-spezifisches Passwort)\n"
-                        "• mailbox.org: https://dav.mailbox.org\n"
-                        "Google-Kalender bitte über GNOME Online-Konten einbinden.",
-        )
+        # Zugangsdaten eines vorhandenen Kontos der anderen Art übernehmen (z. B. Nextcloud)
+        other = "caldav" if kind == "carddav" else "carddav"
+        self.templates = list(_account_list(self.app.store, other))
+        if self.templates:
+            reuse = Adw.PreferencesGroup()
+            self.reuse = Adw.ComboRow(
+                title="Zugangsdaten übernehmen von",
+                model=Gtk.StringList.new(["—"] + [c.get("name") or c["url"] for c in self.templates]))
+            self.reuse.connect("notify::selected", self._on_reuse)
+            reuse.add(self.reuse)
+            page.add(reuse)
+
+        group = Adw.PreferencesGroup(description=self.info["examples"])
         self.url = Adw.EntryRow(title="Server-URL", input_purpose=Gtk.InputPurpose.URL)
         self.user = Adw.EntryRow(title="Benutzername")
         self.password = Adw.PasswordEntryRow(title="Passwort")
@@ -320,6 +444,17 @@ class CalDavAccountPage(Adw.NavigationPage):
         self.set_child(view)
         self._validate()
 
+    def _on_reuse(self, row, _pspec):
+        index = row.get_selected() - 1
+        if index < 0:
+            return
+        other = "caldav" if self.kind == "carddav" else "carddav"
+        conf = self.templates[index]
+        self.url.set_text(conf["url"])
+        self.user.set_text(conf["user"])
+        self.name.set_text(conf.get("name", ""))
+        self.password.set_text(self.app.store.get_secret(f"{other}:{conf['id']}"))
+
     def _validate(self, *_):
         ok = all(r.get_text().strip() for r in (self.url, self.user, self.password))
         self.button.set_sensitive(ok)
@@ -339,7 +474,7 @@ class CalDavAccountPage(Adw.NavigationPage):
         self.button.set_label("Verbinde …")
         self.status.set_visible(False)
 
-        def done(calendars, error):
+        def done(found, error):
             self.button.set_label("Verbinden")
             self.button.set_sensitive(True)
             if error:
@@ -347,12 +482,15 @@ class CalDavAccountPage(Adw.NavigationPage):
                 self.status.set_visible(True)
                 return
             store = self.app.store
-            store.settings["calendar"].setdefault("caldav", []).append(conf)
-            store.set_secret(f"caldav:{conf['id']}", password, f"SIP-Telefon CalDAV {conf['user']}")
+            _account_list(store, self.kind).append(conf)
+            store.set_secret(f"{self.kind}:{conf['id']}", password,
+                             f"SIP-Telefon {self.info['title']} {conf['user']}")
             store.save_settings()
-            self.dialog._fill_caldav()
-            self.app.calendar.reload()
+            self.dialog._fill_accounts(self.kind)
+            self.info["after"](self.app)
             self.dialog.pop_subpage()
-            self.dialog.add_toast(Adw.Toast(title=f"{len(calendars)} Kalender gefunden", timeout=3))
+            self.dialog.add_toast(Adw.Toast(title=self.info["found"].format(len(found)), timeout=3))
 
-        self.app.calendar.run(lambda: CalDavBackend(conf, password).discover(), done)
+        backend = self.info["backend"]
+        discover = self.info["discover"]
+        self.app.calendar.run(lambda: discover(backend(conf, password)), done)

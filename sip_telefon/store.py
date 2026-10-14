@@ -47,6 +47,11 @@ DEFAULT_SETTINGS = {
         "default": "",  # Kalender für neue Termine
         "reminder_minutes": 10,  # 0 = keine Erinnerung
     },
+    "addressbooks": {
+        "use_eds": True,
+        "carddav": [],  # [{"id", "name", "url", "user"}]
+        "disabled": [],  # IDs ausgeblendeter Adressbücher
+    },
     "run_in_background": True,
     "autostart": False,
 }
@@ -97,6 +102,10 @@ def _digits(number):
     return d.lstrip("0")
 
 
+def contact_numbers(c):
+    return [n for n in [c.get("phone", ""), c.get("mobile", ""), *c.get("other", [])] if n]
+
+
 def numbers_match(a, b):
     if not a or not b:
         return False
@@ -126,6 +135,9 @@ class Store:
                 self.settings.setdefault(key, value)
         self.contacts = _load_json(self.contacts_path, [])
         self.history = _load_json(self.history_path, [])
+        # Zwischenspeicher der Adressbuch-Kontakte, damit Anrufer auch offline erkannt werden
+        self.external_path = os.path.join(DATA_DIR, "addressbooks.json")
+        self.external = _load_json(self.external_path, [])
 
     # -- Einstellungen -----------------------------------------------------
 
@@ -207,25 +219,45 @@ class Store:
         self.contacts = [c for c in self.contacts if c["id"] != contact_id]
         self.save_contacts()
 
+    def all_contacts(self):
+        """Eigene Kontakte plus Kontakte aus synchronisierten Adressbüchern (ohne Dubletten)."""
+        local_numbers = [n for c in self.contacts for n in contact_numbers(c)]
+        external = [c for c in self.external
+                    if not any(numbers_match(n, m) for n in contact_numbers(c) for m in local_numbers)]
+        return sorted(self.contacts + external, key=lambda c: c["name"].lower())
+
     def find_contact(self, number):
-        for c in self.contacts:
-            for key in ("phone", "mobile"):
-                if numbers_match(c.get(key, ""), number):
+        for group in (self.contacts, self.external):
+            for c in group:
+                if any(numbers_match(n, number) for n in contact_numbers(c)):
                     return c
         return None
 
     def search_contacts(self, text):
+        contacts = self.all_contacts()
         text = text.strip().lower()
         if not text:
-            return list(self.contacts)
+            return contacts
         digits = re.sub(r"\D", "", text)
         result = []
-        for c in self.contacts:
-            haystack = " ".join([c.get("name", ""), c.get("company", "")]).lower()
-            nums = [re.sub(r"\D", "", c.get(k, "")) for k in ("phone", "mobile")]
+        for c in contacts:
+            haystack = " ".join([c.get("name", ""), c.get("company", ""), c.get("source", "")]).lower()
+            nums = [re.sub(r"\D", "", n) for n in contact_numbers(c)]
             if text in haystack or (digits and any(digits in n for n in nums)):
                 result.append(c)
         return result
+
+    def import_contacts(self, imported):
+        """Fügt importierte Kontakte hinzu bzw. ergänzt vorhandene. Gibt (neu, ergänzt, unverändert) zurück."""
+        from .contact_import import merge_into
+
+        stats = merge_into(self.contacts, imported)
+        self.save_contacts()
+        return stats
+
+    def set_external(self, contacts):
+        self.external = contacts
+        _save_json(self.external_path, contacts, private=True)
 
     # -- Verlauf -----------------------------------------------------------
 

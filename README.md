@@ -36,7 +36,11 @@ Name (z. B. `620`).
 
 - Wähltastatur mit Tastatureingabe, Kontaktvorschlägen und Wahlwiederholung
   (Anruftaste bei leerem Feld holt die letzte Nummer)
-- Kontakte (Name, Telefon, Mobil, Firma) mit Suche; Anrufer werden erkannt
+- Kontakte (Name, Telefon, Mobil, weitere Nummern, Firma) mit Suche; Anrufer werden erkannt
+- Kontakt-Import aus vCard (.vcf) und CSV (Google, iCloud, Outlook, Thunderbird, Android);
+  Dubletten (gleiche Nummer oder gleicher Name) werden ergänzt statt doppelt angelegt
+- Adressbücher aus GNOME Online-Konten und per CardDAV werden alle 30 Minuten abgeglichen
+  (nur lesend) und für Kontaktliste und Anrufererkennung genutzt
 - Pop-up-Fenster und Benachrichtigung mit *Annehmen*/*Ablehnen* bei Anrufen,
   Benachrichtigung bei verpassten Anrufen mit *Zurückrufen*
 - Während des Gesprächs: Stummschalten, Halten, DTMF-Tastatur (auch per Tastatur)
@@ -66,6 +70,14 @@ Menü → **Einstellungen** → **Kalender**:
 Serientermine werden angezeigt, lassen sich aber nur in der Kalender-App des
 Anbieters bearbeiten.
 
+## Kontakte importieren
+
+Kontakte-Tab → ⋮ → **Aus Datei importieren …** (vCard oder CSV, mehrere Dateien
+möglich). Adressbücher verbindest du unter Einstellungen → **Kontakte**; für
+Nextcloud & Co. lassen sich die Zugangsdaten eines vorhandenen Kalenderkontos
+übernehmen. Kontakte aus Adressbüchern sind schreibgeschützt, können aber per
+„Als eigenen Kontakt übernehmen“ kopiert werden.
+
 ## Dateien
 
 | Pfad | Inhalt |
@@ -73,6 +85,7 @@ Anbieters bearbeiten.
 | `~/.config/sip-telefon/settings.json` | Kontoeinstellungen |
 | `~/.local/share/sip-telefon/contacts.json` | Kontakte |
 | `~/.local/share/sip-telefon/history.json` | Anrufverlauf |
+| `~/.local/share/sip-telefon/addressbooks.json` | Zwischenspeicher der Adressbuch-Kontakte |
 | `~/.local/state/sip-telefon/baresip.log` | Log der SIP-Engine (Fehlersuche) |
 | `$XDG_RUNTIME_DIR/sip-telefon/` | generierte baresip-Konfiguration |
 
