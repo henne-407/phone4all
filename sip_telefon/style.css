@@ -1,0 +1,128 @@
+/* Wähltastatur */
+.dial-entry {
+  font-size: 30px;
+  font-weight: 300;
+  min-height: 52px;
+  background: none;
+  box-shadow: none;
+}
+
+.dial-key {
+  min-width: 70px;
+  min-height: 70px;
+  padding: 0;
+  border-radius: 9999px;
+}
+.dial-key.compact {
+  min-width: 60px;
+  min-height: 60px;
+}
+.dial-key .digit {
+  font-size: 26px;
+  font-weight: 400;
+}
+.dial-key.compact .digit {
+  font-size: 21px;
+}
+.dial-key .letters {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  opacity: 0.55;
+}
+
+.match-button {
+  font-weight: 600;
+  color: var(--accent-color);
+}
+
+/* Runde Anruf-Buttons */
+.round-action {
+  border-radius: 9999px;
+  min-width: 68px;
+  min-height: 68px;
+  padding: 0;
+  color: white;
+  -gtk-icon-size: 26px;
+}
+.round-action.call {
+  background-color: #2ec27e;
+}
+.round-action.call:hover {
+  background-color: #33d17a;
+}
+.round-action.call:active {
+  background-color: #26a269;
+}
+.round-action.hangup {
+  background-color: #e01b24;
+}
+.round-action.hangup:hover {
+  background-color: #f03c43;
+}
+.round-action.hangup:active {
+  background-color: #c01c28;
+}
+
+.row-call {
+  color: #26a269;
+}
+
+/* Anrufansicht */
+.call-toggle {
+  border-radius: 9999px;
+  min-width: 56px;
+  min-height: 56px;
+  padding: 0;
+  -gtk-icon-size: 22px;
+}
+.call-toggle:checked {
+  background-color: var(--accent-bg-color);
+  color: var(--accent-fg-color);
+}
+.call-status {
+  font-size: 15px;
+  opacity: 0.8;
+}
+.dtmf-digits {
+  font-size: 22px;
+  min-height: 30px;
+  letter-spacing: 2px;
+}
+
+/* Registrierungsstatus */
+.status-dot {
+  min-width: 10px;
+  min-height: 10px;
+  border-radius: 9999px;
+  margin: 0 6px;
+  background-color: #9a9996;
+}
+.status-dot.ok {
+  background-color: #2ec27e;
+}
+.status-dot.busy {
+  background-color: #e5a50a;
+}
+.status-dot.error {
+  background-color: #e01b24;
+}
+
+/* Pop-up für eingehende Anrufe */
+@keyframes ring-pulse {
+  from {
+    box-shadow: 0 0 0 0 alpha(#2ec27e, 0.55);
+  }
+  to {
+    box-shadow: 0 0 0 26px alpha(#2ec27e, 0);
+  }
+}
+.ringing {
+  border-radius: 9999px;
+  animation: ring-pulse 1.3s ease-out infinite;
+}
+
+.dial-entry,
+.dial-entry:focus-within {
+  outline-color: transparent;
+}
