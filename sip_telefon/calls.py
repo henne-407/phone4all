@@ -17,6 +17,10 @@ class Call:
         self.held = False
         self.remote_held = False
         self.reason = ""
+        self.mini = False  # Gespräch wird im kleinen Anruffenster geführt
+        self.declined = False
+        self.pending_transfer = None  # Ziel, sobald der angenommene Anruf steht
+        self.transferred_to = None
 
     @property
     def title(self):

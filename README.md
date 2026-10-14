@@ -34,6 +34,12 @@ Name (z. B. `620`).
 
 ## Funktionen
 
+- Anrufe komplett im kleinen Pop-up-Fenster führen, ohne das Hauptfenster zu öffnen:
+  annehmen/ablehnen, „Stumm klingeln“, stummschalten, halten, Tastentöne, weiterleiten,
+  auflegen (abschaltbar unter Einstellungen → Allgemein)
+- Weiterleiten (Blind Transfer) auch direkt beim Klingeln, mit Kontaktvorschlägen
+- Farbthemen (Violett, Blau, Türkis, Grün, Senf, Orange, Koralle, Pink, Graphit oder die
+  Akzentfarbe des Systems) und Hell/Dunkel/System, Kontrast nach WCAG AA geprüft
 - Funktionsleiste: Anmeldestatus (neu anmelden, ab-/anmelden, Konto), „Nicht stören“,
   Mikrofon mit Pegelanzeige, Lautsprecher mit Testton und separates Gerät zum Klingeln –
   Umschalten wirkt sofort, auch im laufenden Gespräch

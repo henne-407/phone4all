@@ -6,6 +6,7 @@ import uuid
 from gi.repository import Adw, Gio, Gtk
 
 from .calendar_page import color_class
+from .themes import SCHEMES, THEMES, swatch
 from .calendars import CalDavBackend
 from .contact_sync import CardDavBackend
 from .sql_source import MsSqlSource
@@ -95,6 +96,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
         general = Adw.PreferencesPage(title="Allgemein", icon_name="emblem-system-symbolic", name="general")
         self.add(general)
+        general.add(self._appearance_group())
         behaviour = Adw.PreferencesGroup(title="Verhalten")
         general.add(behaviour)
         self.background = Adw.SwitchRow(
@@ -119,6 +121,61 @@ class PreferencesDialog(Adw.PreferencesDialog):
         ))
 
         self.connect("closed", self._on_closed)
+
+    # -- Darstellung -------------------------------------------------------
+
+    def _appearance_group(self):
+        appearance = self.app.store.settings.get("appearance", {})
+        group = Adw.PreferencesGroup(title="Darstellung")
+
+        flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True, max_children_per_line=10,
+                           min_children_per_line=5, column_spacing=4, row_spacing=4)
+        flow.set_margin_top(6)
+        flow.set_margin_bottom(6)
+        first = None
+        current = appearance.get("theme", "violet")
+        for key, name, *_ in THEMES:
+            btn = Gtk.ToggleButton(tooltip_text=name, active=key == current, halign=Gtk.Align.CENTER,
+                                   css_classes=["theme-swatch", color_class(swatch(key))])
+            if key == "system":
+                btn.set_child(Gtk.Image(icon_name="preferences-desktop-appearance-symbolic"))
+            if first is None:
+                first = btn
+            else:
+                btn.set_group(first)
+            btn.connect("toggled", lambda b, k=key: b.get_active() and self.app.set_appearance(theme=k))
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            box.append(btn)
+            box.append(Gtk.Label(label=name, css_classes=["caption"]))
+            flow.append(box)
+        theme_row = Adw.PreferencesRow(activatable=False)
+        inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        inner.set_margin_start(12)
+        inner.set_margin_end(12)
+        inner.set_margin_top(10)
+        inner.append(Gtk.Label(label="Farbthema", xalign=0))
+        inner.append(flow)
+        theme_row.set_child(inner)
+        group.add(theme_row)
+
+        keys = [k for k, *_ in SCHEMES]
+        scheme = Adw.ComboRow(title="Hell oder dunkel", model=Gtk.StringList.new([n for _k, n, _s in SCHEMES]))
+        scheme.set_selected(keys.index(appearance.get("scheme", "system")) if appearance.get("scheme") in keys else 0)
+        scheme.connect("notify::selected", lambda r, _p: self.app.set_appearance(scheme=keys[r.get_selected()]))
+        group.add(scheme)
+
+        mini = Adw.SwitchRow(
+            title="Anrufe im Pop-up führen",
+            subtitle="Annehmen, stummschalten, weiterleiten und auflegen im kleinen Anruffenster, "
+                     "ohne das Hauptfenster zu öffnen",
+            active=self.app.store.settings.get("mini_call", True))
+        mini.connect("notify::active", lambda r, _p: self._set("mini_call", r.get_active()))
+        group.add(mini)
+        return group
+
+    def _set(self, key, value):
+        self.app.store.settings[key] = value
+        self.app.store.save_settings()
 
     # -- Kalender ----------------------------------------------------------
 

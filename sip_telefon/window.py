@@ -11,6 +11,7 @@ from .store import contact_numbers, normalize_number, numbers_match
 from .widgets import (
     ContactDialog,
     DialPad,
+    TransferPopover,
     format_time,
     label,
     labeled_toggle,
@@ -645,7 +646,7 @@ class CallView(Gtk.Box):
         self.append(self.dtmf_revealer)
 
         # Steuerelemente während des Gesprächs
-        self.controls = Gtk.Box(spacing=20, halign=Gtk.Align.CENTER)
+        self.controls = Gtk.Box(spacing=14, halign=Gtk.Align.CENTER)
         self.controls.set_margin_top(28)
         box, self.mute = labeled_toggle("microphone-sensitivity-muted-symbolic", "Stumm")
         self.mute_handler = self.mute.connect("toggled", lambda *_: self.app.set_mute(self.mute.get_active()))
@@ -655,6 +656,13 @@ class CallView(Gtk.Box):
         self.controls.append(box)
         box, self.keypad = labeled_toggle("input-dialpad-symbolic", "Tastatur")
         self.keypad.connect("toggled", self._on_keypad_toggled)
+        self.controls.append(box)
+        transfer = Gtk.MenuButton(icon_name="mail-forward-symbolic", css_classes=["call-toggle"],
+                                  halign=Gtk.Align.CENTER, tooltip_text="Weiterleiten")
+        transfer.set_popover(TransferPopover(app, lambda t: self.call and app.transfer(self.call.id, t)))
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.append(transfer)
+        box.append(Gtk.Label(label="Weiterleiten", css_classes=["caption", "dim-label"]))
         self.controls.append(box)
         box, schedule = labeled_toggle("appointment-new-symbolic", "Termin", toggle=False)
         schedule.set_tooltip_text("Rückruf oder Folgetermin planen")

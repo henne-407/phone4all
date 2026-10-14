@@ -184,3 +184,63 @@ class ContactDialog(Adw.Dialog):
         contact["favorite"] = False
         self.on_save(contact)
         self.close()
+
+
+class TransferPopover(Gtk.Popover):
+    """Ziel für eine Weiterleitung wählen: Nummer eintippen oder Kontakt anklicken."""
+
+    def __init__(self, app, on_transfer):
+        super().__init__()
+        self.app = app
+        self.on_transfer = on_transfer
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, css_classes=["bar-popover"])
+        box.set_size_request(300, -1)
+        box.append(Gtk.Label(label="Weiterleiten an", xalign=0, css_classes=["heading", "popover-heading"]))
+        row = Gtk.Box(spacing=6)
+        self.entry = Gtk.Entry(placeholder_text="Nummer oder Name", hexpand=True,
+                               input_purpose=Gtk.InputPurpose.PHONE)
+        self.entry.connect("changed", lambda *_: self._fill())
+        self.entry.connect("activate", lambda *_: self._submit(self.entry.get_text()))
+        row.append(self.entry)
+        go = Gtk.Button(icon_name="mail-forward-symbolic", tooltip_text="Weiterleiten",
+                        css_classes=["suggested-action", "circular"])
+        go.connect("clicked", lambda *_: self._submit(self.entry.get_text()))
+        row.append(go)
+        box.append(row)
+        self.listbox = Gtk.ListBox(css_classes=["boxed-list", "inner-list"], selection_mode=Gtk.SelectionMode.NONE)
+        box.append(self.listbox)
+        self.set_child(box)
+        self.connect("show", lambda *_: (self.entry.set_text(""), self._fill(), self.entry.grab_focus()))
+
+    def _fill(self):
+        from .store import contact_numbers
+
+        self.listbox.remove_all()
+        text = self.entry.get_text().strip()
+        if text:
+            contacts = self.app.store.search_contacts(text)[:6]
+        else:
+            contacts = [c for c in self.app.store.contacts if c.get("favorite")][:6]
+        rows = [(c["name"], n) for c in contacts for n in contact_numbers(c)][:6]
+        for name, number in rows:
+            r = Adw.ActionRow(title=name, subtitle=number, activatable=True, use_markup=False,
+                              title_lines=1)
+            r.add_prefix(Adw.Avatar(size=28, text=name, show_initials=True))
+            r.connect("activated", lambda _r, n=number: self._submit(n))
+            self.listbox.append(r)
+        self.listbox.set_visible(bool(rows))
+
+    def _submit(self, target):
+        target = target.strip()
+        if not target:
+            return
+        if not any(ch.isdigit() for ch in target) and "@" not in target:
+            from .store import contact_numbers
+
+            matches = self.app.store.search_contacts(target)
+            numbers = contact_numbers(matches[0]) if matches else []
+            if not numbers:
+                return
+            target = numbers[0]
+        self.popdown()
+        self.on_transfer(target)

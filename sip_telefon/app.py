@@ -15,6 +15,7 @@ from .contact_import import parse_file
 from .contact_sync import ContactSync
 from .calls import Call
 from .incoming import IncomingCallWindow
+from .themes import SCHEMES, palette_css
 from .preferences import PreferencesDialog
 from .store import RUNTIME_DIR, STATE_DIR, Store, normalize_number, number_from_uri
 from .window import MainWindow
@@ -45,14 +46,15 @@ class App(Adw.Application):
         self.popups = {}
         self.reg_state = ("Startet …", "busy")
         self.timer_id = 0
+        self.pending_mini = False
 
     # -- Lebenszyklus ------------------------------------------------------
 
     def do_startup(self):
         Adw.Application.do_startup(self)
-        self._load_css()
 
         self.store = Store()
+        self._load_css()
         self.calendar = CalendarManager(self.store)
         self.contact_sync = ContactSync(self.store, self.calendar.run)
         self.audio = AudioDevices()
@@ -71,9 +73,10 @@ class App(Adw.Application):
             ("show", lambda *_: self.window.present(), None),
             ("reconnect", lambda *_: self.restart_engine(), None),
             ("clear-history", lambda *_: self.clear_history(), None),
-            ("accept", lambda _a, p: self.accept(p.get_string()), "s"),
+            ("accept", lambda _a, p: self.accept(p.get_string(), via="notification"), "s"),
+            ("show-call", lambda _a, p: self._show_call_popup(p.get_string()), "s"),
             ("decline", lambda _a, p: self.hangup(p.get_string()), "s"),
-            ("call-back", lambda _a, p: self.dial(p.get_string()), "s"),
+            ("call-back", lambda _a, p: self.dial(p.get_string(), present=False), "s"),
             ("show-calendar", lambda *_: self.show_page("calendar"), None),
             ("import-contacts", lambda *_: self.import_contacts(), None),
             ("sync-contacts", lambda *_: self.sync_contacts(manual=True), None),
@@ -98,26 +101,33 @@ class App(Adw.Application):
         self.restart_engine()
 
     def _load_css(self):
-        """Material-Stylesheet plus Farbpalette passend zum Hell/Dunkel-Modus."""
+        """Material-Stylesheet plus Farbpalette des gewählten Themas."""
         display = Gdk.Display.get_default()
         prio = Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         for name, offset in (("colors-light.css", 0), ("style.css", 2)):
             provider = Gtk.CssProvider()
             provider.load_from_path(os.path.join(CSS_DIR, name))
             Gtk.StyleContext.add_provider_for_display(display, provider, prio + offset)
-        self.dark_provider = Gtk.CssProvider()
-        self.dark_provider.load_from_path(os.path.join(CSS_DIR, "colors-dark.css"))
+        self.palette_provider = Gtk.CssProvider()
+        Gtk.StyleContext.add_provider_for_display(display, self.palette_provider, prio + 1)
         style = Adw.StyleManager.get_default()
-        style.connect("notify::dark", lambda *_: self._apply_color_scheme())
-        self._apply_color_scheme()
+        style.connect("notify::dark", lambda *_: self.apply_theme())
+        style.connect("notify::accent-color", lambda *_: self.apply_theme())
+        self.apply_theme()
 
-    def _apply_color_scheme(self):
-        display = Gdk.Display.get_default()
-        if Adw.StyleManager.get_default().get_dark():
-            Gtk.StyleContext.add_provider_for_display(
-                display, self.dark_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
-        else:
-            Gtk.StyleContext.remove_provider_for_display(display, self.dark_provider)
+    def apply_theme(self):
+        appearance = self.store.settings.get("appearance", {}) if hasattr(self, "store") else {}
+        scheme = next((s for k, _n, s in SCHEMES if k == appearance.get("scheme", "system")),
+                      Adw.ColorScheme.DEFAULT)
+        style = Adw.StyleManager.get_default()
+        if style.get_color_scheme() != scheme:
+            style.set_color_scheme(scheme)  # löst notify::dark aus und ruft uns erneut auf
+        self.palette_provider.load_from_string(palette_css(appearance.get("theme", "violet"), style.get_dark()))
+
+    def set_appearance(self, **values):
+        self.store.settings.setdefault("appearance", {}).update(values)
+        self.store.save_settings()
+        self.apply_theme()
 
     def do_command_line(self, cmdline):
         options = cmdline.get_options_dict().end().unpack()
@@ -268,7 +278,10 @@ class App(Adw.Application):
             if call.direction == "in":
                 self._ring(call)
             else:
+                call.mini, self.pending_mini = self.pending_mini, False
                 self.window.show_call(call)
+                if call.mini:
+                    self._show_popup(call)
             return
         if call is None:
             return
@@ -278,9 +291,14 @@ class App(Adw.Application):
         elif kind == "CALL_ESTABLISHED" and call.state != "established":
             call.state = "established"
             call.established = GLib.get_real_time() / 1e6
-            self._close_popup(call_id)
+            self.withdraw_notification(f"call-{call_id}")
+            if not call.mini:
+                self._close_popup(call_id)
             self._start_timer()
             self.window.show_call(call)
+            if call.pending_transfer:
+                target, call.pending_transfer = call.pending_transfer, None
+                self._do_transfer(call, target)
         elif kind == "CALL_HOLD":
             call.remote_held = True
         elif kind == "CALL_RESUME":
@@ -288,10 +306,44 @@ class App(Adw.Application):
         elif kind == "CALL_CLOSED":
             self._end_call(call_id, ev.get("param", ""))
             return
+        elif kind == "TRANSFER_FAILED" and call.transferred_to:
+            call.transferred_to = None
+            self._notify_info("Weiterleiten fehlgeschlagen", ev.get("param", ""))
         else:
             return
+        self._sync_views(call)
+
+    def _sync_views(self, call):
+        """Hauptfenster und Mini-Fenster auf den aktuellen Anrufzustand bringen."""
         if self.window.call_view.call is call:
             self.window.show_call(call)
+        popup = self.popups.get(call.id)
+        if popup:
+            popup.update()
+
+    def _show_popup(self, call):
+        popup = self.popups.get(call.id)
+        if popup is None:
+            popup = IncomingCallWindow(self, call)
+            self.popups[call.id] = popup
+        popup.update()
+        popup.popup()
+
+    def _show_call_popup(self, call_id):
+        call = self.calls.get(call_id)
+        if call is not None:
+            self._show_popup(call)
+
+    def open_call_in_window(self, call_id):
+        """Gespräch aus dem Mini-Fenster ins Hauptfenster holen."""
+        call = self.calls.get(call_id)
+        if call is None:
+            return
+        call.mini = False
+        if call.state != "incoming":
+            self._close_popup(call_id)
+        self.window.show_call(call)
+        self.window.present()
 
     def _ring(self, call):
         popup = IncomingCallWindow(self, call)
@@ -304,7 +356,7 @@ class App(Adw.Application):
         notification.set_icon(Gio.ThemedIcon.new("call-start-symbolic"))
         notification.add_button_with_target("Ablehnen", "app.decline", GLib.Variant.new_string(call.id))
         notification.add_button_with_target("Annehmen", "app.accept", GLib.Variant.new_string(call.id))
-        notification.set_default_action_and_target("app.accept", GLib.Variant.new_string(call.id))
+        notification.set_default_action_and_target("app.show-call", GLib.Variant.new_string(call.id))
         self.send_notification(f"call-{call.id}", notification)
 
         if not self.active_call(exclude=call.id):
@@ -325,7 +377,9 @@ class App(Adw.Application):
         self.store.add_history(call.direction, call.number, call.name, call.duration, missed)
         self.window.history_changed(missed)
 
-        if missed and call.state == "incoming" and not getattr(call, "declined", False):
+        if call.transferred_to:
+            self._notify_info(f"Weitergeleitet an {call.transferred_to}", call.title)
+        elif missed and call.state == "incoming" and not call.declined:
             n = Gio.Notification.new(f"Verpasster Anruf von {call.title}")
             n.set_body(call.number if call.name else "")
             n.set_icon(Gio.ThemedIcon.new("call-missed-symbolic"))
@@ -354,10 +408,22 @@ class App(Adw.Application):
         if self.timer_id:
             GLib.source_remove(self.timer_id)
             self.timer_id = 0
+        self.pending_mini = False
 
     def _tick(self):
         self.window.update_call_status()
+        for popup in self.popups.values():
+            popup.update()
         return True
+
+    def _notify_info(self, title, body=""):
+        if self.window.is_active():
+            self.window.toast(title)
+            return
+        n = Gio.Notification.new(title)
+        n.set_body(body)
+        n.set_icon(Gio.ThemedIcon.new("call-start-symbolic"))
+        self.send_notification(f"info-{GLib.get_real_time()}", n)
 
     # -- Aktionen (vom UI aufgerufen) --------------------------------------
 
@@ -367,7 +433,8 @@ class App(Adw.Application):
         calls.sort(key=lambda c: (c.state == "incoming", -c.created))
         return calls[0] if calls else None
 
-    def dial(self, number):
+    def dial(self, number, present=True):
+        """present=False: ohne Hauptfenster wählen (z. B. „Zurückrufen“ aus einer Benachrichtigung)."""
         number = normalize_number(number or "")
         if not number:
             return False
@@ -384,48 +451,90 @@ class App(Adw.Application):
                 self.window.toast("Anruf fehlgeschlagen: " + data.strip().splitlines()[-1] if data.strip()
                                   else "Anruf fehlgeschlagen")
 
+        self.pending_mini = not present and self.store.settings.get("mini_call", True)
         self.engine.send("dial", number, done)
-        self.window.present()
+        if not self.pending_mini:
+            self.window.present()
         return True
 
-    def accept(self, call_id):
+    def accept(self, call_id, via="window"):
+        """via: "popup"/"notification" führen das Gespräch im Mini-Fenster (falls eingestellt)."""
         call = self.calls.get(call_id)
         if call is None or call.state != "incoming":
             return
         current = self.active_call(exclude=call_id)
         if current and current.state != "incoming":
-            self.engine.call_command(current.id, "hangup")
+            self.engine.send("hangup", current.id)
         self.engine.call_command(call_id, "accept")
+        call.mini = via != "window" and self.store.settings.get("mini_call", True)
         self.window.show_call(call)
-        self.window.present()
+        if call.mini:
+            self._show_popup(call)
+        else:
+            self._close_popup(call_id)
+            self.window.present()
 
     def hangup(self, call_id=None):
         call = self.calls.get(call_id) if call_id else self.active_call()
         if call is None:
             return
         call.declined = call.state == "incoming"
-        if call.declined:
-            self.engine.call_command(call.id, "hangup", "486 Busy Here")
-        else:
-            self.engine.call_command(call.id, "hangup")
+        # baresip: /hangup <call-id> [code reason] – ohne ID würde „486“ als ID gelesen
+        self.engine.send("hangup", f"{call.id} 486 Busy Here" if call.declined else call.id)
 
-    def set_mute(self, muted):
-        call = self.active_call()
+    def _call(self, call_id):
+        return self.calls.get(call_id) if call_id else self.active_call()
+
+    def set_mute(self, muted, call_id=None):
+        call = self._call(call_id)
         if call and call.muted != muted:
             call.muted = muted
             self.engine.call_command(call.id, "mute")  # baresip schaltet um
+            self._sync_views(call)
 
-    def set_hold(self, held):
-        call = self.active_call()
+    def set_hold(self, held, call_id=None):
+        call = self._call(call_id)
         if call and call.held != held:
             call.held = held
             self.engine.call_command(call.id, "hold" if held else "resume")
-            self.window.update_call_status()
+            self._sync_views(call)
 
-    def send_dtmf(self, digit):
-        call = self.active_call()
+    def send_dtmf(self, digit, call_id=None):
+        call = self._call(call_id)
         if call:
             self.engine.call_command(call.id, "sndcode", digit)
+
+    def stop_ringing(self):
+        self.engine.send("stopringing")
+
+    def transfer(self, call_id, target):
+        """Anruf an `target` weiterleiten. Klingelnde Anrufe werden dafür kurz angenommen."""
+        call = self.calls.get(call_id)
+        target = normalize_number(target or "")
+        if call is None or not target:
+            return
+        if call.state == "incoming":
+            call.pending_transfer = target
+            self.accept(call_id, via="popup")
+        else:
+            self._do_transfer(call, target)
+
+    def _do_transfer(self, call, target):
+        def finish():
+            # Blind-Weiterleitung: baresip meldet nur Fehlschläge, den eigenen Teil beenden wir selbst
+            if call.id in self.calls and call.transferred_to == target:
+                self.engine.send("hangup", call.id)
+            return False
+
+        def done(ok, data):
+            if ok:
+                GLib.timeout_add(1500, finish)
+            else:
+                call.transferred_to = None
+                self._notify_info("Weiterleiten fehlgeschlagen", data.strip().splitlines()[-1] if data.strip() else "")
+
+        call.transferred_to = target
+        self.engine.call_command(call.id, "transfer", target, done)
 
     # -- Sonstiges ---------------------------------------------------------
 
