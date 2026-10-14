@@ -114,8 +114,8 @@ class PreferencesDialog(Adw.PreferencesDialog):
         general.add(info)
         info.add(Adw.ActionRow(
             title="Mikrofon und Lautsprecher",
-            subtitle="Es werden die Standardgeräte von PipeWire verwendet. "
-                     "Umstellen z. B. mit pavucontrol oder in den Systemeinstellungen.",
+            subtitle="Auswahl über die Funktionsleiste oben im Hauptfenster (Mikrofon- und "
+                     "Lautsprecher-Symbol), inklusive Testton und Pegelanzeige.",
         ))
 
         self.connect("closed", self._on_closed)
