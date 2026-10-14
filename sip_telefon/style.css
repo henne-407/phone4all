@@ -415,3 +415,35 @@ button.quick-call {
 .status-dot.dnd {
   background-color: #9141ac;
 }
+
+/* -- Funktionsleiste ------------------------------------------------------- */
+
+.function-bar {
+  padding: 4px 10px 8px;
+}
+button.bar-chip {
+  border-radius: 9999px;
+  padding: 4px 12px;
+  min-height: 32px;
+  border: 1px solid var(--md-outline-variant);
+  font-weight: 500;
+}
+button.bar-chip:checked {
+  background-color: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+  border-color: transparent;
+}
+button.dnd-toggle:checked {
+  background-color: var(--md-tertiary-container);
+  color: var(--md-on-surface);
+}
+.bar-popover {
+  padding: 6px;
+  min-width: 260px;
+}
+.popover-heading {
+  margin: 4px 6px 6px;
+}
+levelbar.mic-level block.filled {
+  background-color: var(--md-primary);
+}

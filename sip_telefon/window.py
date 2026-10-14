@@ -3,6 +3,7 @@
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from .calendar_page import CalendarPage
+from .function_bar import FunctionBar
 from .home_page import HomePage
 from .calls import format_duration
 from .store import normalize_number
@@ -455,7 +456,8 @@ class MainWindow(Adw.ApplicationWindow):
 
         self.window_title = Adw.WindowTitle(title="SIP-Telefon")
         header = Adw.HeaderBar(title_widget=self.window_title)
-        self.status_dot = Gtk.Box(css_classes=["status-dot"], valign=Gtk.Align.CENTER)
+        # Status steht jetzt in der Funktionsleiste; der Punkt bleibt für set_status erhalten, aber unsichtbar
+        self.status_dot = Gtk.Box(css_classes=["status-dot"], valign=Gtk.Align.CENTER, visible=False)
         header.pack_start(self.status_dot)
         menu = Gtk.Builder.new_from_string(
             """
@@ -512,17 +514,34 @@ class MainWindow(Adw.ApplicationWindow):
         self.toasts = Adw.ToastOverlay(child=self.main_stack)
         self.switcher = Adw.ViewSwitcherBar(stack=self.views, reveal=True)
 
+        self.function_bar = FunctionBar(app)
         view = Adw.ToolbarView(content=self.toasts)
         view.add_top_bar(header)
+        view.add_top_bar(self.function_bar)
         view.add_top_bar(self.banner)
         view.add_bottom_bar(self.switcher)
         self.set_content(view)
+
+        # Breakpoints: Funktionsleiste kompakt bzw. Startseite mehrspaltig
+        self.layouts = {}
+        for name, condition in (("narrow", "max-width: 560sp"), ("two", "min-width: 760sp"),
+                                ("three", "min-width: 1160sp")):
+            bp = Adw.Breakpoint.new(Adw.BreakpointCondition.parse(condition))
+            self.add_breakpoint(bp)
+            self.layouts[bp] = name
+        self.connect("notify::current-breakpoint", lambda *_: self._apply_layout())
+        self._apply_layout()
 
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._on_key)
         self.add_controller(keys)
         self.connect("close-request", self._on_close)
         GLib.idle_add(self.dialer.focus)
+
+    def _apply_layout(self):
+        layout = self.layouts.get(self.get_current_breakpoint(), "normal")
+        self.function_bar.set_compact(layout == "narrow")
+        self.home.set_columns({"two": 2, "three": 3}.get(layout, 1))
 
     def _on_page_changed(self, *_):
         name = self.views.get_visible_child_name()

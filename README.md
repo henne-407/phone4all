@@ -34,7 +34,10 @@ Name (z. B. `620`).
 
 ## Funktionen
 
-- Anpassbare Startseite: Status mit „Nicht stören“ und Schnellwahl, Favoriten,
+- Funktionsleiste: Anmeldestatus (neu anmelden, ab-/anmelden, Konto), „Nicht stören“,
+  Mikrofon mit Pegelanzeige, Lautsprecher mit Testton und separates Gerät zum Klingeln –
+  Umschalten wirkt sofort, auch im laufenden Gespräch
+- Anpassbare Startseite (füllt das Fenster, Karten in bis zu drei Spalten nebeneinander): Status mit „Nicht stören“ und Schnellwahl, Favoriten,
   letzte Anrufe, nächste Termine – Karten ein-/ausblenden und sortieren, Startansicht wählbar
 - Wähltastatur mit Tastatureingabe, Kontaktvorschlägen und Wahlwiederholung
   (Anruftaste bei leerem Feld holt die letzte Nummer)
@@ -108,7 +111,9 @@ pro Quelle gelesen.
 
 ## Hinweise
 
-- Audio läuft über die PipeWire-Standardgeräte; umstellen z. B. mit `pavucontrol`.
+- Audio: Mikrofon, Lautsprecher und Klingel-Gerät in der Funktionsleiste wählen
+  (Standard = PipeWire-Systemstandard). Ein neues Klingel-Gerät wird nach dem
+  aktuellen Gespräch übernommen (dafür meldet sich die App kurz neu an).
 - Passwörter mit `;` werden von baresip nicht unterstützt.
 - Ist die Anlage nur über NAT erreichbar, in den erweiterten Einstellungen einen
   STUN-Server und ggf. einen festen lokalen SIP-Port eintragen.

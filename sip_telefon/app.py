@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from . import APP_ID, VERSION
+from .audio_devices import AudioDevices
 from .baresip import Baresip, account_line
 from .calendars import CalendarManager
 from .contact_import import parse_file
@@ -54,6 +55,8 @@ class App(Adw.Application):
         self.store = Store()
         self.calendar = CalendarManager(self.store)
         self.contact_sync = ContactSync(self.store, self.calendar.run)
+        self.audio = AudioDevices()
+        self.restart_after_call = False
         self.reminded = set()
         self.upcoming = []  # Termine mit Uhrzeit für Erinnerungen
         self.upcoming_week = []  # alle Termine der nächsten 7 Tage für die Startseite
@@ -135,7 +138,7 @@ class App(Adw.Application):
         else:
             self.window.show_banner(None)
             self.set_reg_state("Verbinde …", "busy")
-        self.engine.start(line, int(acc.get("local_port") or 0))
+        self.engine.start(line, int(acc.get("local_port") or 0), dict(self.store.settings.get("audio", {})))
 
     # -- Engine-Events -----------------------------------------------------
 
@@ -143,11 +146,39 @@ class App(Adw.Application):
         self.reg_state = (text, kind)
         shown = f"{text} · Nicht stören" if self.dnd and kind == "ok" else text
         self.window.set_status(shown, "dnd" if self.dnd and kind == "ok" else kind)
+        self.window.function_bar.update()
         self.window.home.refresh()
 
     @property
     def dnd(self):
         return bool(self.store.settings.get("dnd", False))
+
+    def set_registered(self, registered):
+        """An der Telefonanlage ab- oder wieder anmelden (bleibt über Neustarts erhalten)."""
+        self.store.settings["registered"] = registered
+        self.store.save_settings()
+        if registered:
+            self.restart_engine()
+        else:
+            self.engine.send("uareg", "0")
+            self.set_reg_state("Abgemeldet – keine Anrufe", "off")
+
+    def set_audio(self, kind, node):
+        """kind: "source" (Mikrofon), "sink" (Lautsprecher), "alert" (Klingeln)."""
+        audio = self.store.settings.setdefault("audio", {})
+        if audio.get(kind, "") == node:
+            return
+        audio[kind] = node
+        self.store.save_settings()
+        self.window.function_bar.update()
+        if kind in ("source", "sink"):
+            self.engine.set_device(kind, node)  # wirkt sofort, auch im laufenden Gespräch
+        if kind == "alert" or (kind == "sink" and not audio.get("alert")):
+            # Das Klingel-Gerät kann baresip nur beim Start setzen
+            if self.calls:
+                self.restart_after_call = True
+            else:
+                self.restart_engine()
 
     def set_dnd(self, active):
         if active == self.dnd:
@@ -156,6 +187,7 @@ class App(Adw.Application):
         self.store.save_settings()
         self.engine.send("dnd", "yes" if active else "no")
         self.set_reg_state(*self.reg_state)
+        self.window.function_bar.update()
         self.window.toast("Nicht stören ist an – Anrufe werden abgewiesen" if active
                           else "Nicht stören ist aus")
 
@@ -172,6 +204,9 @@ class App(Adw.Application):
             self.engine.send("reginfo", "", self._on_reginfo)
         if state == "running" and self.dnd:
             self.engine.send("dnd", "yes")
+        if state == "running" and not self.store.settings.get("registered", True):
+            self.engine.send("uareg", "0")
+            self.set_reg_state("Abgemeldet – keine Anrufe", "off")
 
     def _on_reginfo(self, ok, data):
         if ok and re.search(r"\sOK\s", re.sub(r"\x1b\[[0-9;]*m", "", data)):
@@ -213,7 +248,8 @@ class App(Adw.Application):
         elif kind == "REGISTER_FAIL":
             self.set_reg_state("Anmeldung fehlgeschlagen", "error")
             self.window.show_banner(f"Anmeldung fehlgeschlagen: {param}", "Einstellungen", "app.preferences")
-        elif kind == "UNREGISTERING":
+        elif kind == "UNREGISTERING" and not self.engine.stopping:
+            # Beim Neustart der Engine meldet die alte Instanz sich ab – das ist kein „Abgemeldet“
             self.set_reg_state("Abgemeldet", "off")
 
     def _on_call_event(self, kind, ev):
@@ -306,6 +342,9 @@ class App(Adw.Application):
             self.window.show_call(self.active_call())
         if not any(c.state == "established" for c in self.calls.values()):
             self._stop_timer()
+        if not self.calls and self.restart_after_call:
+            self.restart_after_call = False
+            self.restart_engine()
 
     def _start_timer(self):
         if not self.timer_id:

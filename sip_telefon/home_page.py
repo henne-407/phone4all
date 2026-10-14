@@ -40,10 +40,12 @@ class HomePage(Gtk.Box):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.app = app
         self.window = window
-        self.cards = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        # Spalten nebeneinander; Anzahl hängt von der Fensterbreite ab (siehe MainWindow._apply_layout)
+        self.cards = Gtk.Box(spacing=16, homogeneous=True)
         self.cards.set_margin_start(12)
         self.cards.set_margin_end(12)
         self.cards.set_margin_top(6)
+        self.columns = 1
 
         customize = Gtk.Button(halign=Gtk.Align.CENTER, css_classes=["flat", "pill-small"])
         content = Gtk.Box(spacing=8)
@@ -57,7 +59,7 @@ class HomePage(Gtk.Box):
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         outer.append(self.cards)
         outer.append(customize)
-        clamp = Adw.Clamp(maximum_size=560, child=outer)
+        clamp = Adw.Clamp(maximum_size=1800, child=outer)
         self.append(Gtk.ScrolledWindow(child=clamp, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER))
         # Zeitangaben („in 5 Min.“) und Termine aktuell halten
         GLib.timeout_add_seconds(60, lambda: (self.refresh(), True)[1])
@@ -67,14 +69,24 @@ class HomePage(Gtk.Box):
     def settings(self):
         return self.app.store.settings.setdefault("home", {})
 
+    def set_columns(self, columns):
+        if columns != self.columns:
+            self.columns = columns
+            self.refresh()
+
     def refresh(self):
         while child := self.cards.get_first_child():
             self.cards.remove(child)
         builders = {"status": self._status, "favorites": self._favorites,
                     "recent": self._recent, "events": self._events}
-        for key, visible in layout(self.settings):
-            if visible:
-                self.cards.append(builders[key]())
+        cards = [builders[key]() for key, visible in layout(self.settings) if visible]
+        columns = [Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16, valign=Gtk.Align.START)
+                   for _ in range(max(1, min(self.columns, len(cards))))]
+        # Reihenfolge zeilenweise von links nach rechts beibehalten
+        for i, card in enumerate(cards):
+            columns[i % len(columns)].append(card)
+        for column in columns:
+            self.cards.append(column)
 
     def _card(self, key, action=None):
         title, icon = CARDS[key]

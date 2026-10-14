@@ -110,6 +110,7 @@ class Baresip(GObject.Object):
         self.token = 0
         self.callbacks = {}
         self.port = 0
+        self.driver = "pipewire"
         self.pending_start = None
         self.stopping = False
 
@@ -120,7 +121,7 @@ class Baresip(GObject.Object):
             s.bind(("127.0.0.1", 0))
             return s.getsockname()[1]
 
-    def _write_config(self, acc_line, local_port):
+    def _write_config(self, acc_line, local_port, audio):
         module_dir = find_module_dir()
         available = set(f[:-3] for f in os.listdir(module_dir) if f.endswith(".so"))
         missing = [m for m in APP_MODULES if m not in available]
@@ -131,14 +132,20 @@ class Baresip(GObject.Object):
             raise RuntimeError(
                 "Kein Audio-Modul gefunden (z. B. Paket baresip-pipewire installieren)"
             )
-        device = "default" if driver == "alsa" else ""
+        self.driver = driver
+        audio = audio or {}
+        if driver == "alsa":  # ALSA kennt die PipeWire-Gerätenamen nicht
+            player = source = alert = "default"
+        else:
+            player, source = audio.get("sink", ""), audio.get("source", "")
+            alert = audio.get("alert") or player
 
         lines = [
             "poll_method epoll",
             f"module_path {module_dir}",
-            f"audio_player {driver},{device}",
-            f"audio_source {driver},{device}",
-            f"audio_alert {driver},{device}",
+            f"audio_player {driver},{player}",
+            f"audio_source {driver},{source}",
+            f"audio_alert {driver},{alert}",
             "call_max_calls 4",
             f"ctrl_tcp_listen 127.0.0.1:{self.port}",
         ]
@@ -165,11 +172,11 @@ class Baresip(GObject.Object):
         # baresip legt sonst eine Kontaktdatei mit Beispielen an
         open(os.path.join(self.runtime_dir, "contacts"), "a").close()
 
-    def start(self, acc_line, local_port=0):
+    def start(self, acc_line, local_port=0, audio=None):
         """Startet baresip (neu) mit der angegebenen Kontozeile."""
         if self.proc is not None:
             # Erst nach dem Beenden der alten Instanz neu starten
-            self.pending_start = (acc_line, local_port)
+            self.pending_start = (acc_line, local_port, audio)
             self.stop()
             return
 
@@ -183,7 +190,7 @@ class Baresip(GObject.Object):
             return
         try:
             self.port = self._free_port()
-            self._write_config(acc_line, local_port)
+            self._write_config(acc_line, local_port, audio)
         except (OSError, RuntimeError) as e:
             self.emit("engine-state", "error", str(e))
             return
@@ -345,6 +352,13 @@ class Baresip(GObject.Object):
             self.callbacks.pop(token, None)
             if callback:
                 callback(False, str(e))
+
+    def set_device(self, kind, node):
+        """Mikrofon ("source") oder Lautsprecher ("sink") sofort umschalten, auch im Gespräch."""
+        if getattr(self, "driver", "pipewire") == "alsa":
+            return
+        command = "ausrc" if kind == "source" else "auplay"
+        self.send(command, f"{self.driver},{node}")
 
     def call_command(self, call_id, command, params="", callback=None):
         """Führt einen Befehl für einen bestimmten Anruf aus."""
