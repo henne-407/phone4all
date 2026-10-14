@@ -6,7 +6,8 @@ from .calendar_page import CalendarPage
 from .function_bar import FunctionBar
 from .home_page import HomePage
 from .calls import format_duration
-from .store import normalize_number
+from .stats import format_talk, frequent, summary
+from .store import contact_numbers, normalize_number, numbers_match
 from .widgets import (
     ContactDialog,
     DialPad,
@@ -139,6 +140,65 @@ class DialPage(Gtk.Box):
             self.entry.set_text("")
 
 
+class DialSuggestions(Gtk.Box):
+    """Seitenleiste neben der Wähltastatur (nur in breiten Fenstern):
+    beim Tippen passende Kontakte, sonst die zuletzt verwendeten Nummern."""
+
+    def __init__(self, app, dialer):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=10, css_classes=["side-panel"],
+                         hexpand=True, visible=False)
+        self.app = app
+        self.dialer = dialer
+        self.title = Gtk.Label(xalign=0, css_classes=["home-card-title"])
+        self.append(self.title)
+        self.listbox = Gtk.ListBox(css_classes=["boxed-list", "inner-list"], valign=Gtk.Align.START,
+                                   selection_mode=Gtk.SelectionMode.NONE)
+        self.append(Gtk.ScrolledWindow(child=self.listbox, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER))
+        self.empty = label("", "dim-label", wrap=True, xalign=0)
+        self.append(self.empty)
+        dialer.entry.connect("changed", lambda *_: self.refresh())
+        self.refresh()
+
+    def refresh(self):
+        if not self.get_visible():
+            return
+        self.listbox.remove_all()
+        text = self.dialer.entry.get_text().strip()
+        rows = []
+        if text:
+            self.title.set_label(f"Treffer für „{text}“")
+            for c in self.app.store.search_contacts(text)[:50]:
+                for number in contact_numbers(c):
+                    rows.append((c["name"], number, c.get("company") or c.get("source", "")))
+        else:
+            self.title.set_label("Zuletzt gewählt und angerufen")
+            seen = set()
+            for e in self.app.store.history:
+                if e["number"] in seen:
+                    continue
+                seen.add(e["number"])
+                contact = self.app.store.find_contact(e["number"])
+                name = (contact or {}).get("name") or e.get("name") or e["number"]
+                rows.append((name, e["number"], format_time(e["time"])))
+                if len(rows) >= 50:
+                    break
+        for name, number, extra in rows:
+            subtitle = f"{number} · {extra}" if extra and name != number else (extra or "")
+            row = Adw.ActionRow(title=name, subtitle=subtitle if name != number else extra, activatable=True,
+                                use_markup=False, title_lines=1, subtitle_lines=1,
+                                tooltip_text="Nummer übernehmen")
+            row.add_prefix(Adw.Avatar(size=36, text=name if name != number else "", show_initials=True))
+            call = Gtk.Button(icon_name="call-start-symbolic", tooltip_text=f"{number} anrufen",
+                              valign=Gtk.Align.CENTER, css_classes=["flat", "circular", "row-call"])
+            call.connect("clicked", lambda _b, n=number: self.app.dial(n))
+            row.add_suffix(call)
+            row.connect("activated", lambda _r, n=number: self.dialer.set_number(n))
+            self.listbox.append(row)
+        self.listbox.set_visible(bool(rows))
+        self.empty.set_label("Keine passenden Kontakte." if text else "Noch keine Anrufe.")
+        self.empty.set_visible(not rows)
+
+
 # -- Kontakte ----------------------------------------------------------------
 
 MAX_LIST = 200  # mehr Zeilen machen die Liste bei großen Datenbanken träge
@@ -146,9 +206,14 @@ MAX_LIST = 200  # mehr Zeilen machen die Liste bei großen Datenbanken träge
 
 class ContactsPage(Gtk.Box):
     def __init__(self, app, window):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL)
+        super().__init__(spacing=0)
         self.app = app
         self.window = window
+        self.wide = False
+        self.list_side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True)
+        self.append(self.list_side)
+        self.detail = ContactDetail(app, window, self)
+        self.append(self.detail)
 
         bar = Gtk.Box(spacing=8)
         for side in ("start", "end"):
@@ -166,7 +231,7 @@ class ContactsPage(Gtk.Box):
         menu.append("Adressbücher verwalten …", "app.addressbooks")
         bar.append(Gtk.MenuButton(icon_name="view-more-symbolic", menu_model=menu, valign=Gtk.Align.CENTER,
                                   tooltip_text="Importieren und Adressbücher", css_classes=["flat", "circular"]))
-        self.append(clamp)
+        self.list_side.append(clamp)
 
         self.listbox = Gtk.ListBox(css_classes=["boxed-list"], selection_mode=Gtk.SelectionMode.NONE,
                                    valign=Gtk.Align.START)
@@ -191,8 +256,17 @@ class ContactsPage(Gtk.Box):
         self.stack.add_named(
             Adw.StatusPage(icon_name="system-search-symbolic", title="Keine Treffer"), "nomatch"
         )
-        self.append(self.stack)
+        self.list_side.append(self.stack)
         self.refresh()
+
+    def set_wide(self, wide):
+        """Breit: Liste links (feste Breite), Details rechts."""
+        self.wide = wide
+        self.detail.set_visible(wide)
+        self.list_side.set_hexpand(not wide)
+        self.list_side.set_size_request(420 if wide else -1, -1)
+        if wide and self.detail.contact is None and self.visible_contacts:
+            self.detail.show(self.visible_contacts[0])
 
     def refresh(self):
         self.listbox.remove_all()
@@ -221,7 +295,7 @@ class ContactsPage(Gtk.Box):
         row = Adw.ActionRow(title=c["name"], subtitle=subtitle, activatable=True,
                             use_markup=False, title_lines=1, subtitle_lines=1)
         row.add_prefix(Adw.Avatar(size=40, text=c["name"], show_initials=True))
-        row.connect("activated", lambda *_: self.edit(c))
+        row.connect("activated", lambda *_: self.detail.show(c) if self.wide else self.edit(c))
 
         if len(numbers) == 1:
             btn = Gtk.Button(icon_name="call-start-symbolic", tooltip_text=f"{numbers[0][1]} anrufen",
@@ -256,40 +330,241 @@ class ContactsPage(Gtk.Box):
     def _save(self, contact):
         self.app.store.upsert_contact(contact)
         self.window.contacts_changed()
+        if self.wide:
+            self.detail.show(contact)
 
     def _delete(self, contact):
         self.app.store.delete_contact(contact["id"])
+        if self.detail.contact and self.detail.contact.get("id") == contact["id"]:
+            self.detail.show(None)
         self.window.contacts_changed()
         self.window.toast(f"„{contact['name']}“ gelöscht")
+
+
+class ContactDetail(Gtk.Box):
+    """Detailansicht eines Kontakts (rechte Seite in breiten Fenstern)."""
+
+    def __init__(self, app, window, page):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, hexpand=True, visible=False,
+                         css_classes=["detail-pane"])
+        self.app = app
+        self.window = window
+        self.page = page
+        self.contact = None
+        self.stack = Gtk.Stack(vexpand=True)
+        self.stack.add_named(Adw.StatusPage(icon_name="avatar-default-symbolic", title="Kontakt auswählen",
+                                            description="Links einen Kontakt anklicken, um Details und "
+                                                        "gemeinsame Anrufe zu sehen."), "empty")
+        self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
+        self.body.set_margin_top(18)
+        self.body.set_margin_bottom(96)
+        self.body.set_margin_start(24)
+        self.body.set_margin_end(24)
+        clamp = Adw.Clamp(maximum_size=720, child=self.body)
+        self.stack.add_named(Gtk.ScrolledWindow(child=clamp, hscrollbar_policy=Gtk.PolicyType.NEVER), "detail")
+        self.append(self.stack)
+
+    def refresh(self):
+        if self.contact is None:
+            return
+        # Kontakt nach Änderungen neu nachschlagen (Bearbeiten, Sync)
+        cid = self.contact.get("id")
+        fresh = next((c for c in self.app.store.all_contacts() if c.get("id") == cid), None)
+        self.show(fresh)
+
+    def show(self, contact):
+        self.contact = contact
+        while child := self.body.get_first_child():
+            self.body.remove(child)
+        if contact is None:
+            self.stack.set_visible_child_name("empty")
+            return
+        self.stack.set_visible_child_name("detail")
+        numbers = contact_numbers(contact)
+
+        head = Gtk.Box(spacing=20)
+        head.append(Adw.Avatar(size=96, text=contact["name"], show_initials=True))
+        info = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, valign=Gtk.Align.CENTER, hexpand=True)
+        info.append(label(contact["name"], "title-1", xalign=0))
+        sub = " · ".join(x for x in (contact.get("company"), contact.get("source")) if x)
+        if sub:
+            info.append(label(sub, "dim-label", xalign=0))
+        actions = Gtk.Box(spacing=8)
+        actions.set_margin_top(10)
+        if numbers:
+            call = Gtk.Button(css_classes=["pill", "call-pill"])
+            content = Gtk.Box(spacing=8)
+            content.append(Gtk.Image(icon_name="call-start-symbolic"))
+            content.append(Gtk.Label(label="Anrufen"))
+            call.set_child(content)
+            call.connect("clicked", lambda *_: self.app.dial(numbers[0]))
+            actions.append(call)
+        if contact.get("readonly"):
+            edit = Gtk.Button(label="Als eigenen Kontakt übernehmen", css_classes=["pill"])
+            edit.connect("clicked", lambda *_: self.page.edit(contact))
+        else:
+            edit = Gtk.Button(label="Bearbeiten", css_classes=["pill"])
+            edit.connect("clicked", lambda *_: self.page.edit(contact))
+            star = Gtk.ToggleButton(icon_name="starred-symbolic", active=bool(contact.get("favorite")),
+                                    tooltip_text="Favorit auf der Startseite", css_classes=["circular", "star"])
+            star.connect("toggled", lambda b: self._set_favorite(b.get_active()))
+            actions.append(edit)
+            actions.append(star)
+            edit = None
+        if edit is not None:
+            actions.append(edit)
+        info.append(actions)
+        head.append(info)
+        self.body.append(head)
+
+        group = Adw.PreferencesGroup(title="Rufnummern")
+        kinds = {contact.get("phone"): "Telefon", contact.get("mobile"): "Mobil"}
+        for number in numbers:
+            row = Adw.ActionRow(title=number, subtitle=kinds.get(number, "Weitere"), use_markup=False,
+                                activatable=True)
+            row.connect("activated", lambda _r, n=number: self.app.dial(n))
+            plan = Gtk.Button(icon_name="appointment-new-symbolic", tooltip_text="Rückruf planen",
+                              valign=Gtk.Align.CENTER, css_classes=["flat", "circular"])
+            plan.connect("clicked", lambda _b, n=number: self.app.schedule_callback(n, contact["name"]))
+            row.add_suffix(plan)
+            call = Gtk.Button(icon_name="call-start-symbolic", tooltip_text=f"{number} anrufen",
+                              valign=Gtk.Align.CENTER, css_classes=["flat", "circular", "row-call"])
+            call.connect("clicked", lambda _b, n=number: self.app.dial(n))
+            row.add_suffix(call)
+            group.add(row)
+        self.body.append(group)
+
+        calls = [e for e in self.app.store.history
+                 if any(numbers_match(e["number"], n) for n in numbers)][:20]
+        hist = Adw.PreferencesGroup(title="Gemeinsame Anrufe")
+        if calls:
+            total = sum(e.get("duration", 0) for e in calls)
+            hist.set_description(f"{len(calls)} Anrufe · {format_duration(total)} Gesprächszeit")
+            for e in calls:
+                hist.add(self.window.history._row(e))
+        else:
+            hist.add(Adw.ActionRow(title="Noch keine Anrufe mit diesem Kontakt"))
+        self.body.append(hist)
+
+    def _set_favorite(self, active):
+        self.contact["favorite"] = active
+        self.app.store.upsert_contact(self.contact)
+        self.window.home.refresh()
 
 
 # -- Verlauf -----------------------------------------------------------------
 
 
+HISTORY_FILTERS = [
+    ("all", "Alle", lambda e: True),
+    ("missed", "Verpasst", lambda e: e["missed"]),
+    ("in", "Eingehend", lambda e: e["direction"] == "in" and not e["missed"]),
+    ("out", "Ausgehend", lambda e: e["direction"] == "out"),
+]
+
+
 class HistoryPage(Gtk.Box):
     def __init__(self, app, window):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL)
+        super().__init__(spacing=16)
         self.app = app
         self.window = window
+        self.filter = "all"
+        main = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True)
+        self.append(main)
+
+        chips = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER)
+        chips.set_margin_top(6)
+        chips.set_margin_bottom(10)
+        first = None
+        for key, text, _fn in HISTORY_FILTERS:
+            chip = Gtk.ToggleButton(label=text, active=key == "all", css_classes=["filter-chip"])
+            if first is None:
+                first = chip
+            else:
+                chip.set_group(first)
+            chip.connect("toggled", lambda b, k=key: b.get_active() and self._set_filter(k))
+            chips.append(chip)
+        main.append(chips)
 
         self.listbox = Gtk.ListBox(css_classes=["boxed-list"], selection_mode=Gtk.SelectionMode.NONE,
                                    valign=Gtk.Align.START)
-        self.listbox.set_margin_top(6)
         self.stack = Gtk.Stack(vexpand=True)
-        self.stack.add_named(_scrolled_list(self.listbox), "list")
+        self.list_scroller = _scrolled_list(self.listbox)
+        self.stack.add_named(self.list_scroller, "list")
         self.stack.add_named(
             Adw.StatusPage(icon_name="document-open-recent-symbolic", title="Keine Anrufe",
                            description="Hier erscheinen deine ein- und ausgehenden Anrufe."),
             "empty",
         )
-        self.append(self.stack)
+        main.append(self.stack)
+
+        self.side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14, css_classes=["side-panel"])
+        # Bei niedrigen Fenstern scrollt die ganze Seitenleiste
+        self.side_scroller = Gtk.ScrolledWindow(child=self.side, visible=False,
+                                                hscrollbar_policy=Gtk.PolicyType.NEVER)
+        self.side_scroller.set_size_request(360, -1)
+        self.append(self.side_scroller)
+        self.refresh()
+
+    def set_wide(self, wide):
+        self.side_scroller.set_visible(wide)
+        self.list_scroller.get_child().get_child().set_maximum_size(900 if wide else 560)
+        self._fill_side()
+
+    def _set_filter(self, key):
+        self.filter = key
         self.refresh()
 
     def refresh(self):
         self.listbox.remove_all()
-        for entry in self.app.store.history:
+        fn = next(f for k, _t, f in HISTORY_FILTERS if k == self.filter)
+        entries = [e for e in self.app.store.history if fn(e)]
+        for entry in entries:
             self.listbox.append(self._row(entry))
-        self.stack.set_visible_child_name("list" if self.app.store.history else "empty")
+        self.stack.set_visible_child_name("list" if entries else "empty")
+        self._fill_side()
+
+    def _fill_side(self):
+        if not self.side_scroller.get_visible():
+            return
+        while child := self.side.get_first_child():
+            self.side.remove(child)
+        history = self.app.store.history
+        for title, days in (("Heute", 0), ("Letzte 7 Tage", 6)):
+            data = summary(history, days)
+            card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, css_classes=["home-card"])
+            card.append(Gtk.Label(label=title, xalign=0, css_classes=["home-card-title"]))
+            grid = Gtk.Grid(column_spacing=12, row_spacing=10, column_homogeneous=True)
+            for i, (value, caption, css) in enumerate((
+                (data["incoming"], "Angenommen", ""), (data["outgoing"], "Ausgehend", ""),
+                (data["missed"], "Verpasst", "stat-missed" if data["missed"] else ""),
+                (format_talk(data["talk"]), "Gesprächszeit", ""),
+            )):
+                tile = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["stat-tile"])
+                tile.append(Gtk.Label(label=str(value), xalign=0, css_classes=["stat-value"] + ([css] if css else [])))
+                tile.append(Gtk.Label(label=caption, xalign=0, css_classes=["caption", "dim-label"]))
+                grid.attach(tile, i % 2, i // 2, 1, 1)
+            card.append(grid)
+            self.side.append(card)
+
+        top = frequent(history, self.app.store, limit=8, days=30)
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, css_classes=["home-card"])
+        card.append(Gtk.Label(label="Häufigste Kontakte (30 Tage)", xalign=0, css_classes=["home-card-title"]))
+        if top:
+            listbox = Gtk.ListBox(css_classes=["boxed-list", "inner-list"], selection_mode=Gtk.SelectionMode.NONE)
+            for name, number, count in top:
+                row = Adw.ActionRow(title=name, subtitle=f"{count} Anruf{'e' if count != 1 else ''}",
+                                    use_markup=False, title_lines=1)
+                row.add_prefix(Adw.Avatar(size=32, text=name if name != number else "", show_initials=True))
+                call = Gtk.Button(icon_name="call-start-symbolic", tooltip_text=f"{number} anrufen",
+                                  valign=Gtk.Align.CENTER, css_classes=["flat", "circular", "row-call"])
+                call.connect("clicked", lambda _b, n=number: self.app.dial(n))
+                row.add_suffix(call)
+                listbox.append(row)
+            card.append(listbox)
+        else:
+            card.append(label("Noch keine Daten.", "dim-label", xalign=0))
+        self.side.append(card)
 
     def _row(self, e):
         contact = self.app.store.find_contact(e["number"])
@@ -498,7 +773,13 @@ class MainWindow(Adw.ApplicationWindow):
         self.home = HomePage(app, self)  # nutzt Zeilen aus Verlauf und Kalender, daher zuletzt
         self.views = Adw.ViewStack()
         self.views.add_titled_with_icon(self.home, "home", "Start", "go-home-symbolic")
-        self.views.add_titled_with_icon(_scrolled(self.dialer), "dial", "Wählen", "input-dialpad-symbolic")
+        self.dial_suggestions = DialSuggestions(app, self.dialer)
+        dial_view = Gtk.Box(spacing=16, css_classes=["wide-page"])
+        dial_scroller = _scrolled(self.dialer)
+        dial_scroller.set_hexpand(True)
+        dial_view.append(dial_scroller)
+        dial_view.append(self.dial_suggestions)
+        self.views.add_titled_with_icon(dial_view, "dial", "Wählen", "input-dialpad-symbolic")
         self.views.add_titled_with_icon(contacts_page, "contacts", "Kontakte", "x-office-address-book-symbolic")
         self.views.add_titled_with_icon(self.calendar, "calendar", "Kalender", "x-office-calendar-symbolic")
         self.history_page = self.views.add_titled_with_icon(
@@ -542,6 +823,12 @@ class MainWindow(Adw.ApplicationWindow):
         layout = self.layouts.get(self.get_current_breakpoint(), "normal")
         self.function_bar.set_compact(layout == "narrow")
         self.home.set_columns({"two": 2, "three": 3}.get(layout, 1))
+        wide = layout in ("two", "three")
+        self.dial_suggestions.set_visible(wide)
+        self.dial_suggestions.refresh()
+        self.contacts.set_wide(wide)
+        self.calendar.set_wide(wide)
+        self.history.set_wide(wide)
 
     def _on_page_changed(self, *_):
         name = self.views.get_visible_child_name()
@@ -603,12 +890,14 @@ class MainWindow(Adw.ApplicationWindow):
 
     def history_changed(self, missed=False):
         self.history.refresh()
+        self.dial_suggestions.refresh()
         self.home.refresh()
         if missed and self.views.get_visible_child_name() != "history":
             self.history_page.set_needs_attention(True)
 
     def contacts_changed(self):
         self.contacts.refresh()
+        self.contacts.detail.refresh()
         self.history.refresh()
         self.home.refresh()
 

@@ -447,3 +447,54 @@ button.dnd-toggle:checked {
 levelbar.mic-level block.filled {
   background-color: var(--md-primary);
 }
+
+/* -- Breite Layouts --------------------------------------------------------- */
+
+.side-panel {
+  margin: 6px 16px 16px 0;
+}
+.wide-page > .side-panel {
+  background-color: var(--md-surface-container-low);
+  border-radius: 24px;
+  padding: 16px;
+  margin: 6px 16px 16px 0;
+}
+.detail-pane {
+  background-color: var(--md-surface-container-low);
+  border-radius: 28px 0 0 0;
+}
+.stat-tile {
+  background-color: var(--md-surface-container);
+  border-radius: 16px;
+  padding: 10px 12px;
+}
+.stat-value {
+  font-size: 22px;
+  font-weight: 500;
+}
+.stat-value.stat-missed {
+  color: var(--md-error);
+}
+.home-subheading {
+  margin-top: 6px;
+  color: var(--md-on-surface-variant);
+}
+button.filter-chip {
+  border-radius: 8px;
+  padding: 4px 14px;
+  border: 1px solid var(--md-outline-variant);
+  background: none;
+  font-weight: 500;
+}
+button.filter-chip:checked {
+  background-color: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+  border-color: transparent;
+}
+button.call-pill {
+  background-color: var(--md-call-container);
+  color: var(--md-on-call-container);
+}
+button.star:checked {
+  color: #e5a50a;
+}

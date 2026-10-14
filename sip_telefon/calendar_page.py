@@ -431,12 +431,18 @@ class CalendarPage(Gtk.Box):
         self.stack.add_named(Adw.Spinner(halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER,
                                          width_request=32, height_request=32), "loading")
 
+        # Monat und Tagesübersicht: untereinander, in breiten Fenstern nebeneinander
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         content.set_margin_start(12)
         content.set_margin_end(12)
         content.set_margin_bottom(18)
+        self.content = content
         self.month = MonthView(self.show_day, self.load)
+        self.month.set_valign(Gtk.Align.START)
         content.append(self.month)
+        agenda = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, hexpand=True)
+        self.agenda = agenda
+        content.append(agenda)
 
         day_header = Gtk.Box(spacing=8)
         day_header.set_margin_top(4)
@@ -456,18 +462,27 @@ class CalendarPage(Gtk.Box):
         self.add_button.set_child(add_content)
         self.add_button.connect("clicked", lambda *_: self.new_event())
         day_header.append(self.add_button)
-        content.append(day_header)
+        agenda.append(day_header)
 
         self.error = label("", "caption", "error", wrap=True, xalign=0, visible=False)
-        content.append(self.error)
+        agenda.append(self.error)
 
         self.listbox = Gtk.ListBox(css_classes=["boxed-list"], selection_mode=Gtk.SelectionMode.NONE)
-        content.append(self.listbox)
+        agenda.append(self.listbox)
         self.empty = Gtk.Label(label="Keine Termine", css_classes=["dim-label"])
         self.empty.set_margin_top(18)
-        content.append(self.empty)
+        agenda.append(self.empty)
+        # Nur in breiten Fenstern: die folgenden Termine
+        self.soon_title = Gtk.Label(label="Demnächst", xalign=0, css_classes=["day-title"], visible=False)
+        self.soon_title.set_margin_top(12)
+        self.soon_title.set_margin_start(4)
+        agenda.append(self.soon_title)
+        self.soon = Gtk.ListBox(css_classes=["boxed-list"], selection_mode=Gtk.SelectionMode.NONE, visible=False)
+        agenda.append(self.soon)
+        self.wide = False
 
         clamp = Adw.Clamp(maximum_size=560, child=content)
+        self.clamp = clamp
         self.stack.add_named(Gtk.ScrolledWindow(child=clamp, hscrollbar_policy=Gtk.PolicyType.NEVER), "main")
 
         self.manager.connect("calendars-changed", lambda *_: self._on_calendars())
@@ -518,6 +533,14 @@ class CalendarPage(Gtk.Box):
 
         self.manager.fetch(start, end, done)
 
+    def set_wide(self, wide):
+        self.wide = wide
+        self.content.set_orientation(Gtk.Orientation.HORIZONTAL if wide else Gtk.Orientation.VERTICAL)
+        self.content.set_spacing(24 if wide else 12)
+        self.month.set_size_request(480 if wide else -1, -1)
+        self.clamp.set_maximum_size(1400 if wide else 560)
+        self.show_day(self.month.selected)
+
     def show_day(self, day):
         self.day_title.set_label(fmt_day(day))
         self.listbox.remove_all()
@@ -526,6 +549,15 @@ class CalendarPage(Gtk.Box):
             self.listbox.append(self._row(ev, day))
         self.listbox.set_visible(bool(events))
         self.empty.set_visible(not events)
+
+        self.soon.remove_all()
+        later = [e for e in self.events if e.start.date() > day][:10] if self.wide else []
+        for ev in later:
+            row = self._row(ev, ev.start.date())
+            row.set_subtitle(f"{fmt_day(ev.start.date(), long=False)} · {row.get_subtitle()}")
+            self.soon.append(row)
+        self.soon.set_visible(bool(later))
+        self.soon_title.set_visible(bool(later))
 
     def _row(self, ev, day):
         subtitle = fmt_event_time(ev, day)
