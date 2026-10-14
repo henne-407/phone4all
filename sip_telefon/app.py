@@ -1,6 +1,7 @@
 """Anwendung: verbindet baresip-Events mit Fenster, Pop-ups und Benachrichtigungen."""
 
 import os
+import re
 import shlex
 
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
@@ -112,10 +113,18 @@ class App(Adw.Application):
                 self._end_call(call_id, "")
         elif state == "running" and not self.store.account.get("domain"):
             self.set_reg_state("Kein Konto eingerichtet", "off")
+        elif state == "running":
+            # Die erste Anmeldung kann vor dem Verbindungsaufbau passiert sein
+            self.engine.send("reginfo", "", self._on_reginfo)
+
+    def _on_reginfo(self, ok, data):
+        if ok and re.search(r"\sOK\s", re.sub(r"\x1b\[[0-9;]*m", "", data)):
+            self._on_register("REGISTER_OK", "")
 
     def on_event(self, _engine, ev):
         cls, kind = ev.get("class"), ev.get("type", "")
-        if cls == "register":
+        # baresip 4.x meldet Registrierungen in der Klasse "ua", ältere als "register"
+        if kind in ("REGISTERING", "REGISTER_OK", "REGISTER_FAIL", "UNREGISTERING"):
             self._on_register(kind, ev.get("param", ""))
         elif cls == "call":
             self._on_call_event(kind, ev)
