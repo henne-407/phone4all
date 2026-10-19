@@ -48,5 +48,10 @@
     "electron-winstaller": false
   },
   "productName": "SIP-Telefon",
-  "desktopName": "sip-telefon.desktop"
+  "desktopName": "sip-telefon.desktop",
+  "homepage": "https://github.com/henne-407/phone4all",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/henne-407/phone4all.git"
+  }
 }

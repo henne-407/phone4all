@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
     tags: ['v*']
   pull_request:
   workflow_dispatch:
@@ -37,7 +37,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Pakete bauen
-        run: npx electron-builder --linux --publish never -c.extraMetadata.homepage=${{ github.server_url }}/${{ github.repository }}
+        run: npx electron-builder --linux --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: linux
