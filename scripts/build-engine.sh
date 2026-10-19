@@ -49,6 +49,11 @@ fi
 cmake -S libg722 -B libg722/build "${CMAKE[@]}" -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="$WORK/libg722-install"
 cmake --build libg722/build
 cmake --install libg722/build
+# Nur die statische Bibliothek behalten, damit baresip sie fest einbindet
+rm -f "$WORK"/libg722-install/lib/*.dylib "$WORK"/libg722-install/lib/*.so*
+if [ "$OS" = win ] && [ -f "$WORK/libg722-install/lib/g722_static.lib" ]; then
+  cp "$WORK/libg722-install/lib/g722_static.lib" "$WORK/libg722-install/lib/g722.lib"
+fi
 
 # libre: nur statisch, damit baresip keine eigene Bibliothek nachladen muss
 cmake -S re -B re/build "${CMAKE[@]}" -DLIBRE_BUILD_SHARED=OFF
@@ -73,7 +78,9 @@ cp baresip/share/*.wav "$OUT/share/"
 if [ "$OS" = mac ]; then
   cc -O2 "$ROOT/native/pa-devices.c" -I"$PA/include" -L"$PA/lib" -lportaudio -o "$OUT/pa-devices"
   # Homebrew-Bibliotheken mitliefern und Verweise auf @executable_path/lib umstellen
-  dylibbundler -of -cd -b -x "$OUT/baresip" -x "$OUT/pa-devices" -d "$OUT/lib" -p @executable_path/lib/
+  # (ohne Eingabe: dylibbundler fragt sonst bei unbekannten Pfaden interaktiv nach)
+  dylibbundler -of -cd -b -x "$OUT/baresip" -x "$OUT/pa-devices" -d "$OUT/lib" -p @executable_path/lib/ \
+    -s "$(brew --prefix)/lib" < /dev/null
   # Apple Silicon führt nur signierte Programme aus (ad hoc genügt)
   codesign --force --sign - "$OUT"/lib/*.dylib "$OUT/baresip" "$OUT/pa-devices"
 else
@@ -100,9 +107,19 @@ mkdir -p "$TEST"
 printf 'audio_player portaudio,\naudio_source portaudio,\nmodule g711.so\nmodule_app account.so\nmodule_app menu.so\nmodule_app ctrl_tcp.so\nctrl_tcp_listen 127.0.0.1:45999\n' > "$TEST/config"
 : > "$TEST/accounts"
 : > "$TEST/contacts"
-"$OUT/$EXE" -f "$TEST" -t 2 -c | tee "$TEST/log"
+# Mit Zeitlimit starten (macOS hat kein "timeout")
+with_timeout() {
+  "$@" &
+  local pid=$!
+  ( sleep 20; kill "$pid" 2>/dev/null ) &
+  local guard=$!
+  wait "$pid" || true
+  kill "$guard" 2>/dev/null || true
+}
+with_timeout "$OUT/$EXE" -f "$TEST" -t 2 -c > "$TEST/log" 2>&1
+cat "$TEST/log"
 grep -q "baresip is ready" "$TEST/log"
-"$OUT/pa-devices" || true
+with_timeout "$OUT/pa-devices"
 
 echo "Fertig: $OUT"
 ls -la "$OUT"
