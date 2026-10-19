@@ -107,7 +107,7 @@ const FILTERS: [string, string, (e: HistoryRow) => boolean][] = [
 export function StatTile({ value, caption, alert = false }: { value: string | number; caption: string; alert?: boolean }) {
   return (
     <Paper variant="outlined" sx={{ px: 1.5, py: 1.25, minWidth: 0 }}>
-      <Typography sx={{ fontSize: 22, fontWeight: 500, color: alert ? 'error.main' : 'text.primary' }} noWrap>
+      <Typography variant="h5" sx={{ color: alert ? 'error.main' : 'text.primary' }} noWrap>
         {value}
       </Typography>
       <Typography variant="caption" sx={{ color: 'text.secondary' }} noWrap>

@@ -148,7 +148,7 @@ export function CallPanel({ call, popup = false }: { call: CallInfo; popup?: boo
         <>
           <Collapse in={keypad}>
             <Stack sx={{ alignItems: 'center', gap: 1, mt: 2 }}>
-              <Typography sx={{ fontSize: 22, minHeight: 32, letterSpacing: 2, fontVariantNumeric: 'tabular-nums' }}>
+              <Typography variant="h5" sx={{ minHeight: 32, fontVariantNumeric: 'tabular-nums' }}>
                 {digits}
               </Typography>
               <DialPad compact onDigit={dtmf} />

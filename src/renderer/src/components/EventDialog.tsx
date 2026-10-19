@@ -1,6 +1,7 @@
 /** Termin anlegen, ansehen oder bearbeiten. */
 
 import CallIcon from '@mui/icons-material/Call'
+import CircleIcon from '@mui/icons-material/Circle'
 import {
   Alert,
   Box,
@@ -227,7 +228,7 @@ export function EventDialog({
           >
             {calendarChoices.map((c) => (
               <MenuItem key={c.id} value={c.id}>
-                <Box component="span" sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: c.color, mr: 1.5 }} />
+                <CircleIcon sx={{ fontSize: 12, color: c.color, mr: 1.5 }} />
                 {c.group ? `${c.name}  (${c.group})` : c.name}
               </MenuItem>
             ))}

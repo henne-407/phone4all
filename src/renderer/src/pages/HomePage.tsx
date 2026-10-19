@@ -16,8 +16,9 @@ import WifiIcon from '@mui/icons-material/WifiCalling3'
 import {
   Box,
   Button,
-  ButtonBase,
+  Fab,
   Card,
+  CardActionArea,
   Dialog,
   DialogActions,
   DialogContent,
@@ -157,9 +158,9 @@ function StatusCard({ grow }: { grow: boolean }) {
           onKeyDown={(e) => e.key === 'Enter' && void dial()}
           slotProps={{ htmlInput: { inputMode: 'tel' } }}
         />
-        <IconButton aria-label="Anrufen" onClick={() => void dial()} sx={{ bgcolor: 'success.main', color: 'success.contrastText', '&:hover': { bgcolor: 'success.main' } }}>
+        <Fab size="small" color="success" aria-label="Anrufen" onClick={() => void dial()} sx={{ flexShrink: 0 }}>
           <CallIcon />
-        </IconButton>
+        </Fab>
       </Stack>
     </HomeCardBox>
   )
@@ -188,16 +189,16 @@ function TodayCard({ grow }: { grow: boolean }) {
 
 function Tile({ name, number, size = 56 }: { name: string; number: string; size?: number }) {
   return (
-    <ButtonBase
+    <CardActionArea
       title={number ? `${name} – ${number} anrufen` : name}
       onClick={() => number && void api.dial(number)}
-      sx={{ flexDirection: 'column', gap: 0.75, p: 1, borderRadius: 1, width: '100%', '&:hover': { bgcolor: 'action.hover' } }}
+      sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, p: 1, borderRadius: 1 }}
     >
       <ContactAvatar name={name} size={size} />
       <Typography variant="caption" noWrap sx={{ maxWidth: '100%' }}>
         {name.split(' ')[0]}
       </Typography>
-    </ButtonBase>
+    </CardActionArea>
   )
 }
 
@@ -221,7 +222,7 @@ function FavoritesCard({ grow, fill }: { grow: boolean; fill: boolean }) {
       )}
       {often.length > 0 && (
         <>
-          <Typography variant="body2" sx={{ fontWeight: 500, mt: 1 }}>
+          <Typography variant="subtitle2" sx={{ mt: 1 }}>
             Häufig angerufen
           </Typography>
           <Box sx={grid}>

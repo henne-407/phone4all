@@ -181,7 +181,7 @@ export function DialPage({ wide }: { wide: boolean }) {
             onChange={(e) => setNumber(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && void dial()}
             slotProps={{ input: { inputMode: 'tel', style: { textAlign: 'center' }, 'aria-label': 'Nummer' } }}
-            sx={{ flex: 1, fontSize: 32, '& input::placeholder': { fontSize: 24 } }}
+            sx={{ flex: 1, typography: 'h4' }}
           />
           <Tooltip title="Löschen (gedrückt halten: alles)">
             <IconButton
@@ -206,7 +206,7 @@ export function DialPage({ wide }: { wide: boolean }) {
         </Box>
         <DialPad onDigit={insert} />
         <Box sx={{ mt: 1.5 }}>
-          <RoundAction kind="call" icon={<CallIcon />} label="Anrufen" size={72} onClick={() => void dial()} />
+          <RoundAction kind="call" icon={<CallIcon />} label="Anrufen" onClick={() => void dial()} />
         </Box>
       </Stack>
       {wide && <Suggestions text={number.trim()} onPick={(n) => setNumber(n)} />}

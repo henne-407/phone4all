@@ -12,11 +12,12 @@ import {
   BottomNavigationAction,
   Box,
   Button,
-  ButtonBase,
   Dialog,
   DialogActions,
   DialogContent,
   Stack,
+  Tab,
+  Tabs,
   Typography,
 } from '@mui/material'
 import { type ReactNode, useCallback, useEffect, useState } from 'react'
@@ -56,35 +57,26 @@ function useWidth(): number {
 /** Seitennavigation für breite Fenster */
 function NavRail({ page, onChange, missed }: { page: PageName; onChange: (p: PageName) => void; missed: boolean }) {
   return (
-    <Stack sx={{ width: 88, flexShrink: 0, alignItems: 'center', gap: 1.5, pt: 2 }}>
-      {PAGES.map(([key, label, icon]) => {
-        const active = key === page
-        return (
-          <ButtonBase
-            key={key}
-            onClick={() => onChange(key)}
-            sx={{
-              flexDirection: 'column',
-              gap: 0.5,
-              width: 80,
-              py: 1,
-              borderRadius: 1,
-              color: active ? 'primary.main' : 'text.secondary',
-              bgcolor: active ? 'action.selected' : 'transparent',
-              '&:hover': { bgcolor: active ? 'action.selected' : 'action.hover' },
-            }}
-            aria-current={active ? 'page' : undefined}
-          >
+    <Tabs
+      orientation="vertical"
+      value={page}
+      onChange={(_e, v: PageName) => onChange(v)}
+      sx={{ width: 96, flexShrink: 0, borderRight: 1, borderColor: 'divider' }}
+    >
+      {PAGES.map(([key, label, icon]) => (
+        <Tab
+          key={key}
+          value={key}
+          label={label}
+          sx={{ minWidth: 0 }}
+          icon={
             <Badge color="error" variant="dot" invisible={!(key === 'history' && missed)}>
               {icon}
             </Badge>
-            <Typography variant="caption">
-              {label}
-            </Typography>
-          </ButtonBase>
-        )
-      })}
-    </Stack>
+          }
+        />
+      ))}
+    </Tabs>
   )
 }
 

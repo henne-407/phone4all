@@ -1,13 +1,15 @@
 /** Wiederverwendbare Bausteine: Avatar, Wähltastatur, runde Knöpfe, Statuspunkt, leere Zustände. */
 
-import { Avatar, Box, ButtonBase, Fab, IconButton, Stack, Tooltip, Typography } from '@mui/material'
+import CircleIcon from '@mui/icons-material/Circle'
+import { Avatar, Box, Button, Fab, Stack, ToggleButton, Tooltip, Typography } from '@mui/material'
+import { amber, blue, deepOrange, deepPurple, green, pink, red, teal } from '@mui/material/colors'
 import { useTheme } from '@mui/material/styles'
 import type { ReactNode } from 'react'
 import type { RegKind } from '../../../shared/types'
 
 // -- Avatar mit Initialen ------------------------------------------------------
 
-const AVATAR_HUES = [270, 215, 182, 135, 45, 24, 4, 325]
+const AVATAR_COLORS = [deepPurple, blue, teal, green, amber, deepOrange, red, pink]
 
 function initials(name: string): string {
   const words = name.replace(/[^\p{L}\p{N} ]/gu, ' ').trim().split(/\s+/).filter(Boolean)
@@ -17,22 +19,12 @@ function initials(name: string): string {
 
 export function ContactAvatar({ name, size = 40 }: { name: string; size?: number }) {
   const theme = useTheme()
-  const dark = theme.palette.mode === 'dark'
   let hash = 0
   for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0
-  const hue = AVATAR_HUES[hash % AVATAR_HUES.length]
+  const bg = AVATAR_COLORS[hash % AVATAR_COLORS.length][500]
   const text = initials(name)
   return (
-    <Avatar
-      sx={{
-        width: size,
-        height: size,
-        fontSize: size * 0.4,
-        fontWeight: 500,
-        bgcolor: `hsl(${hue} ${dark ? 30 : 70}% ${dark ? 30 : 88}%)`,
-        color: `hsl(${hue} ${dark ? 70 : 50}% ${dark ? 88 : 22}%)`,
-      }}
-    >
+    <Avatar sx={{ width: size, height: size, fontSize: size * 0.4, bgcolor: bg, color: theme.palette.getContrastText(bg) }}>
       {text || <PersonGlyph size={size * 0.55} />}
     </Avatar>
   )
@@ -64,41 +56,30 @@ const KEYS: [string, string][] = [
 ]
 
 export function DialPad({ onDigit, compact = false }: { onDigit: (d: string) => void; compact?: boolean }) {
-  const size = compact ? 60 : 72
+  const size = compact ? 64 : 76
   return (
-    <Box
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: `repeat(3, ${size}px)`,
-        columnGap: compact ? '22px' : '26px',
-        rowGap: compact ? '10px' : '12px',
-        justifyContent: 'center',
-      }}
-    >
+    <Box sx={{ display: 'grid', gridTemplateColumns: `repeat(3, ${size}px)`, gap: 1.5, justifyContent: 'center' }}>
       {KEYS.map(([digit, letters]) => (
-        <ButtonBase
+        <Button
           key={digit}
+          variant="outlined"
+          color="inherit"
           onClick={() => onDigit(digit)}
           // Lange auf 0 drücken ergibt „+“
           onContextMenu={(e) => {
             e.preventDefault()
             if (digit === '0') onDigit('+')
           }}
-          sx={{
-            width: size,
-            height: size,
-            borderRadius: '50%',
-            bgcolor: 'action.hover',
-            flexDirection: 'column',
-            '&:hover': { bgcolor: 'action.selected' },
-          }}
+          sx={{ height: compact ? 56 : 64, flexDirection: 'column', borderColor: 'divider' }}
           aria-label={digit}
         >
-          <Typography sx={{ fontSize: compact ? 24 : 28, lineHeight: 1.1, fontWeight: 400 }}>{digit}</Typography>
-          <Typography sx={{ fontSize: 10, letterSpacing: 1, color: 'text.secondary', minHeight: 12 }}>
-            {letters || ' '}
+          <Typography variant={compact ? 'h6' : 'h5'} component="span" sx={{ lineHeight: 1.1 }}>
+            {digit}
           </Typography>
-        </ButtonBase>
+          <Typography variant="caption" component="span" sx={{ color: 'text.secondary', lineHeight: 1.2, minHeight: '1.2em' }}>
+            {letters}
+          </Typography>
+        </Button>
       ))}
     </Box>
   )
@@ -111,32 +92,24 @@ export function RoundAction({
   icon,
   label,
   onClick,
-  size = 64,
   autoFocus,
 }: {
   kind: 'call' | 'hangup'
   icon: ReactNode
   label: string
   onClick: () => void
-  size?: number
   autoFocus?: boolean
 }) {
   return (
     <Tooltip title={label}>
-      <Fab
-        aria-label={label}
-        onClick={onClick}
-        autoFocus={autoFocus}
-        color={kind === 'call' ? 'success' : 'error'}
-        sx={{ width: size, height: size, '& .MuiSvgIcon-root': { fontSize: size * 0.42 } }}
-      >
+      <Fab aria-label={label} onClick={onClick} autoFocus={autoFocus} color={kind === 'call' ? 'success' : 'error'}>
         {icon}
       </Fab>
     </Tooltip>
   )
 }
 
-/** Runder Umschaltknopf mit Beschriftung darunter (Anrufansicht). */
+/** Umschaltknopf mit Beschriftung darunter (Anrufansicht). */
 export function CallToggle({
   icon,
   label,
@@ -151,23 +124,11 @@ export function CallToggle({
   onClick: (e: React.MouseEvent<HTMLElement>) => void
 }) {
   return (
-    <Stack sx={{ alignItems: 'center', gap: 0.75, width: 64 }}>
-      <IconButton
-        aria-label={label}
-        aria-pressed={active}
-        disabled={disabled}
-        onClick={onClick}
-        color={active ? 'primary' : 'default'}
-        sx={{
-          width: 56,
-          height: 56,
-          border: 1,
-          borderColor: active ? 'primary.main' : 'divider',
-        }}
-      >
+    <Stack sx={{ alignItems: 'center', gap: 0.5, width: 70 }}>
+      <ToggleButton value={label} aria-label={label} selected={active} disabled={disabled} color="primary" onClick={onClick}>
         {icon}
-      </IconButton>
-      <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center', lineHeight: 1.2 }}>
+      </ToggleButton>
+      <Typography variant="caption" noWrap sx={{ color: 'text.secondary', maxWidth: '100%' }}>
         {label}
       </Typography>
     </Stack>
@@ -177,15 +138,12 @@ export function CallToggle({
 // -- Status --------------------------------------------------------------------------
 
 export function StatusDot({ kind, dnd = false, size = 10 }: { kind: RegKind; dnd?: boolean; size?: number }) {
-  const color = dnd && kind === 'ok' ? 'error.main' : { ok: 'success.main', busy: 'warning.main', error: 'error.main', off: 'text.disabled' }[kind]
+  const color = dnd && kind === 'ok' ? 'error' : ({ ok: 'success', busy: 'warning', error: 'error', off: 'disabled' } as const)[kind]
   return (
-    <Box
+    <CircleIcon
+      color={color}
       sx={{
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        bgcolor: color,
-        flexShrink: 0,
+        fontSize: size,
         ...(kind === 'busy' && {
           animation: 'pulse 1.4s ease-in-out infinite',
           '@keyframes pulse': { '50%': { opacity: 0.35 } },

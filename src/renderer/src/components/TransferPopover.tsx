@@ -1,7 +1,7 @@
 /** Ziel für eine Weiterleitung wählen: Nummer eintippen oder Kontakt anklicken. */
 
 import ForwardIcon from '@mui/icons-material/PhoneForwarded'
-import { IconButton, List, ListItemAvatar, ListItemButton, ListItemText, Popover, Stack, TextField, Typography } from '@mui/material'
+import { Fab, List, ListItemAvatar, ListItemButton, ListItemText, Popover, Stack, TextField, Typography } from '@mui/material'
 import { useEffect, useState } from 'react'
 import { contactNumbers, hasDigit } from '../../../shared/numbers'
 import type { Contact } from '../../../shared/types'
@@ -70,13 +70,9 @@ export function TransferPopover({
             onKeyDown={(e) => e.key === 'Enter' && submit(text)}
             slotProps={{ htmlInput: { inputMode: 'tel' } }}
           />
-          <IconButton
-            aria-label="Weiterleiten"
-            onClick={() => submit(text)}
-            sx={{ bgcolor: 'primary.main', color: 'primary.contrastText', '&:hover': { bgcolor: 'primary.main' } }}
-          >
+          <Fab size="small" color="primary" aria-label="Weiterleiten" onClick={() => submit(text)} sx={{ flexShrink: 0 }}>
             <ForwardIcon />
-          </IconButton>
+          </Fab>
         </Stack>
         {rows.length > 0 && (
           <List dense disablePadding>

@@ -5,13 +5,13 @@ import CallIcon from '@mui/icons-material/Call'
 import CalendarIcon from '@mui/icons-material/CalendarMonth'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
+import CircleIcon from '@mui/icons-material/Circle'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import RepeatIcon from '@mui/icons-material/Repeat'
 import {
   Alert,
   Box,
   Button,
-  ButtonBase,
   Card,
   CircularProgress,
   IconButton,
@@ -65,7 +65,7 @@ export function EventRow({ ev, day, subtitlePrefix = '' }: { ev: CalEvent; day?:
     >
       <ListItemButton onClick={() => emit('open-event', { event: ev, isNew: false })} sx={{ pr: numbers.length ? 10 : 6 }}>
         <Tooltip title={ev.calendarName}>
-          <Box sx={{ width: 6, alignSelf: 'stretch', borderRadius: 3, bgcolor: ev.color, mr: 2, my: 0.5, flexShrink: 0 }} />
+          <Box sx={{ width: 4, alignSelf: 'stretch', borderRadius: 1, bgcolor: ev.color, mr: 2, my: 0.5, flexShrink: 0 }} />
         </Tooltip>
         <ListItemText
           primary={ev.summary}
@@ -138,41 +138,21 @@ function MonthView({
           const other = day.getMonth() !== month
           const colors = marks.get(startOfDay(day).getTime()) ?? []
           return (
-            <ButtonBase
+            <Button
               key={i}
               onClick={() => onSelect(day)}
-              sx={{
-                flexDirection: 'column',
-                height: 48,
-                borderRadius: 1,
-                color: other ? 'text.disabled' : 'text.primary',
-                '&:hover': { bgcolor: 'action.hover' },
-              }}
+              variant={isSelected ? 'contained' : isToday ? 'outlined' : 'text'}
+              color={isSelected || isToday ? 'primary' : 'inherit'}
+              disableElevation
+              sx={{ minWidth: 0, height: 48, flexDirection: 'column', gap: 0.25, color: other && !isSelected ? 'text.disabled' : undefined }}
             >
-              <Box
-                sx={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: '50%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 14,
-                  bgcolor: isSelected ? 'primary.main' : 'transparent',
-                  color: isSelected ? 'primary.contrastText' : isToday ? 'primary.main' : 'inherit',
-                  border: isToday && !isSelected ? 1 : 0,
-                  borderColor: 'primary.main',
-                  fontWeight: isToday ? 600 : 400,
-                }}
-              >
-                {day.getDate()}
-              </Box>
+              {day.getDate()}
               <Stack direction="row" sx={{ gap: '2px', height: 6 }}>
                 {colors.slice(0, 3).map((c, j) => (
-                  <Box key={j} sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: c }} />
+                  <CircleIcon key={j} sx={{ fontSize: 6, color: c }} />
                 ))}
               </Stack>
-            </ButtonBase>
+            </Button>
           )
         })}
       </Box>

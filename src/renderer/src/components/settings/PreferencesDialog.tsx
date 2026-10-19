@@ -9,14 +9,15 @@ import LaunchIcon from '@mui/icons-material/Launch'
 import PaletteIcon from '@mui/icons-material/Palette'
 import PlayIcon from '@mui/icons-material/PlayArrow'
 import RefreshIcon from '@mui/icons-material/Refresh'
+import CircleIcon from '@mui/icons-material/Circle'
 import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
   Alert,
+  Avatar,
   Box,
   Button,
-  ButtonBase,
   Dialog,
   DialogActions,
   DialogContent,
@@ -28,12 +29,12 @@ import {
   Stack,
   Tab,
   Tabs,
+  ToggleButton,
   TextField,
   Tooltip,
   Typography,
   useMediaQuery,
 } from '@mui/material'
-import { useTheme } from '@mui/material/styles'
 import { useEffect, useState } from 'react'
 import { SCHEMES, THEMES, swatch } from '../../../../shared/themes'
 import type { AccountSettings } from '../../../../shared/types'
@@ -200,7 +201,7 @@ function CalendarTab() {
             subtitle={c.group + (c.writable ? '' : ' · nur lesen')}
             checked={c.enabled}
             onChange={(v) => void api.setCalendarEnabled(c.id, v)}
-            prefix={<Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: c.color, mr: 2, flexShrink: 0 }} />}
+            prefix={<CircleIcon sx={{ fontSize: 12, color: c.color, mr: 2 }} />}
           />
         ))}
         {writable.length > 0 && (
@@ -376,7 +377,6 @@ function ContactsTab({ onClose }: { onClose: () => void }) {
 
 function GeneralTab() {
   const { state, toast } = useApp()
-  const theme = useTheme()
   const { settings } = state
   const alertDevice = state.devices.sinks.find((d) => d.id === (settings.audio.alert || settings.audio.sink))
 
@@ -406,30 +406,18 @@ function GeneralTab() {
             {THEMES.map((t) => {
               const active = settings.appearance.theme === t.key
               return (
-                <ButtonBase
+                <ToggleButton
                   key={t.key}
+                  value={t.key}
+                  selected={active}
                   onClick={() => void api.setAppearance({ theme: t.key })}
-                  sx={{ flexDirection: 'column', gap: 0.75, borderRadius: 1, p: 0.75 }}
-                  aria-pressed={active}
+                  sx={{ flexDirection: 'column', gap: 0.75, border: 0, textTransform: 'none' }}
                 >
-                  <Box
-                    sx={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: '50%',
-                      bgcolor: swatch(t.key, state.platform.accent),
-                      color: '#fff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      outline: active ? `3px solid ${theme.palette.primary.main}` : 'none',
-                      outlineOffset: 2,
-                    }}
-                  >
+                  <Avatar sx={{ bgcolor: swatch(t.key, state.platform.accent), color: 'common.white' }}>
                     {active ? <CheckIcon /> : t.key === 'system' ? <PaletteIcon /> : null}
-                  </Box>
+                  </Avatar>
                   <Typography variant="caption">{t.name}</Typography>
-                </ButtonBase>
+                </ToggleButton>
               )
             })}
           </Box>
