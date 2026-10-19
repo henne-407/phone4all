@@ -1,32 +1,52 @@
 # SIP-Telefon
 
-Schlanker SIP-Softphone-Client für Linux (GTK4/libadwaita im Material-3-Design).
-Verbindet sich mit einer SIP-Telefonanlage (z. B. FRITZ!Box, Asterisk, 3CX,
-Starface, Sipgate), wählt Nummern, verwaltet Kontakte, meldet eingehende Anrufe
-per Pop-up und Desktop-Benachrichtigung und zeigt deinen Kalender (CalDAV oder
+Schlanker SIP-Softphone-Client für **Linux, macOS und Windows** mit einer Oberfläche
+in Material UI. Verbindet sich mit einer SIP-Telefonanlage (z. B. FRITZ!Box, Asterisk,
+3CX, Starface, Sipgate), wählt Nummern, verwaltet Kontakte, meldet eingehende Anrufe
+per Pop-up und Benachrichtigung und zeigt deinen Kalender (CalDAV, unter Linux auch
 GNOME Online-Konten) inklusive Einwahlnummern zum direkten Anrufen.
 
-Die SIP- und Audio-Arbeit macht [baresip](https://github.com/baresip/baresip),
-das als Hintergrundprozess gestartet und über sein `ctrl_tcp`-Modul gesteuert wird.
+Die SIP- und Audio-Arbeit macht [baresip](https://github.com/baresip/baresip), das als
+Hintergrundprozess gestartet und über sein `ctrl_tcp`-Modul gesteuert wird. Die App
+selbst ist mit Electron, React und [Material UI](https://mui.com/) gebaut.
 
-## Installation (Fedora)
+## Installation
+
+Fertige Pakete baut GitHub Actions bei jedem Push (Artefakte) bzw. für jeden
+Versions-Tag `v*` (Release):
+
+| System | Paket | baresip |
+| --- | --- | --- |
+| Linux | `.rpm`, `.deb`, `.AppImage` | aus der Distribution (siehe unten) |
+| macOS | `.dmg` (Apple Silicon und Intel) | mitgeliefert |
+| Windows | `.exe`-Installer (x64) | mitgeliefert |
+
+**Linux** – baresip installieren:
 
 ```sh
-sudo dnf install baresip baresip-pipewire baresip-opus baresip-g722
-sudo dnf install google-roboto-fonts   # optional: Material-Schrift
-./install.sh          # Startmenü-Eintrag + Befehl "sip-telefon"
+sudo dnf install baresip baresip-pipewire baresip-opus baresip-g722   # Fedora
+sudo apt install baresip                                               # Debian/Ubuntu
 ```
 
-GTK4, libadwaita und PyGObject sind auf Fedora Workstation bereits vorhanden
-(sonst: `sudo dnf install python3-gobject gtk4 libadwaita`).
+Ohne Paket direkt aus dem Quellcode für den eigenen Benutzer installieren
+(ersetzt auch den Startmenü-Eintrag der früheren GTK-Version):
 
-Ohne Installation direkt starten: `./sip-telefon`
+```sh
+scripts/install-linux.sh
+```
+
+**macOS** – die App ist nicht von Apple notarisiert. Beim ersten Start im Finder
+Rechtsklick → *Öffnen* wählen (oder `xattr -cr /Applications/SIP-Telefon.app`).
+Beim ersten Anruf fragt macOS nach dem Mikrofon.
+
+**Windows** – Installer starten; Windows SmartScreen warnt, weil der Installer
+nicht signiert ist (*Weitere Informationen* → *Trotzdem ausführen*).
 
 ## Einrichtung
 
-Menü → **Einstellungen** → Server/Domain, Benutzername und Passwort eintragen.
-Beim Schließen des Dialogs verbindet sich das Programm neu. Der Punkt links in
-der Titelleiste zeigt den Status (grün = angemeldet).
+Menü (⋮) → **Einstellungen** → **Konto**: Server/Domain, Benutzername und Passwort
+eintragen. Beim Schließen des Dialogs verbindet sich das Programm neu. Der Punkt
+links in der Titelleiste zeigt den Status (grün = angemeldet).
 
 FRITZ!Box: unter *Telefonie → Telefoniegeräte → Neues Gerät → Telefon (LAN/WLAN)*
 ein IP-Telefon anlegen. Server ist `fritz.box`, Benutzername der dort vergebene
@@ -38,90 +58,103 @@ Name (z. B. `620`).
   annehmen/ablehnen, „Stumm klingeln“, stummschalten, halten, Tastentöne, weiterleiten,
   auflegen (abschaltbar unter Einstellungen → Allgemein)
 - Weiterleiten (Blind Transfer) auch direkt beim Klingeln, mit Kontaktvorschlägen
-- Farbthemen (Violett, Blau, Türkis, Grün, Senf, Orange, Koralle, Pink, Graphit oder die
-  Akzentfarbe des Systems) und Hell/Dunkel/System, Kontrast nach WCAG AA geprüft
+- Material-Design mit Farbthemen (Violett, Blau, Türkis, Grün, Senf, Orange, Koralle,
+  Pink, Graphit oder die Akzentfarbe des Systems) und Hell/Dunkel/System,
+  Kontrast nach WCAG AA geprüft
+- Navigation unten im schmalen Fenster, als Navigationsleiste links im breiten Fenster;
+  Seiten nutzen breite Fenster mit Detailansichten und Seitenleisten
 - Klingeltöne: Marimba (Standard), Glocken, Klassisch, Dezent, baresip-Original oder eine
   eigene Audiodatei (WAV/MP3/OGG …), mit Probehören; ausgehend deutsches Freizeichen
 - Titelleiste mit Anmeldestatus (neu anmelden, ab-/anmelden, Konto), „Nicht stören“,
   Mikrofon mit Pegelanzeige, Lautsprecher mit Testton und separates Gerät zum Klingeln –
   Umschalten wirkt sofort, auch im laufenden Gespräch
-- Anpassbare Startseite (füllt das Fenster, Karten in bis zu drei Spalten nebeneinander): Status mit „Nicht stören“ und Schnellwahl, Favoriten,
-  letzte Anrufe, nächste Termine – Karten ein-/ausblenden und sortieren, Startansicht wählbar
+- Anpassbare Startseite (Karten in bis zu drei Spalten): Status mit „Nicht stören“ und
+  Schnellwahl, Favoriten, letzte Anrufe, nächste Termine – ein-/ausblenden, sortieren,
+  Startansicht wählbar
 - Wähltastatur mit Tastatureingabe, Kontaktvorschlägen und Wahlwiederholung
   (Anruftaste bei leerem Feld holt die letzte Nummer)
 - Kontakte (Name, Telefon, Mobil, weitere Nummern, Firma) mit Suche; Anrufer werden erkannt
-- Kontakt-Import aus vCard (.vcf) und CSV (Google, iCloud, Outlook, Thunderbird, Android);
-  Dubletten (gleiche Nummer oder gleicher Name) werden ergänzt statt doppelt angelegt
-- Adressbücher aus GNOME Online-Konten, per CardDAV und aus Microsoft-SQL-Server-Datenbanken
-  (z. B. CRM/Warenwirtschaft) werden alle 30 Minuten abgeglichen (nur lesend) und für
-  Kontaktliste und Anrufererkennung genutzt
-- Pop-up-Fenster und Benachrichtigung mit *Annehmen*/*Ablehnen* bei Anrufen,
-  Benachrichtigung bei verpassten Anrufen mit *Zurückrufen*
-- Während des Gesprächs: Stummschalten, Halten, DTMF-Tastatur (auch per Tastatur)
-- Anrufverlauf (ein-/ausgehend/verpasst), Nummern direkt als Kontakt speichern
-- Kalender-Tab: Monatsansicht mit Terminpunkten, Termine anlegen/ändern/löschen,
+- Kontakt-Import aus vCard (.vcf) und CSV (Google, iCloud, Outlook, Thunderbird, Android),
+  auch per Drag & Drop auf die Kontaktliste; Dubletten werden ergänzt statt doppelt angelegt
+- Adressbücher per CardDAV, aus Microsoft-SQL-Server-Datenbanken (z. B. CRM/Warenwirtschaft)
+  und unter Linux aus GNOME Online-Konten – alle 30 Minuten abgeglichen (nur lesend)
+- Pop-up-Fenster und Benachrichtigung bei Anrufen, Benachrichtigung bei verpassten Anrufen
+- Anrufverlauf (ein-/ausgehend/verpasst) mit Statistik, Nummern direkt als Kontakt speichern
+- Kalender: Monatsansicht mit Terminpunkten, Termine anlegen/ändern/löschen,
   Telefonnummern in Terminen (z. B. Einwahlnummern) per Klick anrufen
-- „Rückruf planen“ aus dem Verlauf (⋮-Menü) und während des Gesprächs
-- Erinnerung vor Terminen als Benachrichtigung, mit Anrufknopf bei erkannter Nummer
-- Material-3-Design mit hellem und dunklem Farbschema (folgt der Systemeinstellung)
-- Läuft beim Schließen im Hintergrund weiter (abschaltbar), optionaler Autostart
-- Passwort im GNOME-Schlüsselbund (libsecret); ohne Schlüsselbund in
-  `~/.config/sip-telefon/settings.json` mit Rechten 0600
+- „Rückruf planen“ aus dem Verlauf und während des Gesprächs
+- Erinnerung vor Terminen als Benachrichtigung
+- Läuft beim Schließen im Hintergrund weiter (Symbol im Infobereich), optionaler Autostart
+- Passwörter verschlüsselt mit dem Schlüsselbund des Systems (macOS-Schlüsselbund,
+  Windows DPAPI, GNOME-Schlüsselbund/KWallet); Passwörter der GTK-Version werden übernommen
 
 ## Kalender
 
-Menü → **Einstellungen** → **Kalender**:
+Einstellungen → **Kalender**:
 
 - **CalDAV**: „+“ bei *CalDAV-Konten*, Server-URL, Benutzer und Passwort eintragen.
   Die Kalender werden automatisch gefunden. Beispiele: Nextcloud
   `https://cloud.example.de/remote.php/dav`, iCloud `https://caldav.icloud.com`
   (app-spezifisches Passwort), mailbox.org `https://dav.mailbox.org`.
-- **GNOME Online-Konten** (Google, Microsoft 365, …): Konto in den
+- **GNOME Online-Konten** (nur Linux; Google, Microsoft 365, …): Konto in den
   GNOME-Einstellungen unter *Online-Konten* einrichten; die Kalender erscheinen
-  dann automatisch (über den Evolution Data Server). Lokale Evolution-Kalender
-  werden ebenfalls angezeigt.
+  dann automatisch (über den Evolution Data Server, angebunden mit dem System-Python).
 
 Serientermine werden angezeigt, lassen sich aber nur in der Kalender-App des
 Anbieters bearbeiten.
 
-## Kontakte importieren
-
-Kontakte-Tab → ⋮ → **Aus Datei importieren …** (vCard oder CSV, mehrere Dateien
-möglich). Adressbücher verbindest du unter Einstellungen → **Kontakte**; für
-Nextcloud & Co. lassen sich die Zugangsdaten eines vorhandenen Kalenderkontos
-übernehmen. Kontakte aus Adressbüchern sind schreibgeschützt, können aber per
-„Als eigenen Kontakt übernehmen“ kopiert werden.
-
 ## SQL-Server-Datenbank anbinden
 
-```sh
-sudo dnf install python3-pymssql
-```
-
 Einstellungen → **Kontakte** → *SQL-Server-Datenbanken* → „+“. Server, Port,
-Datenbank und Zugangsdaten eintragen, **Verbinden**, Tabelle oder Sicht wählen –
-Name-, Firma- und Telefonspalten werden anhand der Spaltennamen vorgeschlagen.
-Alternativ eine eigene `SELECT`-Abfrage mit Spalten wie `name`, `company`,
-`phone`, `mobile`. Es wird nur gelesen; am besten einen Datenbankbenutzer mit
-reinen Leserechten (`db_datareader`) verwenden. Es werden höchstens 50 000 Zeilen
-pro Quelle gelesen.
+Datenbank und Zugangsdaten eintragen (SQL-Login oder `DOMÄNE\benutzer`),
+**Verbinden**, Tabelle oder Sicht wählen – Name-, Firma- und Telefonspalten werden
+anhand der Spaltennamen vorgeschlagen. Alternativ eine eigene `SELECT`-Abfrage mit
+Spalten wie `name`, `company`, `phone`, `mobile`. Es wird nur gelesen; am besten einen
+Datenbankbenutzer mit reinen Leserechten (`db_datareader`) verwenden. Höchstens
+50 000 Zeilen pro Quelle. Kein Treiber nötig (reines JavaScript, `tedious`).
 
 ## Dateien
 
-| Pfad | Inhalt |
-| --- | --- |
-| `~/.config/sip-telefon/settings.json` | Kontoeinstellungen |
-| `~/.local/share/sip-telefon/contacts.json` | Kontakte |
-| `~/.local/share/sip-telefon/history.json` | Anrufverlauf |
-| `~/.local/share/sip-telefon/addressbooks.json` | Zwischenspeicher der Adressbuch-Kontakte |
-| `~/.local/state/sip-telefon/baresip.log` | Log der SIP-Engine (Fehlersuche) |
-| `$XDG_RUNTIME_DIR/sip-telefon/` | generierte baresip-Konfiguration |
+| Linux | macOS / Windows | Inhalt |
+| --- | --- | --- |
+| `~/.config/sip-telefon/settings.json` | App-Datenordner¹ `settings.json` | Einstellungen |
+| `~/.config/sip-telefon/secrets.json` | `secrets.json` | Passwörter (verschlüsselt) |
+| `~/.local/share/sip-telefon/` | `data/` | Kontakte, Verlauf, Adressbuch-Cache, Klingeltöne |
+| `~/.local/state/sip-telefon/baresip.log` | `logs/baresip.log` | Log der SIP-Engine |
+
+¹ macOS `~/Library/Application Support/SIP-Telefon`, Windows `%APPDATA%\SIP-Telefon`.
+Unter Linux sind es dieselben Ordner wie bei der früheren GTK-Version, Kontakte,
+Verlauf und Einstellungen werden also übernommen.
+
+## Entwicklung
+
+```sh
+npm install
+npm run dev          # App mit Hot-Reload starten
+npm run typecheck
+npm test
+npm run dist:linux   # Pakete nach dist/
+```
+
+Aufbau:
+
+- `src/main/` – Hauptprozess (Node): baresip-Steuerung, Anruflogik, Kontakte,
+  CalDAV/CardDAV, SQL Server, Fenster, Tray, Benachrichtigungen
+- `src/renderer/` – Oberfläche (React + Material UI)
+- `src/shared/` – gemeinsamer Code (Rufnummern, Formate, Statistik, Farbthemen)
+- `resources/linux/eds_helper.py` – Zugriff auf GNOME Online-Konten (Linux)
+- `scripts/build-engine.sh` – baut baresip + PortAudio-Geräteliste für macOS/Windows
+- `native/pa-devices.c` – listet PortAudio-Geräte für die Geräteauswahl
+
+Bildschirmfotos ohne sichtbares Fenster (z. B. für Tests):
+`SIP_TELEFON_SCREENSHOT=/tmp/shots npm start`.
 
 ## Hinweise
 
-- Audio: Mikrofon, Lautsprecher und Klingel-Gerät in der Funktionsleiste wählen
-  (Standard = PipeWire-Systemstandard). Ein neues Klingel-Gerät wird nach dem
-  aktuellen Gespräch übernommen (dafür meldet sich die App kurz neu an).
+- Audio: Mikrofon, Lautsprecher und Klingel-Gerät in der Titelleiste wählen
+  (Standard = Systemstandard). Ein neues Klingel-Gerät wird nach dem aktuellen
+  Gespräch übernommen (dafür meldet sich die App kurz neu an).
+- Unter macOS/Windows nutzt baresip PortAudio (Opus, G.722, G.711).
 - Passwörter mit `;` werden von baresip nicht unterstützt.
 - Ist die Anlage nur über NAT erreichbar, in den erweiterten Einstellungen einen
   STUN-Server und ggf. einen festen lokalen SIP-Port eintragen.

@@ -1,0 +1,44 @@
+import '@fontsource/roboto/400.css'
+import '@fontsource/roboto/500.css'
+import '@fontsource/roboto/700.css'
+import { CssBaseline, ThemeProvider, useMediaQuery } from '@mui/material'
+import { StrictMode, useEffect, useMemo } from 'react'
+import { createRoot } from 'react-dom/client'
+import { paletteFor } from '../../shared/themes'
+import type { AppState } from '../../shared/types'
+import { api } from './api'
+import { CallWindow } from './CallWindow'
+import { MainWindow } from './MainWindow'
+import { StateProvider } from './state'
+import { buildTheme } from './theme'
+
+const hash = new URLSearchParams(window.location.hash.slice(1))
+const callId = hash.get('call')
+
+function Themed({ state }: { state: AppState }) {
+  // Hauptprozess setzt nativeTheme.themeSource, daher folgt prefers-color-scheme der Einstellung
+  const dark = useMediaQuery('(prefers-color-scheme: dark)')
+  const { theme: key } = state.settings.appearance
+  const theme = useMemo(() => {
+    const md = paletteFor(key, dark, state.platform.accent)
+    return buildTheme(md, dark)
+  }, [key, dark, state.platform.accent])
+
+  useEffect(() => {
+    void api.setTitleBarColors(theme.md.surface, theme.md.onSurface)
+    document.title = callId ? 'Anruf' : 'SIP-Telefon'
+  }, [theme])
+
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      {callId ? <CallWindow callId={callId} /> : <MainWindow />}
+    </ThemeProvider>
+  )
+}
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <StateProvider>{(state) => <Themed state={state} />}</StateProvider>
+  </StrictMode>,
+)

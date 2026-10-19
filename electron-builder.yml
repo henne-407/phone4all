@@ -1,0 +1,66 @@
+appId: de.hpieper.SipTelefon
+productName: SIP-Telefon
+copyright: Copyright © 2026 Henning Pieper
+directories:
+  output: dist
+  buildResources: resources/icons
+files:
+  - out/**
+  - package.json
+extraResources:
+  - from: resources/icons
+    to: icons
+asarUnpack: []
+artifactName: SIP-Telefon-${version}-${os}-${arch}.${ext}
+
+linux:
+  target: [AppImage, deb, rpm]
+  icon: resources/icons/icon.png
+  category: Network;Telephony
+  executableName: sip-telefon
+  synopsis: Softphone für SIP-Telefonanlagen
+  desktop:
+    entry:
+      Name: SIP-Telefon
+      GenericName: Softphone
+      Comment: Telefonieren über deine SIP-Telefonanlage
+      Keywords: SIP;VoIP;Telefon;Anruf;Softphone;
+      StartupWMClass: SIP-Telefon
+  extraResources:
+    - from: resources/linux
+      to: linux
+deb:
+  depends: [baresip-core, baresip, libnotify4, libsecret-1-0]
+rpm:
+  depends: [baresip, baresip-pipewire, libsecret]
+  fpm: ['--rpm-rpmbuild-define=_build_id_links none']
+
+mac:
+  target:
+    - target: dmg
+    - target: zip
+  category: public.app-category.business
+  icon: resources/icons/icon.png
+  identity: null
+  hardenedRuntime: false
+  extendInfo:
+    NSMicrophoneUsageDescription: SIP-Telefon braucht das Mikrofon für Telefongespräche.
+    LSMultipleInstancesProhibited: true
+  extraResources:
+    - from: build/engine
+      to: baresip
+dmg:
+  title: SIP-Telefon ${version}
+
+win:
+  target: [nsis]
+  icon: resources/icons/icon.ico
+  extraResources:
+    - from: build/engine
+      to: baresip
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: SIP-Telefon
+  uninstallDisplayName: SIP-Telefon

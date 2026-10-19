@@ -1,0 +1,52 @@
+{
+  "name": "sip-telefon",
+  "version": "0.2.0",
+  "description": "Softphone für SIP-Telefonanlagen mit Kontakten, Kalender und Anrufverlauf",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "dist:linux": "electron-vite build && electron-builder --linux",
+    "dist:mac": "electron-vite build && electron-builder --mac",
+    "dist:win": "electron-vite build && electron-builder --win"
+  },
+  "author": {
+    "name": "Henning Pieper",
+    "email": "henning.pieper407@gmail.com"
+  },
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "fast-xml-parser": "^5.11.2",
+    "ical.js": "^2.2.1",
+    "mssql": "^12.7.10"
+  },
+  "devDependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@fontsource/roboto": "^5.3.0",
+    "@mui/icons-material": "^9.5.0",
+    "@mui/material": "^9.5.0",
+    "@types/mssql": "^12.3.0",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  },
+  "allowScripts": {
+    "electron-winstaller": false
+  },
+  "productName": "SIP-Telefon",
+  "desktopName": "sip-telefon.desktop"
+}
