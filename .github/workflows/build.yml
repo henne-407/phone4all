@@ -71,6 +71,11 @@ jobs:
       - run: npm run build
       - name: App bauen
         run: npx electron-builder --mac --${{ matrix.arch }} --publish never
+      - name: Signatur prüfen
+        run: |
+          app=$(find dist -maxdepth 2 -name 'SIP-Telefon.app' | head -1)
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -i signature
       - uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}

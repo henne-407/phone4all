@@ -35,8 +35,11 @@ Ohne Paket direkt aus dem Quellcode für den eigenen Benutzer installieren
 scripts/install-linux.sh
 ```
 
-**macOS** – die App ist nicht von Apple notarisiert. Beim ersten Start im Finder
-Rechtsklick → *Öffnen* wählen (oder `xattr -cr /Applications/SIP-Telefon.app`).
+**macOS** – die App ist nur ad-hoc signiert, nicht von Apple notarisiert. Beim ersten
+Start meldet macOS, dass der Entwickler nicht überprüft werden kann. Dann unter
+*Systemeinstellungen → Datenschutz & Sicherheit* ganz unten *Dennoch öffnen* wählen
+(bis macOS 14 genügt im Finder Rechtsklick → *Öffnen*). Alternativ im Terminal:
+`xattr -dr com.apple.quarantine /Applications/SIP-Telefon.app`.
 Beim ersten Anruf fragt macOS nach dem Mikrofon.
 
 **Windows** – Installer starten; Windows SmartScreen warnt, weil der Installer

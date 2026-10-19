@@ -41,7 +41,9 @@ mac:
     - target: zip
   category: public.app-category.business
   icon: resources/icons/icon.png
-  identity: null
+  # Ad-hoc-Signatur: ohne Signatur startet die App auf Apple Silicon nicht
+  # („beschädigt“). Notarisiert ist sie damit nicht, siehe README.
+  identity: '-'
   hardenedRuntime: false
   extendInfo:
     NSMicrophoneUsageDescription: SIP-Telefon braucht das Mikrofon für Telefongespräche.
