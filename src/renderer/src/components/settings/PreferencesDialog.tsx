@@ -99,7 +99,7 @@ function AccountTab({
         helperText={password.includes(';') ? 'Das Zeichen „;“ wird von baresip nicht unterstützt' : ' '}
       />
       {field('display_name', 'Anzeigename (optional)')}
-      <Accordion disableGutters elevation={0} sx={{ bgcolor: 'transparent', '&::before': { display: 'none' }, border: 1, borderColor: 'divider', borderRadius: 3, mt: 1 }}>
+      <Accordion disableGutters variant="outlined" sx={{ mt: 1 }}>
         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
           <ListItemText primary="Erweiterte Kontoeinstellungen" secondary="Nur nötig, wenn deine Anlage es verlangt" />
         </AccordionSummary>
@@ -376,7 +376,7 @@ function ContactsTab({ onClose }: { onClose: () => void }) {
 
 function GeneralTab() {
   const { state, toast } = useApp()
-  const { md } = useTheme()
+  const theme = useTheme()
   const { settings } = state
   const alertDevice = state.devices.sinks.find((d) => d.id === (settings.audio.alert || settings.audio.sink))
 
@@ -409,7 +409,7 @@ function GeneralTab() {
                 <ButtonBase
                   key={t.key}
                   onClick={() => void api.setAppearance({ theme: t.key })}
-                  sx={{ flexDirection: 'column', gap: 0.75, borderRadius: 3, p: 0.75 }}
+                  sx={{ flexDirection: 'column', gap: 0.75, borderRadius: 1, p: 0.75 }}
                   aria-pressed={active}
                 >
                   <Box
@@ -422,7 +422,7 @@ function GeneralTab() {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      outline: active ? `3px solid ${md.primary}` : 'none',
+                      outline: active ? `3px solid ${theme.palette.primary.main}` : 'none',
                       outlineOffset: 2,
                     }}
                   >

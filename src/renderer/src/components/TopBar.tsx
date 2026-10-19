@@ -16,7 +16,6 @@ import SpeakerIcon from '@mui/icons-material/VolumeUp'
 import {
   Box,
   Button,
-  ButtonBase,
   Divider,
   IconButton,
   LinearProgress,
@@ -30,7 +29,6 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
-import { alpha, useTheme } from '@mui/material/styles'
 import { type ReactNode, useEffect, useState } from 'react'
 import type { AudioDevice } from '../../../shared/types'
 import { api, platform } from '../api'
@@ -56,34 +54,27 @@ function Chip({
   compact: boolean
   onClick: (e: React.MouseEvent<HTMLElement>) => void
 }) {
-  const { md } = useTheme()
   return (
     <Tooltip title={tooltip}>
-      <ButtonBase
-        onClick={onClick}
-        aria-label={tooltip}
-        sx={{
-          ...noDrag,
-          height: 34,
-          px: compact ? 1 : 1.5,
-          gap: 1,
-          borderRadius: 9999,
-          color: active ? md.onHangup : md.onSurface,
-          bgcolor: active ? md.hangup : 'transparent',
-          fontSize: 14,
-          fontWeight: 500,
-          maxWidth: 220,
-          '&:hover': { bgcolor: active ? md.hangup : alpha(md.onSurface, 0.08) },
-          '& .MuiSvgIcon-root': { fontSize: 20 },
-        }}
-      >
-        {icon}
-        {!compact && (
+      {compact ? (
+        <IconButton onClick={onClick} aria-label={tooltip} color={active ? 'error' : 'inherit'} sx={noDrag}>
+          {icon}
+        </IconButton>
+      ) : (
+        <Button
+          onClick={onClick}
+          aria-label={tooltip}
+          size="small"
+          variant={active ? 'contained' : 'text'}
+          color={active ? 'error' : 'inherit'}
+          startIcon={icon}
+          sx={{ ...noDrag, maxWidth: 220 }}
+        >
           <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {label}
           </Box>
-        )}
-      </ButtonBase>
+        </Button>
+      )}
     </Tooltip>
   )
 }
@@ -108,7 +99,7 @@ function DeviceList({
   return (
     <>
       {entries.map((d) => (
-        <MenuItem key={d.id || 'default'} dense onClick={() => onSelect(d.id)} sx={{ borderRadius: 2 }}>
+        <MenuItem key={d.id || 'default'} dense onClick={() => onSelect(d.id)}>
           <Radio checked={d.id === current} size="small" sx={{ p: 0.5, mr: 1 }} />
           <ListItemText primary={d.name} slotProps={{ primary: { noWrap: true } }} />
         </MenuItem>
@@ -192,7 +183,6 @@ function SpeakerPopover({ anchor, onClose }: { anchor: HTMLElement | null; onClo
 
 export function TopBar({ compact, showTitle }: { compact: boolean; showTitle: boolean }) {
   const { state } = useApp()
-  const { md } = useTheme()
   const [menu, setMenu] = useState<null | 'account' | 'mic' | 'speaker' | 'main'>(null)
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const open = (name: typeof menu) => (e: React.MouseEvent<HTMLElement>) => {
@@ -222,7 +212,7 @@ export function TopBar({ compact, showTitle }: { compact: boolean; showTitle: bo
         display: 'flex',
         alignItems: 'center',
         gap: 0.5,
-        bgcolor: md.surface,
+        bgcolor: 'background.default',
         // Platz für die Fensterknöpfe (Window Controls Overlay bzw. macOS-Ampel)
         pl: mac ? '78px' : 1,
         pr: mac ? 1 : 'calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px) + 8px)',

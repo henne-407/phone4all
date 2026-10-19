@@ -34,7 +34,6 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import { useTheme } from '@mui/material/styles'
 import { type ReactNode, useEffect, useState } from 'react'
 import { dayLabel, formatTalk, relativeStart } from '../../../shared/format'
 import { contactNumbers, hasDigit } from '../../../shared/numbers'
@@ -84,12 +83,11 @@ function HomeCardBox({
   grow: boolean
   children: ReactNode
 }) {
-  const { md } = useTheme()
   const [title, icon] = CARDS[card]
   return (
     <Card sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.25, minHeight: 0, flex: grow ? 1 : 'none' }}>
       <Stack direction="row" sx={{ alignItems: 'center', gap: 1.25 }}>
-        <Box sx={{ color: md.primary, display: 'flex' }}>{icon}</Box>
+        <Box sx={{ color: 'primary.main', display: 'flex' }}>{icon}</Box>
         <Typography variant="subtitle1" sx={{ flex: 1 }}>
           {title}
         </Typography>
@@ -106,9 +104,8 @@ function HomeCardBox({
 
 /** Liste in einer Karte; im Füllmodus scrollt sie innerhalb der Karte. */
 function CardList({ fill, children }: { fill: boolean; children: ReactNode }) {
-  const { md } = useTheme()
   return (
-    <Box sx={{ overflowY: fill ? 'auto' : 'visible', minHeight: fill ? 120 : 0, flex: fill ? 1 : 'none', mx: -1, borderRadius: 3, bgcolor: md.surfaceContainer }}>
+    <Box sx={{ overflowY: fill ? 'auto' : 'visible', minHeight: fill ? 120 : 0, flex: fill ? 1 : 'none', mx: -1 }}>
       <List disablePadding dense>
         {children}
       </List>
@@ -194,7 +191,7 @@ function Tile({ name, number, size = 56 }: { name: string; number: string; size?
     <ButtonBase
       title={number ? `${name} – ${number} anrufen` : name}
       onClick={() => number && void api.dial(number)}
-      sx={{ flexDirection: 'column', gap: 0.75, p: 1, borderRadius: 4, width: '100%', '&:hover': { bgcolor: 'action.hover' } }}
+      sx={{ flexDirection: 'column', gap: 0.75, p: 1, borderRadius: 1, width: '100%', '&:hover': { bgcolor: 'action.hover' } }}
     >
       <ContactAvatar name={name} size={size} />
       <Typography variant="caption" noWrap sx={{ maxWidth: '100%' }}>

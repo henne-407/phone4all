@@ -85,7 +85,6 @@ function CallMenuButton({ contact }: { contact: Contact }) {
 
 function ContactDetail({ contact }: { contact: Contact | null }) {
   const { history } = useApp()
-  const { md } = useTheme()
   if (!contact) {
     return (
       <EmptyState
@@ -113,9 +112,9 @@ function ContactDetail({ contact }: { contact: Contact | null }) {
               {numbers.length > 0 && (
                 <Button
                   variant="contained"
+                  color="success"
                   startIcon={<CallIcon />}
                   onClick={() => void api.dial(numbers[0])}
-                  sx={{ bgcolor: md.callContainer, color: md.onCallContainer, '&:hover': { bgcolor: md.callContainer } }}
                 >
                   Anrufen
                 </Button>
@@ -192,7 +191,7 @@ function ContactDetail({ contact }: { contact: Contact | null }) {
 
 export function ContactsPage({ wide }: { wide: boolean }) {
   const { state } = useApp()
-  const { md } = useTheme()
+  const theme = useTheme()
   const [search, setSearch] = useState('')
   const [result, setResult] = useState<{ items: Contact[]; total: number }>({ items: [], total: 0 })
   const [selected, setSelected] = useState<Contact | null>(null)
@@ -283,7 +282,7 @@ export function ContactsPage({ wide }: { wide: boolean }) {
   return (
     <Stack
       direction="row"
-      sx={{ flex: 1, minHeight: 0, position: 'relative', outline: dragging ? `3px dashed ${md.primary}` : 'none', outlineOffset: -6 }}
+      sx={{ flex: 1, minHeight: 0, position: 'relative', outline: dragging ? `3px dashed ${theme.palette.primary.main}` : 'none', outlineOffset: -6 }}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes('Files')) {
           e.preventDefault()
@@ -302,7 +301,6 @@ export function ContactsPage({ wide }: { wide: boolean }) {
         <Stack direction="row" sx={{ gap: 1, px: 1.5, pt: 1, pb: 1.5, maxWidth: wide ? 'none' : 584, width: '100%', mx: 'auto', boxSizing: 'border-box' }}>
           <TextField
             size="small"
-            variant="outlined"
             placeholder="Kontakte durchsuchen"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -312,7 +310,6 @@ export function ContactsPage({ wide }: { wide: boolean }) {
             }}
             slotProps={{
               input: {
-                sx: { borderRadius: 9999, bgcolor: md.surfaceContainerHigh },
                 startAdornment: (
                   <InputAdornment position="start">
                     <SearchIcon />
@@ -349,12 +346,12 @@ export function ContactsPage({ wide }: { wide: boolean }) {
         {list}
       </Stack>
       {wide && (
-        <Stack sx={{ flex: 1, minWidth: 0, borderLeft: `1px solid ${md.outlineVariant}` }}>
+        <Stack sx={{ flex: 1, minWidth: 0, borderLeft: 1, borderColor: 'divider' }}>
           <ContactDetail contact={selected} />
         </Stack>
       )}
       <Tooltip title="Neuer Kontakt">
-        <Fab onClick={() => emit('edit-contact', {})} sx={{ position: 'absolute', right: 18, bottom: 18 }} aria-label="Neuer Kontakt">
+        <Fab color="primary" onClick={() => emit('edit-contact', {})} sx={{ position: 'absolute', right: 18, bottom: 18 }} aria-label="Neuer Kontakt">
           <PersonAddIcon />
         </Fab>
       </Tooltip>

@@ -23,7 +23,6 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
-import { alpha, useTheme } from '@mui/material/styles'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { addDays, covers, fmtDay, fmtEventTime, fmtMonth, sameDay, startOfDay } from '../../../shared/format'
 import { findNumbers } from '../../../shared/numbers'
@@ -93,7 +92,6 @@ function MonthView({
   onSelect: (d: Date) => void
   onShift: (delta: number) => void
 }) {
-  const { md } = useTheme()
   const today = new Date()
   const first = firstVisible(year, month)
   const wheel = useRef(0)
@@ -146,9 +144,9 @@ function MonthView({
               sx={{
                 flexDirection: 'column',
                 height: 48,
-                borderRadius: 3,
-                color: other ? alpha(md.onSurface, 0.38) : md.onSurface,
-                '&:hover': { bgcolor: alpha(md.onSurface, 0.08) },
+                borderRadius: 1,
+                color: other ? 'text.disabled' : 'text.primary',
+                '&:hover': { bgcolor: 'action.hover' },
               }}
             >
               <Box
@@ -160,9 +158,10 @@ function MonthView({
                   alignItems: 'center',
                   justifyContent: 'center',
                   fontSize: 14,
-                  bgcolor: isSelected ? md.primary : 'transparent',
-                  color: isSelected ? md.onPrimary : isToday ? md.primary : 'inherit',
-                  border: isToday && !isSelected ? `1px solid ${md.primary}` : 'none',
+                  bgcolor: isSelected ? 'primary.main' : 'transparent',
+                  color: isSelected ? 'primary.contrastText' : isToday ? 'primary.main' : 'inherit',
+                  border: isToday && !isSelected ? 1 : 0,
+                  borderColor: 'primary.main',
                   fontWeight: isToday ? 600 : 400,
                 }}
               >
@@ -287,7 +286,7 @@ export function CalendarPage({ wide }: { wide: boolean }) {
               </IconButton>
             </Tooltip>
             {writable.length > 0 && (
-              <Button variant="contained" color="secondary" startIcon={<AddIcon />} onClick={newEvent}>
+              <Button variant="contained" startIcon={<AddIcon />} onClick={newEvent}>
                 Termin
               </Button>
             )}

@@ -19,7 +19,6 @@ import {
   Stack,
   Typography,
 } from '@mui/material'
-import { alpha, useTheme } from '@mui/material/styles'
 import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import type { CalEvent, Contact, PageName } from '../../shared/types'
 import { api, onMain, platform } from './api'
@@ -54,9 +53,8 @@ function useWidth(): number {
   return width
 }
 
-/** Navigation Rail (M3) für breite Fenster */
+/** Seitennavigation für breite Fenster */
 function NavRail({ page, onChange, missed }: { page: PageName; onChange: (p: PageName) => void; missed: boolean }) {
-  const { md } = useTheme()
   return (
     <Stack sx={{ width: 88, flexShrink: 0, alignItems: 'center', gap: 1.5, pt: 2 }}>
       {PAGES.map(([key, label, icon]) => {
@@ -65,27 +63,22 @@ function NavRail({ page, onChange, missed }: { page: PageName; onChange: (p: Pag
           <ButtonBase
             key={key}
             onClick={() => onChange(key)}
-            sx={{ flexDirection: 'column', gap: 0.5, width: 80, borderRadius: 4, py: 0.5 }}
+            sx={{
+              flexDirection: 'column',
+              gap: 0.5,
+              width: 80,
+              py: 1,
+              borderRadius: 1,
+              color: active ? 'primary.main' : 'text.secondary',
+              bgcolor: active ? 'action.selected' : 'transparent',
+              '&:hover': { bgcolor: active ? 'action.selected' : 'action.hover' },
+            }}
             aria-current={active ? 'page' : undefined}
           >
-            <Box
-              sx={{
-                width: 56,
-                height: 32,
-                borderRadius: 4,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                bgcolor: active ? md.secondaryContainer : 'transparent',
-                color: active ? md.onSecondaryContainer : md.onSurfaceVariant,
-                '&:hover': { bgcolor: active ? md.secondaryContainer : alpha(md.onSurface, 0.08) },
-              }}
-            >
-              <Badge color="error" variant="dot" invisible={!(key === 'history' && missed)}>
-                {icon}
-              </Badge>
-            </Box>
-            <Typography sx={{ fontSize: 12, fontWeight: active ? 700 : 500, color: active ? md.onSurface : md.onSurfaceVariant }}>
+            <Badge color="error" variant="dot" invisible={!(key === 'history' && missed)}>
+              {icon}
+            </Badge>
+            <Typography variant="caption">
               {label}
             </Typography>
           </ButtonBase>
@@ -121,7 +114,6 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
 
 export function MainWindow() {
   const { state } = useApp()
-  const { md } = useTheme()
   const width = useWidth()
   const [page, setPage] = useState<PageName>(state.settings.home.start_tab)
   const [contact, setContact] = useState<Partial<Contact> | null>(null)
@@ -199,7 +191,7 @@ export function MainWindow() {
   }
 
   return (
-    <Stack sx={{ height: '100vh', bgcolor: md.surface, color: md.onSurface }}>
+    <Stack sx={{ height: '100vh', bgcolor: 'background.default', color: 'text.primary' }}>
       <TopBar compact={narrow} showTitle={!narrow} />
       {banner && (
         <Alert

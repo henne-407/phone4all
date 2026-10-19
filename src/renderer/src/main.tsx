@@ -20,18 +20,20 @@ function Themed({ state }: { state: AppState }) {
   const dark = useMediaQuery('(prefers-color-scheme: dark)')
   const { theme: key } = state.settings.appearance
   const theme = useMemo(() => {
-    const md = paletteFor(key, dark, state.platform.accent)
-    return buildTheme(md, dark)
+    return buildTheme(paletteFor(key, dark, state.platform.accent).primary, dark)
   }, [key, dark, state.platform.accent])
 
   useEffect(() => {
-    void api.setTitleBarColors(theme.md.surface, theme.md.onSurface)
+    void api.setTitleBarColors(
+      theme.palette.background.default,
+      theme.palette.mode === 'dark' ? theme.palette.common.white : theme.palette.common.black,
+    )
     document.title = callId ? 'Anruf' : 'SIP-Telefon'
   }, [theme])
 
   return (
     <ThemeProvider theme={theme}>
-      <CssBaseline />
+      <CssBaseline enableColorScheme />
       {callId ? <CallWindow callId={callId} /> : <MainWindow />}
     </ThemeProvider>
   )

@@ -21,11 +21,11 @@ import {
   ListItemText,
   Menu,
   MenuItem,
+  Paper,
   Stack,
   Tooltip,
   Typography,
 } from '@mui/material'
-import { useTheme } from '@mui/material/styles'
 import { useEffect, useState } from 'react'
 import { formatDuration, formatTalk, formatTime } from '../../../shared/format'
 import { frequent, summary } from '../../../shared/stats'
@@ -36,7 +36,6 @@ import { ContactAvatar, EmptyState } from '../components/common'
 import { useApp } from '../state'
 
 export function HistoryItem({ entry }: { entry: HistoryRow }) {
-  const { md } = useTheme()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const name = entry.contactName || entry.name || entry.number
   const details = [formatTime(entry.time)]
@@ -55,14 +54,14 @@ export function HistoryItem({ entry }: { entry: HistoryRow }) {
     >
       <Tooltip title="Zurückrufen" placement="top-start">
         <ListItemButton onClick={() => void api.dial(entry.number)} sx={{ pr: 7 }}>
-          <ListItemIcon sx={{ minWidth: 40, color: entry.missed ? md.error : md.onSurfaceVariant }}>
+          <ListItemIcon sx={{ minWidth: 40, color: entry.missed ? 'error.main' : 'text.secondary' }}>
             <Icon />
           </ListItemIcon>
           <ListItemText
             primary={name}
             secondary={details.join(' · ')}
             slotProps={{
-              primary: { noWrap: true, sx: { color: entry.missed ? md.error : undefined } },
+              primary: { noWrap: true, sx: { color: entry.missed ? 'error.main' : undefined } },
               secondary: { noWrap: true },
             }}
           />
@@ -106,16 +105,15 @@ const FILTERS: [string, string, (e: HistoryRow) => boolean][] = [
 ]
 
 export function StatTile({ value, caption, alert = false }: { value: string | number; caption: string; alert?: boolean }) {
-  const { md } = useTheme()
   return (
-    <Box sx={{ bgcolor: md.surfaceContainerHigh, borderRadius: 3, px: 1.5, py: 1.25, minWidth: 0 }}>
-      <Typography sx={{ fontSize: 22, fontWeight: 500, color: alert ? md.error : md.onSurface }} noWrap>
+    <Paper variant="outlined" sx={{ px: 1.5, py: 1.25, minWidth: 0 }}>
+      <Typography sx={{ fontSize: 22, fontWeight: 500, color: alert ? 'error.main' : 'text.primary' }} noWrap>
         {value}
       </Typography>
       <Typography variant="caption" sx={{ color: 'text.secondary' }} noWrap>
         {caption}
       </Typography>
-    </Box>
+    </Paper>
   )
 }
 

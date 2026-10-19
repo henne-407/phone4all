@@ -30,7 +30,7 @@ export function Group({
           {description}
         </Typography>
       )}
-      <Card sx={{ bgcolor: 'background.default', border: 1, borderColor: 'divider' }}>
+      <Card variant="outlined">
         <List disablePadding>
           {items.map((child, i) => (
             <Box key={i}>

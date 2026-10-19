@@ -2,17 +2,15 @@
 
 import OpenInFullIcon from '@mui/icons-material/OpenInFull'
 import { Box, IconButton, Stack, Tooltip } from '@mui/material'
-import { useTheme } from '@mui/material/styles'
 import { api, platform } from './api'
 import { CallPanel } from './components/CallPanel'
 import { useApp } from './state'
 
 export function CallWindow({ callId }: { callId: string }) {
   const { state } = useApp()
-  const { md } = useTheme()
   const call = state.calls.find((c) => c.id === callId)
   return (
-    <Stack sx={{ height: '100vh', bgcolor: md.surface, color: md.onSurface }}>
+    <Stack sx={{ height: '100vh', bgcolor: 'background.default', color: 'text.primary' }}>
       <Box
         sx={{
           WebkitAppRegion: 'drag',

@@ -1,7 +1,7 @@
 /** Wiederverwendbare Bausteine: Avatar, Wähltastatur, runde Knöpfe, Statuspunkt, leere Zustände. */
 
-import { Avatar, Box, ButtonBase, IconButton, Stack, Tooltip, Typography } from '@mui/material'
-import { alpha, useTheme } from '@mui/material/styles'
+import { Avatar, Box, ButtonBase, Fab, IconButton, Stack, Tooltip, Typography } from '@mui/material'
+import { useTheme } from '@mui/material/styles'
 import type { ReactNode } from 'react'
 import type { RegKind } from '../../../shared/types'
 
@@ -64,7 +64,6 @@ const KEYS: [string, string][] = [
 ]
 
 export function DialPad({ onDigit, compact = false }: { onDigit: (d: string) => void; compact?: boolean }) {
-  const { md } = useTheme()
   const size = compact ? 60 : 72
   return (
     <Box
@@ -89,17 +88,14 @@ export function DialPad({ onDigit, compact = false }: { onDigit: (d: string) => 
             width: size,
             height: size,
             borderRadius: '50%',
-            bgcolor: md.surfaceContainerHigh,
-            color: md.onSurface,
+            bgcolor: 'action.hover',
             flexDirection: 'column',
-            transition: 'background-color 120ms',
-            '&:hover': { bgcolor: md.surfaceContainerHighest },
-            '&:active': { bgcolor: md.primaryContainer, color: md.onPrimaryContainer },
+            '&:hover': { bgcolor: 'action.selected' },
           }}
           aria-label={digit}
         >
           <Typography sx={{ fontSize: compact ? 24 : 28, lineHeight: 1.1, fontWeight: 400 }}>{digit}</Typography>
-          <Typography sx={{ fontSize: 10, letterSpacing: 1, color: md.onSurfaceVariant, minHeight: 12 }}>
+          <Typography sx={{ fontSize: 10, letterSpacing: 1, color: 'text.secondary', minHeight: 12 }}>
             {letters || ' '}
           </Typography>
         </ButtonBase>
@@ -125,27 +121,17 @@ export function RoundAction({
   size?: number
   autoFocus?: boolean
 }) {
-  const { md } = useTheme()
-  const bg = kind === 'call' ? md.callContainer : md.hangup
-  const fg = kind === 'call' ? md.onCallContainer : md.onHangup
   return (
     <Tooltip title={label}>
-      <IconButton
+      <Fab
         aria-label={label}
         onClick={onClick}
         autoFocus={autoFocus}
-        sx={{
-          width: size,
-          height: size,
-          bgcolor: bg,
-          color: fg,
-          '& .MuiSvgIcon-root': { fontSize: size * 0.42 },
-          '&:hover': { bgcolor: bg, filter: 'brightness(0.95)' },
-          '&.Mui-focusVisible': { outline: `3px solid ${alpha(fg, 0.5)}` },
-        }}
+        color={kind === 'call' ? 'success' : 'error'}
+        sx={{ width: size, height: size, '& .MuiSvgIcon-root': { fontSize: size * 0.42 } }}
       >
         {icon}
-      </IconButton>
+      </Fab>
     </Tooltip>
   )
 }
@@ -164,7 +150,6 @@ export function CallToggle({
   disabled?: boolean
   onClick: (e: React.MouseEvent<HTMLElement>) => void
 }) {
-  const { md } = useTheme()
   return (
     <Stack sx={{ alignItems: 'center', gap: 0.75, width: 64 }}>
       <IconButton
@@ -172,13 +157,12 @@ export function CallToggle({
         aria-pressed={active}
         disabled={disabled}
         onClick={onClick}
+        color={active ? 'primary' : 'default'}
         sx={{
           width: 56,
           height: 56,
-          bgcolor: active ? md.primary : md.surfaceContainerHighest,
-          color: active ? md.onPrimary : md.onSurface,
-          '&:hover': { bgcolor: active ? md.primary : alpha(md.onSurface, 0.14) },
-          '&.Mui-disabled': { bgcolor: alpha(md.onSurface, 0.08), color: alpha(md.onSurface, 0.38) },
+          border: 1,
+          borderColor: active ? 'primary.main' : 'divider',
         }}
       >
         {icon}
@@ -193,8 +177,7 @@ export function CallToggle({
 // -- Status --------------------------------------------------------------------------
 
 export function StatusDot({ kind, dnd = false, size = 10 }: { kind: RegKind; dnd?: boolean; size?: number }) {
-  const { md } = useTheme()
-  const color = dnd && kind === 'ok' ? md.hangup : { ok: md.call, busy: '#e0a800', error: md.error, off: md.outline }[kind]
+  const color = dnd && kind === 'ok' ? 'error.main' : { ok: 'success.main', busy: 'warning.main', error: 'error.main', off: 'text.disabled' }[kind]
   return (
     <Box
       sx={{
@@ -223,10 +206,9 @@ export function EmptyState({
   description?: string
   children?: ReactNode
 }) {
-  const { md } = useTheme()
   return (
     <Stack sx={{ alignItems: 'center', justifyContent: 'center', textAlign: 'center', p: 4, gap: 1.5, flex: 1 }}>
-      <Box sx={{ color: md.onSurfaceVariant, opacity: 0.6, '& .MuiSvgIcon-root': { fontSize: 72 } }}>{icon}</Box>
+      <Box sx={{ color: 'text.disabled', '& .MuiSvgIcon-root': { fontSize: 72 } }}>{icon}</Box>
       <Typography variant="h5">{title}</Typography>
       {description && (
         <Typography sx={{ color: 'text.secondary', maxWidth: 420 }}>{description}</Typography>
