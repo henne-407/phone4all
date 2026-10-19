@@ -55,7 +55,7 @@ cmake -S re -B re/build "${CMAKE[@]}" -DLIBRE_BUILD_SHARED=OFF
 cmake --build re/build
 
 cmake -S baresip -B baresip/build "${CMAKE[@]}" -DSTATIC=ON -DMODULES="$MODULES" \
-  -DLIBG722_HINTS="$WORK/libg722-install" | tee cmake.log
+  -DLIBG722_HINTS="$WORK/libg722-install" 2>&1 | tee cmake.log
 cmake --build baresip/build
 
 DETECTED="$(grep -o 'MODULES_DETECTED=.*' cmake.log | tail -1 | cut -d= -f2)"
@@ -80,6 +80,7 @@ else
   cl //nologo //O2 "$(cygpath -w "$ROOT/native/pa-devices.c")" //I"$DEPS/include" "$PA_LIB" \
     //Fe"$(cygpath -w "$OUT/pa-devices.exe")" //Fo"$(cygpath -w "$WORK/pa-devices.obj")"
   cp "$DEPS"/bin/*.dll "$OUT/"
+  cp "$WORK"/libg722-install/bin/*.dll "$OUT/" 2>/dev/null || true
 fi
 
 MODULE_JSON="$(echo "$DETECTED" | tr ';' '\n' | sed '/^$/d; s/.*/"&"/' | paste -sd, -)"
