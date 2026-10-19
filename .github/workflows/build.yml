@@ -71,6 +71,9 @@ jobs:
       - run: npm run build
       - name: App bauen
         run: npx electron-builder --mac --${{ matrix.arch }} --publish never
+        env:
+          # Ad-hoc-Signatur braucht keine Secrets, also auch in PR-Builds signieren
+          CSC_FOR_PULL_REQUEST: 'true'
       - name: Signatur prüfen
         run: |
           app=$(find dist -maxdepth 2 -name 'SIP-Telefon.app' | head -1)
