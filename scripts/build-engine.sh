@@ -107,7 +107,7 @@ EOF
 # Rauchtest: Startet die Engine mit einer minimalen Konfiguration?
 TEST="$WORK/smoke"
 mkdir -p "$TEST"
-printf 'audio_player portaudio,\naudio_source portaudio,\nmodule g711.so\nmodule_app account.so\nmodule_app menu.so\nmodule_app ctrl_tcp.so\nctrl_tcp_listen 127.0.0.1:45999\n' > "$TEST/config"
+printf 'audio_player portaudio,\naudio_source portaudio,\nmodule g711.so\nmodule portaudio.so\nmodule_app account.so\nmodule_app menu.so\nmodule_app ctrl_tcp.so\nctrl_tcp_listen 127.0.0.1:45999\n' > "$TEST/config"
 : > "$TEST/accounts"
 : > "$TEST/contacts"
 # Mit Zeitlimit starten (macOS hat kein "timeout")
