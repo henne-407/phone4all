@@ -85,8 +85,9 @@ if [ "$OS" = mac ]; then
   codesign --force --sign - "$OUT"/lib/*.dylib "$OUT/baresip" "$OUT/pa-devices"
 else
   # Optionen mit "-" statt "/", damit Git Bash sie nicht als Pfade umschreibt
-  cl -nologo -O2 "$ROOT/native/pa-devices.c" -I"$DEPS/include" "$PA_LIB" \
-    -Fe"$OUT/pa-devices.exe" -Fo"$WORK/pa-devices.obj"
+  # Pfade als C:/… übergeben (an Optionen angehängte Pfade rechnet Git Bash nicht um)
+  cl -nologo -O2 "$(cygpath -m "$ROOT/native/pa-devices.c")" -I"$DEPS/include" "$PA_LIB" \
+    -Fe"$(cygpath -m "$OUT/pa-devices.exe")" -Fo"$(cygpath -m "$WORK/pa-devices.obj")"
   cp "$DEPS"/bin/*.dll "$OUT/"
   cp "$WORK"/libg722-install/bin/*.dll "$OUT/" 2>/dev/null || true
 fi
