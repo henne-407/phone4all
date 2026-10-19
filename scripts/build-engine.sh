@@ -119,9 +119,17 @@ with_timeout() {
   wait "$pid" || true
   kill "$guard" 2>/dev/null || true
 }
-with_timeout "$OUT/$EXE" -f "$TEST" -t 2 -c > "$TEST/log" 2>&1
+CONF_DIR="$TEST"
+[ "$OS" = win ] && CONF_DIR="$(cygpath -w "$TEST")"   # so übergibt es auch die App
+with_timeout "$OUT/$EXE" -f "$CONF_DIR" -t 2 -c > "$TEST/log" 2>&1
 cat "$TEST/log"
 grep -q "baresip is ready" "$TEST/log"
+# Die eigene Konfiguration muss gelesen worden sein (keine Vorlage, PortAudio geladen)
+if grep -q "creating config template" "$TEST/log"; then
+  echo "baresip hat die Konfiguration in $CONF_DIR nicht gefunden" >&2
+  exit 1
+fi
+grep -q "portaudio" "$TEST/log" || { echo "PortAudio-Modul nicht geladen" >&2; exit 1; }
 with_timeout "$OUT/pa-devices"
 
 echo "Fertig: $OUT"
