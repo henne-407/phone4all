@@ -23,6 +23,7 @@ import {
   ListItemText,
   Menu,
   MenuItem,
+  MenuList,
   Popover,
   Radio,
   Stack,
@@ -96,15 +97,16 @@ function DeviceList({
   onSelect: (id: string) => void
 }) {
   const entries = [{ id: '', name: defaultLabel }, ...devices]
+  // MenuItem braucht ab MUI 9 eine umgebende MenuList, sonst bricht das Rendern ab
   return (
-    <>
+    <MenuList dense disablePadding>
       {entries.map((d) => (
         <MenuItem key={d.id || 'default'} dense onClick={() => onSelect(d.id)}>
           <Radio checked={d.id === current} size="small" sx={{ p: 0.5, mr: 1 }} />
           <ListItemText primary={d.name} slotProps={{ primary: { noWrap: true } }} />
         </MenuItem>
       ))}
-    </>
+    </MenuList>
   )
 }
 
