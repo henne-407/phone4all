@@ -69,7 +69,7 @@ if [ "$OS" = win ]; then
     -DCMAKE_EXE_LINKER_FLAGS="$DEPS/lib/getopt.lib"
   )
 fi
-cmake -S baresip -B baresip/build "${CMAKE[@]}" "${BARESIP_EXTRA[@]}" -DSTATIC=ON -DMODULES="$MODULES" \
+cmake -S baresip -B baresip/build "${CMAKE[@]}" ${BARESIP_EXTRA[@]+"${BARESIP_EXTRA[@]}"} -DSTATIC=ON -DMODULES="$MODULES" \
   -DLIBG722_HINTS="$WORK/libg722-install" 2>&1 | tee cmake.log
 if [ "$OS" = win ] && ! grep -q "getopt.h - found" cmake.log; then
   echo "getopt.h nicht gefunden – baresip würde -f ignorieren" >&2
