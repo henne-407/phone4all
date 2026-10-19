@@ -77,8 +77,9 @@ if [ "$OS" = mac ]; then
   # Apple Silicon führt nur signierte Programme aus (ad hoc genügt)
   codesign --force --sign - "$OUT"/lib/*.dylib "$OUT/baresip" "$OUT/pa-devices"
 else
-  cl //nologo //O2 "$(cygpath -w "$ROOT/native/pa-devices.c")" //I"$DEPS/include" "$PA_LIB" \
-    //Fe"$(cygpath -w "$OUT/pa-devices.exe")" //Fo"$(cygpath -w "$WORK/pa-devices.obj")"
+  # Optionen mit "-" statt "/", damit Git Bash sie nicht als Pfade umschreibt
+  cl -nologo -O2 "$ROOT/native/pa-devices.c" -I"$DEPS/include" "$PA_LIB" \
+    -Fe"$OUT/pa-devices.exe" -Fo"$WORK/pa-devices.obj"
   cp "$DEPS"/bin/*.dll "$OUT/"
   cp "$WORK"/libg722-install/bin/*.dll "$OUT/" 2>/dev/null || true
 fi
