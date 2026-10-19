@@ -4,7 +4,7 @@
 #
 # macOS:   brew install cmake ninja openssl@3 opus portaudio dylibbundler
 # Windows: Git Bash mit MSVC-Umgebung (vcvars64), vcpkg mit
-#          openssl opus portaudio für x64-windows, VCPKG_ROOT gesetzt
+#          openssl opus portaudio getopt für x64-windows, VCPKG_ROOT gesetzt
 #
 # Unter Linux wird baresip aus der Distribution verwendet.
 set -euo pipefail
@@ -59,8 +59,22 @@ fi
 cmake -S re -B re/build "${CMAKE[@]}" -DLIBRE_BUILD_SHARED=OFF
 cmake --build re/build
 
-cmake -S baresip -B baresip/build "${CMAKE[@]}" -DSTATIC=ON -DMODULES="$MODULES" \
+BARESIP_EXTRA=()
+if [ "$OS" = win ]; then
+  # MSVC hat kein getopt.h – ohne HAVE_GETOPT ignoriert baresip alle
+  # Startoptionen (auch -f) und liest immer %APPDATA%\.baresip
+  BARESIP_EXTRA+=(
+    -DCMAKE_REQUIRED_INCLUDES="$DEPS/include"
+    -DCMAKE_C_FLAGS="-I$DEPS/include"
+    -DCMAKE_EXE_LINKER_FLAGS="$DEPS/lib/getopt.lib"
+  )
+fi
+cmake -S baresip -B baresip/build "${CMAKE[@]}" "${BARESIP_EXTRA[@]}" -DSTATIC=ON -DMODULES="$MODULES" \
   -DLIBG722_HINTS="$WORK/libg722-install" 2>&1 | tee cmake.log
+if [ "$OS" = win ] && ! grep -q "getopt.h - found" cmake.log; then
+  echo "getopt.h nicht gefunden – baresip würde -f ignorieren" >&2
+  exit 1
+fi
 cmake --build baresip/build
 
 DETECTED="$(grep -o 'MODULES_DETECTED=.*' cmake.log | tail -1 | cut -d= -f2)"

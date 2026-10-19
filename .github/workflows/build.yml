@@ -93,7 +93,7 @@ jobs:
       - name: Abhängigkeiten für baresip (vcpkg)
         shell: pwsh
         run: |
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install openssl opus portaudio --triplet x64-windows
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install openssl opus portaudio getopt --triplet x64-windows
       - name: baresip bauen
         shell: bash
         env:
