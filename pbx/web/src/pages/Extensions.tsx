@@ -1,0 +1,222 @@
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import MailOutlineIcon from '@mui/icons-material/MailOutlined'
+import RefreshIcon from '@mui/icons-material/Refresh'
+import VisibilityIcon from '@mui/icons-material/Visibility'
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
+import {
+  Box,
+  Button,
+  Chip,
+  Divider,
+  FormControlLabel,
+  IconButton,
+  InputAdornment,
+  Stack,
+  Switch,
+  TextField,
+  Tooltip,
+  Typography,
+} from '@mui/material'
+import { useEffect, useState } from 'react'
+import type { Extension, Permission } from '../../../server/model'
+import { api } from '../api'
+import { CollectionPage, FormGrid, Full, NumberField, Select } from '../components/common'
+import { usePbx } from '../state'
+import { useStatus } from '../useStatus'
+
+const PERMISSIONS: [Permission, string][] = [
+  ['internal', 'Nur intern (und Notruf)'],
+  ['national', 'Deutschland (Festnetz und Mobil)'],
+  ['international', 'Weltweit'],
+]
+
+function nextNumber(list: Extension[]): string {
+  const used = new Set(list.map((e) => Number(e.number)))
+  let n = 10
+  while (used.has(n)) n++
+  return String(n)
+}
+
+function copy(text: string, toast: (t: string) => void): void {
+  void navigator.clipboard.writeText(text).then(() => toast('Kopiert'))
+}
+
+function Provisioning({ ext }: { ext: Extension }) {
+  const { toast, reload } = usePbx()
+  const [info, setInfo] = useState<{ setup: string; app: string; pin: string; base: string } | null>(null)
+  useEffect(() => {
+    void api.get<typeof info>(`/api/extensions/${ext.id}/provisioning`).then(setInfo)
+  }, [ext.id, ext.provision_token, ext.provision_pin])
+  if (!info) return null
+  const invite = async (): Promise<void> => {
+    try {
+      await api.post(`/api/extensions/${ext.id}/invite`)
+      toast(`Einladung an ${ext.email} gesendet`)
+    } catch (e) {
+      toast((e as Error).message, 'error')
+    }
+  }
+  const renew = async (): Promise<void> => {
+    await api.post(`/api/extensions/${ext.id}/renew?what=link`)
+    await reload()
+    toast('Neuer Link und neue PIN erstellt; der alte Link gilt nicht mehr.')
+  }
+  return (
+    <Box>
+      <Typography variant="subtitle1" sx={{ mb: 0.5 }}>
+        SIP-Telefon automatisch einrichten
+      </Typography>
+      <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
+        Den Link öffnen oder in der App unter Einstellungen → Konto → „Von Telefonanlage einrichten“ die Nebenstelle
+        und die PIN eingeben. Im selben Netz findet die App die Anlage von selbst.
+      </Typography>
+      <FormGrid>
+        <TextField
+          label="Einrichtungslink"
+          value={info.setup}
+          slotProps={{
+            input: {
+              readOnly: true,
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton aria-label="Kopieren" onClick={() => copy(info.setup, toast)}>
+                    <ContentCopyIcon />
+                  </IconButton>
+                </InputAdornment>
+              ),
+            },
+          }}
+        />
+        <TextField label="Einrichtungs-PIN" value={info.pin} slotProps={{ input: { readOnly: true } }} />
+      </FormGrid>
+      <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
+        <Button variant="outlined" startIcon={<MailOutlineIcon />} disabled={!ext.email} onClick={() => void invite()}>
+          Einladung per E-Mail
+        </Button>
+        <Button href={info.app} variant="outlined">
+          Hier in SIP-Telefon öffnen
+        </Button>
+        <Button startIcon={<RefreshIcon />} onClick={() => void renew()}>
+          Link erneuern
+        </Button>
+      </Stack>
+    </Box>
+  )
+}
+
+function ExtensionForm({ value, onChange, isNew }: { value: Extension; onChange: (v: Extension) => void; isNew: boolean }) {
+  const { config } = usePbx()
+  const [show, setShow] = useState(false)
+  const set = <K extends keyof Extension>(k: K, v: Extension[K]): void => onChange({ ...value, [k]: v })
+  const numbers = config.trunks.flatMap((t) => t.numbers)
+  return (
+    <Box>
+      <FormGrid>
+        <TextField label="Nebenstelle" value={value.number} onChange={(e) => set('number', e.target.value.replace(/\D/g, ''))} required autoFocus={isNew} helperText="2–6 Ziffern" />
+        <TextField label="Name" value={value.name} onChange={(e) => set('name', e.target.value)} required />
+        <TextField label="E-Mail-Adresse" type="email" value={value.email} onChange={(e) => set('email', e.target.value)} helperText="Für Voicemail-Nachrichten und die Einladung" />
+        <TextField
+          label="SIP-Passwort"
+          type={show ? 'text' : 'password'}
+          value={value.secret}
+          onChange={(e) => set('secret', e.target.value)}
+          helperText={isNew ? 'Leer lassen: wird sicher erzeugt' : 'Wird bei der App-Einrichtung automatisch übertragen'}
+          slotProps={{
+            input: {
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton aria-label="Anzeigen" onClick={() => setShow(!show)}>
+                    {show ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                  </IconButton>
+                </InputAdornment>
+              ),
+            },
+          }}
+        />
+        <TextField
+          select={false}
+          label="Rufnummer nach außen"
+          value={value.outbound_cid}
+          onChange={(e) => set('outbound_cid', e.target.value)}
+          helperText={numbers.length ? `Eigene Nummern: ${numbers.join(', ')}` : 'Leer = Standardnummer des SIP-Kontos'}
+        />
+        <Select label="Darf anrufen" value={value.permission} onChange={(v) => set('permission', v)} options={PERMISSIONS} />
+        <NumberField label="Klingeldauer (Sekunden)" value={value.ring_seconds} onChange={(v) => set('ring_seconds', v)} min={5} />
+        <NumberField label="Geräte gleichzeitig" value={value.max_devices} onChange={(v) => set('max_devices', v)} min={1} helperText="z. B. App am PC, Tischtelefon, Handy" />
+      </FormGrid>
+      <Divider sx={{ my: 2 }} />
+      <Typography variant="subtitle1" sx={{ mb: 1 }}>
+        Weiterleitung und Voicemail
+      </Typography>
+      <FormGrid>
+        <TextField label="Bei besetzt weiterleiten an" value={value.forward.busy} onChange={(e) => set('forward', { ...value.forward, busy: e.target.value })} helperText="Nebenstelle, Gruppe oder externe Nummer; leer = Voicemail" />
+        <TextField label="Ohne Antwort weiterleiten an" value={value.forward.noanswer} onChange={(e) => set('forward', { ...value.forward, noanswer: e.target.value })} helperText="Leer = Voicemail (wenn eingeschaltet)" />
+        <FormControlLabel control={<Switch checked={value.voicemail.enabled} onChange={(e) => set('voicemail', { ...value.voicemail, enabled: e.target.checked })} />} label="Voicemail" />
+        <TextField label="Voicemail-PIN" value={value.voicemail.pin} onChange={(e) => set('voicemail', { ...value.voicemail, pin: e.target.value.replace(/\D/g, '') })} disabled={!value.voicemail.enabled} helperText="Abhören mit *97 (am eigenen Telefon ohne PIN)" />
+        <FormControlLabel control={<Switch checked={value.voicemail.attach} disabled={!value.voicemail.enabled} onChange={(e) => set('voicemail', { ...value.voicemail, attach: e.target.checked })} />} label="Nachricht als Anhang per E-Mail" />
+        <FormControlLabel control={<Switch checked={value.allow_premium} onChange={(e) => set('allow_premium', e.target.checked)} />} label="Sonderrufnummern erlauben (0900, 0137, 118 …)" />
+        <Full>
+          <FormControlLabel control={<Switch checked={value.record} onChange={(e) => set('record', e.target.checked)} />} label="Gespräche aufzeichnen" />
+          <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', ml: 6 }}>
+            Nur mit Einwilligung aller Gesprächspartner zulässig (§ 201 StGB, DSGVO).
+          </Typography>
+        </Full>
+      </FormGrid>
+      {!isNew && value.id && (
+        <>
+          <Divider sx={{ my: 2 }} />
+          <Provisioning ext={value} />
+        </>
+      )}
+    </Box>
+  )
+}
+
+export default function Extensions() {
+  const { config } = usePbx()
+  const [status] = useStatus(10000)
+  const online = (n: string): number => status?.endpoints.find((e) => e.number === n)?.contacts.filter((c) => c.status !== 'Unreachable').length ?? 0
+  return (
+    <CollectionPage<Extension>
+      kind="extensions"
+      title="Nebenstellen"
+      singular="Nebenstelle"
+      description="Jede Person bekommt eine interne Rufnummer. Darauf können sich mehrere Geräte anmelden – die SIP-Telefon-App, Tischtelefone oder Softphones."
+      emptyText="Noch keine Nebenstellen. Lege die erste an, z. B. 10 für dich selbst."
+      newItem={() => ({ number: nextNumber(config.extensions) })}
+      columns={[
+        { label: 'Nr.', render: (e) => <b>{e.number}</b> },
+        { label: 'Name', render: (e) => e.name },
+        {
+          label: 'Geräte',
+          render: (e) => {
+            const n = online(e.number)
+            return <Chip size="small" color={n ? 'success' : 'default'} variant={n ? 'filled' : 'outlined'} label={n ? `${n} online` : 'offline'} />
+          },
+        },
+        {
+          label: 'Status',
+          hideOnMobile: true,
+          render: (e) => (
+            <Stack direction="row" sx={{ gap: 0.5 }}>
+              {status?.dnd[e.number] && <Chip size="small" color="warning" label="Nicht stören" />}
+              {status?.cfu[e.number] && <Chip size="small" label={`→ ${status.cfu[e.number]}`} />}
+              {e.voicemail.enabled && <Chip size="small" variant="outlined" label="Voicemail" />}
+            </Stack>
+          ),
+        },
+        { label: 'E-Mail', hideOnMobile: true, render: (e) => e.email },
+      ]}
+      extraActions={(e) =>
+        status?.dnd[e.number] ? (
+          <Tooltip title="Nicht stören ausschalten">
+            <Button size="small" onClick={() => void api.put(`/api/state/${e.number}`, { dnd: false })}>
+              Stören erlauben
+            </Button>
+          </Tooltip>
+        ) : null
+      }
+      Form={ExtensionForm}
+    />
+  )
+}

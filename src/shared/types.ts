@@ -116,6 +116,25 @@ export interface Settings {
   registered: boolean
   run_in_background: boolean
   autostart: boolean
+  /** Von einer Phone4all-Telefonanlage eingerichtet (leer = von Hand) */
+  provisioning: { pbx: string; extension: string; server: string; updated: number }
+}
+
+/** Gefundene oder abgefragte Telefonanlage, bevor das Konto übernommen wird. */
+export interface PbxPreview {
+  pbx: string
+  version: string
+  extension: string
+  display_name: string
+  server: string
+  contacts: number
+}
+
+/** Antwort einer Telefonanlage auf die Suche im LAN */
+export interface PbxFound {
+  name: string
+  version: string
+  url: string
 }
 
 /** classic: Standard-Material-UI, m3: Material Design 3 (Material You) */

@@ -27,6 +27,7 @@ import { useUiEvent } from './bus'
 import { CallPanel } from './components/CallPanel'
 import { ContactDialog } from './components/ContactDialog'
 import { EventDialog } from './components/EventDialog'
+import { PbxSetupDialog } from './components/settings/PbxSetupDialog'
 import { PreferencesDialog } from './components/settings/PreferencesDialog'
 import { TopBar } from './components/TopBar'
 import { CalendarPage } from './pages/CalendarPage'
@@ -113,6 +114,7 @@ export function MainWindow() {
   const [prefs, setPrefs] = useState<string | null>(null)
   const [customize, setCustomize] = useState(false)
   const [about, setAbout] = useState(false)
+  const [pbxLink, setPbxLink] = useState<string | null>(null)
 
   const narrow = width < 560
   const columns = width >= 1160 ? 3 : width >= 760 ? 2 : 1
@@ -126,6 +128,13 @@ export function MainWindow() {
   useUiEvent('open-preferences', useCallback((p: string) => setPrefs(p), []))
   useUiEvent('customize-home', useCallback(() => setCustomize(true), []))
   useUiEvent('about', useCallback(() => setAbout(true), []))
+
+  // Einrichtungslink der Telefonanlage (sip-telefon://…), auch wenn er die App gestartet hat
+  useEffect(() => {
+    const take = (): void => void api.takePbxLink().then((link) => link && setPbxLink(link))
+    take()
+    return onMain('pbx-link', take)
+  }, [])
 
   useEffect(() => {
     const offs = [
@@ -230,6 +239,7 @@ export function MainWindow() {
       {contact && <ContactDialog contact={contact} onClose={() => setContact(null)} />}
       {event && <EventDialog event={event.event} isNew={event.isNew} onClose={() => setEvent(null)} />}
       {prefs && <PreferencesDialog page={prefs} onClose={() => setPrefs(null)} />}
+      {pbxLink && <PbxSetupDialog link={pbxLink} onClose={() => setPbxLink(null)} onApplied={() => setPrefs(null)} />}
       {customize && <CustomizeHomeDialog onClose={() => setCustomize(false)} />}
       {about && <AboutDialog onClose={() => setAbout(false)} />}
     </Stack>

@@ -27,6 +27,7 @@ import { edsAvailable } from './eds'
 import { loadJson, saveJson } from './files'
 import { DIRS, RINGTONE_DIR, resourcePath } from './paths'
 import { type Call, type NotifyOptions, Phone, type PhoneUi } from './phone'
+import { Provisioning } from './provisioning'
 import { RINGTONES, ringtonePath } from './ringtones'
 import { Store } from './store'
 
@@ -81,7 +82,10 @@ export class App {
   readonly calendar = new CalendarManager(this.store)
   readonly sync = new ContactSync(this.store)
   readonly phone: Phone
+  readonly provisioning: Provisioning
   readonly api: Api
+  /** Einrichtungslink, den die Oberfläche noch nicht abgeholt hat */
+  private pendingLink: string | null = null
   private main: BrowserWindow | null = null
   private popups = new Map<string, BrowserWindow>()
   private tray: Tray | null = null
@@ -116,6 +120,27 @@ export class App {
       showCalendarEvent: () => this.showPage('calendar'),
     }
     this.phone = new Phone(this.store, this.calendar, ui)
+    this.provisioning = new Provisioning(
+      {
+        store: this.store,
+        restartEngine: () => this.phone.restartEngine(),
+        stateChanged: () => this.stateChanged(),
+        phonebookChanged: () => void this.sync.sync(),
+        toast: (text) => this.send('toast', text),
+      },
+      path.join(DIRS.data, 'pbx-phonebook.json'),
+    )
+    this.sync.sources.push(() =>
+      this.provisioning.active
+        ? {
+            id: 'pbx',
+            name: this.store.settings.provisioning.pbx,
+            group: 'Telefonanlage',
+            href: '',
+            contacts: async () => this.provisioning.phonebook,
+          }
+        : null,
+    )
     this.api = createApi(this)
     if (!this.store.settings.home.cards.length) this.store.settings.home.cards = DEFAULT_CARDS
     nativeTheme.themeSource = this.store.settings.appearance.scheme
@@ -141,6 +166,22 @@ export class App {
     void this.sync.sync()
     void this.refreshDevices()
     this.phone.restartEngine()
+    this.provisioning.start()
+  }
+
+  /** sip-telefon://-Link (Einrichtung durch die Telefonanlage); bestätigt wird in der Oberfläche. */
+  openLink(link: string): void {
+    if (!link.startsWith('sip-telefon:')) return
+    // Die Oberfläche holt den Link ab – beim Start auch erst, wenn sie geladen ist
+    this.pendingLink = link
+    this.present()
+    this.send('pbx-link')
+  }
+
+  takePendingLink(): string | null {
+    const link = this.pendingLink
+    this.pendingLink = null
+    return link
   }
 
   // -- IPC -----------------------------------------------------------------

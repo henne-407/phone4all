@@ -55,6 +55,12 @@ FRITZ!Box: unter *Telefonie → Telefoniegeräte → Neues Gerät → Telefon (L
 ein IP-Telefon anlegen. Server ist `fritz.box`, Benutzername der dort vergebene
 Name (z. B. `620`).
 
+Mit der [Phone4all-Telefonanlage](pbx/README.md) geht es ohne Abtippen: unter
+**Konto** → **Einrichten** findet die App die Anlage im Netzwerk; Nebenstelle und
+Einrichtungs-PIN genügen. Alternativ den Link aus der Einladungs-E-Mail öffnen
+(`sip-telefon://…`). Änderungen an der Anlage und ihr Telefonbuch übernimmt die App
+danach automatisch.
+
 ## Funktionen
 
 - Anrufe komplett im kleinen Pop-up-Fenster führen, ohne das Hauptfenster zu öffnen:

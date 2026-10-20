@@ -25,7 +25,7 @@ const REPORT_CARDS = `<?xml version="1.0" encoding="utf-8"?>
   <d:prop><d:getetag/><card:address-data/></d:prop>
 </card:addressbook-query>`
 
-interface AddressBook {
+export interface AddressBook {
   id: string
   name: string
   group: string
@@ -100,6 +100,8 @@ export class ContactSync extends EventEmitter {
   errors: string[] = []
   syncing = false
   readonly edsAvailable = edsAvailable()
+  /** Weitere Quellen, z. B. das Telefonbuch der Telefonanlage */
+  readonly sources: (() => AddressBook | null)[] = []
 
   constructor(private store: Store) {
     super()
@@ -178,6 +180,11 @@ export class ContactSync extends EventEmitter {
         href: '',
         contacts: async () => (await source.fetch())[0],
       })
+    }
+
+    for (const source of this.sources) {
+      const book = source()
+      if (book) books.push(book)
     }
 
     const contacts: Contact[] = []
