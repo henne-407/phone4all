@@ -10,7 +10,7 @@ import { api } from './api'
 import { CallWindow } from './CallWindow'
 import { MainWindow } from './MainWindow'
 import { StateProvider } from './state'
-import { buildTheme } from './theme'
+import { buildTheme, titleBarColors } from './theme'
 
 const hash = new URLSearchParams(window.location.hash.slice(1))
 const callId = hash.get('call')
@@ -18,16 +18,13 @@ const callId = hash.get('call')
 function Themed({ state }: { state: AppState }) {
   // Hauptprozess setzt nativeTheme.themeSource, daher folgt prefers-color-scheme der Einstellung
   const dark = useMediaQuery('(prefers-color-scheme: dark)')
-  const { theme: key } = state.settings.appearance
+  const { theme: key, style } = state.settings.appearance
   const theme = useMemo(() => {
-    return buildTheme(paletteFor(key, dark, state.platform.accent).primary, dark)
-  }, [key, dark, state.platform.accent])
+    return buildTheme(style, paletteFor(key, dark, state.platform.accent), dark)
+  }, [style, key, dark, state.platform.accent])
 
   useEffect(() => {
-    void api.setTitleBarColors(
-      theme.palette.background.default,
-      theme.palette.mode === 'dark' ? theme.palette.common.white : theme.palette.common.black,
-    )
+    void api.setTitleBarColors(...titleBarColors(theme))
     document.title = callId ? 'Anruf' : 'SIP-Telefon'
   }, [theme])
 

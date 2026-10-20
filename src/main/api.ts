@@ -94,7 +94,7 @@ export function createApi(app: App) {
       app.stateChanged()
       return secure
     },
-    setAppearance: (values: { theme?: string; scheme?: 'system' | 'light' | 'dark' }) => app.setAppearance(values),
+    setAppearance: (values: Parameters<App['setAppearance']>[0]) => app.setAppearance(values),
     setBehaviour: (values: { run_in_background?: boolean; autostart?: boolean; mini_call?: boolean }) => {
       Object.assign(store.settings, values)
       store.saveSettings()

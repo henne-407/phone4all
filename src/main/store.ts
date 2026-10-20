@@ -28,7 +28,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   calendar: { use_eds: true, caldav: [], disabled: [], default: '', reminder_minutes: 10 },
   addressbooks: { use_eds: true, carddav: [], sql: [], disabled: [] },
-  appearance: { theme: 'violet', scheme: 'system' },
+  appearance: { theme: 'violet', scheme: 'system', style: 'classic' },
   audio: { source: '', sink: '', alert: '' },
   home: { cards: [], start_tab: 'home' },
   ringtone: 'marimba',

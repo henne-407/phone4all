@@ -107,7 +107,7 @@ export interface Settings {
     sql: SqlSourceConf[]
     disabled: string[]
   }
-  appearance: { theme: string; scheme: 'system' | 'light' | 'dark' }
+  appearance: { theme: string; scheme: 'system' | 'light' | 'dark'; style: DesignStyle }
   audio: { source: string; sink: string; alert: string }
   home: { cards: [HomeCard, boolean][]; start_tab: PageName }
   ringtone: string
@@ -117,6 +117,9 @@ export interface Settings {
   run_in_background: boolean
   autostart: boolean
 }
+
+/** classic: Standard-Material-UI, m3: Material Design 3 (Material You) */
+export type DesignStyle = 'classic' | 'm3'
 
 export interface CalendarInfo {
   id: string
