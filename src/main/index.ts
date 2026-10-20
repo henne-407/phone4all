@@ -1,9 +1,14 @@
 /** Einstiegspunkt des Hauptprozesses. */
 
 import { Menu, app as electronApp, systemPreferences } from 'electron'
+import path from 'node:path'
 import { App } from './app'
+import { LINK_SCHEME } from './provisioning'
 
 const background = process.argv.includes('--background') || process.argv.includes('-b')
+
+/** Einrichtungslink der Telefonanlage aus der Befehlszeile (Windows/Linux) */
+const linkArg = (argv: string[]): string | undefined => argv.find((a) => a.startsWith(`${LINK_SCHEME}://`))
 
 electronApp.setName('SIP-Telefon')
 if (process.platform === 'win32') electronApp.setAppUserModelId('de.hpieper.SipTelefon')
@@ -13,9 +18,24 @@ if (!electronApp.requestSingleInstanceLock()) {
   electronApp.exit(0)
 } else {
   let instance: App | null = null
+  let startLink = linkArg(process.argv)
+
+  // sip-telefon://provision?url=… öffnet die App und schlägt die Einrichtung vor
+  if (process.defaultApp && process.argv[1]) {
+    electronApp.setAsDefaultProtocolClient(LINK_SCHEME, process.execPath, [path.resolve(process.argv[1])])
+  } else {
+    electronApp.setAsDefaultProtocolClient(LINK_SCHEME)
+  }
+  electronApp.on('open-url', (e, url) => {
+    e.preventDefault()
+    if (instance) instance.openLink(url)
+    else startLink = url
+  })
 
   electronApp.on('second-instance', (_e, argv) => {
-    if (!argv.includes('--background')) instance?.present()
+    const link = linkArg(argv)
+    if (link) instance?.openLink(link)
+    else if (!argv.includes('--background')) instance?.present()
   })
 
   electronApp.whenReady().then(() => {
@@ -48,6 +68,7 @@ if (!electronApp.requestSingleInstanceLock()) {
     instance = new App()
     const shotDir = process.env.SIP_TELEFON_SCREENSHOT
     instance.start(background || Boolean(shotDir))
+    if (startLink) instance.openLink(startLink)
     if (shotDir) {
       const app = instance
       void import('./screenshot')

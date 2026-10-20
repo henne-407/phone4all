@@ -7,6 +7,7 @@ import { accountLine } from '../src/main/baresip'
 import { guessColumns, mergeInto, parseCsv, parseFileData, parseVcards } from '../src/main/contactImport'
 import { expandEvents, newCalendar, parseCalendar, updateCalendar } from '../src/main/ical'
 import { encodeWav } from '../src/main/ringtones'
+import { broadcastAddresses, normalizeServer, parseProfile, profileUrlFromLink } from '../src/main/provisioning'
 import { MsSqlSource, quoteIdent } from '../src/main/sqlSource'
 import { covers, fmtEventTime, formatDuration, formatTalk } from '../src/shared/format'
 import { findNumbers, normalizeNumber, numberFromUri, numbersMatch } from '../src/shared/numbers'
@@ -260,5 +261,45 @@ describe('Klingeltöne', () => {
     expect(wav.subarray(0, 4).toString()).toBe('RIFF')
     expect(wav.readUInt32LE(24)).toBe(32000)
     expect(wav.length).toBe(44 + 8)
+  })
+})
+
+describe('Einrichtung durch die Telefonanlage', () => {
+  const profile = {
+    format: 'phone4all-provisioning',
+    version: 1,
+    pbx: { name: 'Büro', version: '1.0.0' },
+    extension: '10',
+    account: { display_name: 'Anna', user: '10', domain: '192.168.1.10', auth_user: '10', port: 0, local_port: 0, transport: 'udp', outbound: '', stun: '', mediaenc: '', regint: 300 },
+    password: 'geheim',
+    url: 'http://192.168.1.10:8080/provision/abc',
+    phonebook: [{ name: 'Bert', company: 'Büro', phone: '11', mobile: '' }],
+  }
+
+  it('liest Links aus App, Einladung und Profil', () => {
+    expect(profileUrlFromLink('sip-telefon://provision?url=http%3A%2F%2Fpbx%3A8080%2Fprovision%2Fabc')).toBe('http://pbx:8080/provision/abc')
+    expect(profileUrlFromLink('http://pbx:8080/setup/abc')).toBe('http://pbx:8080/provision/abc')
+    expect(profileUrlFromLink('sip-telefon://provision?url=file%3A%2F%2F%2Fetc%2Fpasswd')).toBeNull()
+    expect(profileUrlFromLink('Hallo')).toBeNull()
+  })
+
+  it('ergänzt die Adresse der Anlage', () => {
+    expect(normalizeServer('192.168.1.10')).toBe('http://192.168.1.10:8080')
+    expect(normalizeServer('pbx.local:9000/')).toBe('http://pbx.local:9000')
+    expect(normalizeServer('https://pbx.example.de')).toBe('https://pbx.example.de')
+  })
+
+  it('prüft das Profil', () => {
+    expect(parseProfile(profile).account.domain).toBe('192.168.1.10')
+    expect(() => parseProfile({ ...profile, format: 'x' })).toThrow()
+    expect(() => parseProfile({ ...profile, password: 'a;b' })).toThrow()
+  })
+
+  it('berechnet Broadcast-Adressen', () => {
+    const ifaces = {
+      eth0: [{ address: '192.168.1.23', netmask: '255.255.255.0', family: 'IPv4', internal: false }],
+      lo: [{ address: '127.0.0.1', netmask: '255.0.0.0', family: 'IPv4', internal: true }],
+    } as never
+    expect(broadcastAddresses(ifaces)).toEqual(['255.255.255.255', '192.168.1.255'])
   })
 })

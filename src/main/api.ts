@@ -14,6 +14,7 @@ import { CalDavBackend } from './calendars'
 import { CardDavBackend } from './contactSync'
 import { errorText } from './dav'
 import { RINGTONE_DIR } from './paths'
+import { discover } from './provisioning'
 import { ringtonePath, saveCustomRingtone } from './ringtones'
 import { MsSqlSource } from './sqlSource'
 
@@ -121,6 +122,16 @@ export function createApi(app: App) {
       execFile('gnome-control-center', ['online-accounts'], () => undefined)
     },
     quit: () => app.quit(),
+
+    // -- Einrichtung durch die Telefonanlage ---------------------------------------
+    pbxDiscover: () => discover(),
+    pbxFromLink: (link: string) => attempt(() => app.provisioning.fromLink(link)),
+    pbxFromPin: (server: string, extension: string, pin: string) =>
+      attempt(() => app.provisioning.fromPin(server, extension, pin)),
+    /** Gibt false zurück, wenn kein Schlüsselbund verfügbar war. */
+    pbxApply: () => app.provisioning.apply(),
+    pbxDisconnect: () => app.provisioning.disconnect(),
+    takePbxLink: () => app.takePendingLink(),
     setTitleBarColors: (color: string, symbolColor: string) => app.setTitleBarColors(color, symbolColor),
 
     // -- Kontakte ------------------------------------------------------------
@@ -242,4 +253,5 @@ export interface RendererEvents {
   'new-event': [Partial<CalEvent>]
   'open-preferences': [string]
   'edit-contact': [Partial<Contact>]
+  'pbx-link': []
 }

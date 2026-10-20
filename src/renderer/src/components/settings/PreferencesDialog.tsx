@@ -42,6 +42,7 @@ import { api } from '../../api'
 import { convertToWav, playWav } from '../../audio'
 import { useApp } from '../../state'
 import { DAV_KINDS, DavAccountDialog, type DavKind } from './DavAccountDialog'
+import { PbxSetupDialog } from './PbxSetupDialog'
 import { Group, Row, SwitchRow } from './parts'
 import { SqlSourceDialog } from './SqlSourceDialog'
 
@@ -64,12 +65,17 @@ function AccountTab({
   setAcc,
   password,
   setPassword,
+  onPbxApplied,
 }: {
   acc: AccountSettings
   setAcc: (a: AccountSettings) => void
   password: string
   setPassword: (p: string) => void
+  onPbxApplied: () => void
 }) {
+  const { state } = useApp()
+  const pbx = state.settings.provisioning
+  const [pbxSetup, setPbxSetup] = useState(false)
   const field = (key: keyof AccountSettings, label: string, extra: object = {}) => (
     <TextField key={key} label={label} value={acc[key] ?? ''} onChange={(e) => setAcc({ ...acc, [key]: e.target.value })} {...extra} />
   )
@@ -84,6 +90,26 @@ function AccountTab({
   )
   return (
     <Stack sx={{ gap: 1.5 }}>
+      <Alert
+        severity={pbx.pbx ? 'success' : 'info'}
+        icon={false}
+        action={
+          pbx.pbx ? (
+            <Button color="inherit" size="small" onClick={() => void api.pbxDisconnect()}>
+              Trennen
+            </Button>
+          ) : (
+            <Button color="inherit" size="small" onClick={() => setPbxSetup(true)}>
+              Einrichten
+            </Button>
+          )
+        }
+      >
+        {pbx.pbx
+          ? `Eingerichtet von „${pbx.pbx}“ als Nebenstelle ${pbx.extension}. Änderungen an der Anlage werden automatisch übernommen.`
+          : 'Phone4all-Telefonanlage? Dann richtet sich die App mit Nebenstelle und Einrichtungs-PIN von selbst ein.'}
+      </Alert>
+      {pbxSetup && <PbxSetupDialog onClose={() => setPbxSetup(false)} onApplied={onPbxApplied} />}
       <Typography variant="subtitle1">SIP-Konto</Typography>
       <Typography variant="body2" sx={{ color: 'text.secondary' }}>
         Die Zugangsdaten findest du in der Oberfläche deiner Telefonanlage (z. B. FRITZ!Box: Telefonie → Telefoniegeräte →
@@ -545,11 +571,15 @@ export function PreferencesDialog({ page, onClose }: { page: string; onClose: ()
   const [password, setPassword] = useState<string | null>(null)
   const [initialPassword, setInitialPassword] = useState('')
 
+  const reloadAccount = async (): Promise<void> => {
+    const p = await api.getPassword()
+    setPassword(p)
+    setInitialPassword(p)
+    setAcc({ ...(await api.getState()).settings.account })
+  }
+
   useEffect(() => {
-    void api.getPassword().then((p) => {
-      setPassword(p)
-      setInitialPassword(p)
-    })
+    void reloadAccount()
   }, [])
 
   // Kontodaten beim Schließen übernehmen (verbindet bei Änderungen neu)
@@ -584,7 +614,7 @@ export function PreferencesDialog({ page, onClose }: { page: string; onClose: ()
       </Box>
       <DialogContent dividers sx={{ px: 3 }}>
         {tab === 'account' && password !== null && (
-          <AccountTab acc={acc} setAcc={setAcc} password={password} setPassword={setPassword} />
+          <AccountTab acc={acc} setAcc={setAcc} password={password} setPassword={setPassword} onPbxApplied={() => void reloadAccount()} />
         )}
         {tab === 'calendar' && <CalendarTab />}
         {tab === 'contacts' && <ContactsTab onClose={() => void close()} />}

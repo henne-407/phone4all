@@ -12,6 +12,10 @@ extraResources:
     to: icons
 asarUnpack: []
 artifactName: SIP-Telefon-${version}-${os}-${arch}.${ext}
+# Einrichtungslinks der Phone4all-Telefonanlage (sip-telefon://provision?url=…)
+protocols:
+  - name: SIP-Telefon-Einrichtung
+    schemes: [sip-telefon]
 
 linux:
   target: [AppImage, deb, rpm]
@@ -26,6 +30,7 @@ linux:
       Comment: Telefonieren über deine SIP-Telefonanlage
       Keywords: SIP;VoIP;Telefon;Anruf;Softphone;
       StartupWMClass: SIP-Telefon
+      MimeType: x-scheme-handler/sip-telefon;
   extraResources:
     - from: resources/linux
       to: linux
