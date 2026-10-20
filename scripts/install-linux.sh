@@ -43,8 +43,11 @@ Keywords=SIP;VoIP;Telefon;Anruf;Softphone;
 StartupNotify=true
 StartupWMClass=sip-telefon
 X-GNOME-UsesNotifications=true
+MimeType=x-scheme-handler/sip-telefon;
 DESKTOP
 
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPS" || true
+# Einrichtungslinks der Telefonanlage (sip-telefon://…) mit der App öffnen
+command -v xdg-mime >/dev/null 2>&1 && xdg-mime default sip-telefon.desktop x-scheme-handler/sip-telefon || true
 command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q "$DATA/icons/hicolor" || true
 echo "Installiert. Starten mit 'sip-telefon' oder über das Startmenü."
