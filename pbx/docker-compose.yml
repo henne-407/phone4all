@@ -1,0 +1,19 @@
+# Phone4all Telefonanlage
+#   docker compose up -d
+#   Weboberfläche: http://<adresse>:8080 – das erste Passwort steht in „docker compose logs“.
+
+services:
+  pbx:
+    image: ghcr.io/henne-407/phone4all-pbx:${PBX_TAG:-latest}
+    container_name: phone4all-pbx
+    # SIP und Sprache (RTP) brauchen das Netz des Rechners direkt – NAT durch Docker stört Telefonie
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./data:/data
+      # Für Online-Updates aus der Weboberfläche; ohne diese Zeile manuell aktualisieren
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      TZ: Europe/Berlin
+      # PBX_HTTP_PORT: 8080
+      # PBX_ADMIN_PASSWORD: setzt das Passwort der Weboberfläche bei jedem Start

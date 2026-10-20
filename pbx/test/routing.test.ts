@@ -1,0 +1,82 @@
+import { describe, expect, it } from 'vitest'
+import { EMPTY_STATE, extensionPlan, feature, groupPlan, routeInbound, routeOutbound, type RuntimeState } from '../server/routing'
+import { sampleConfig, to } from './helpers'
+
+const state = (): RuntimeState => structuredClone(EMPTY_STATE)
+
+describe('Eingehende Anrufe', () => {
+  it('nimmt das Standardziel des Kontos und sucht den Namen im Telefonbuch', () => {
+    const cfg = sampleConfig()
+    const r = routeInbound(cfg, { trunk: 't1', did: '+49301234567', to: '', cid: '+49301111111', name: '' }).split('|')
+    expect(r[0]).toBe('p4a-group^g1')
+    expect(r[1]).toBe('Max Kunde (Kunde GmbH)')
+    expect(r[2]).toBe('0301111111')
+  })
+
+  it('bevorzugt die passendste Regel', () => {
+    const cfg = sampleConfig()
+    cfg.inbound = [
+      { id: 'a', name: 'alle', number: '', trunk: '', caller: '', name_prefix: '', destination: to('extension', 'e11') },
+      { id: 'b', name: 'Durchwahl', number: '030 1234568', trunk: 't1', caller: '', name_prefix: 'Support: ', destination: to('extension', 'e12') },
+    ]
+    expect(routeInbound(cfg, { trunk: 't1', did: '0049301234568', to: '', cid: '0171555', name: '' }).split('|').slice(0, 2)).toEqual([
+      'p4a-local^12',
+      'Support: 0171555',
+    ])
+    expect(routeInbound(cfg, { trunk: 't1', did: '+49301234567', to: '', cid: '', name: '' }).split('|')[0]).toBe('p4a-local^11')
+  })
+})
+
+describe('Nebenstellen und Gruppen', () => {
+  it('klingelt, leitet bei Nicht stören und Weiterleitung um', () => {
+    const cfg = sampleConfig()
+    const s = state()
+    expect(extensionPlan(cfg, s, '10')).toBe('ring|25|0|p4a-vmb^10|p4a-vmu^10')
+    expect(feature(cfg, s, '10', 'dnd', '').reply).toBe('on')
+    expect(extensionPlan(cfg, s, '10')).toBe('goto|p4a-vmb^10')
+    feature(cfg, s, '10', 'dnd', '')
+    feature(cfg, s, '10', 'cfu', '11')
+    expect(extensionPlan(cfg, s, '10')).toBe('goto|p4a-local^11')
+    expect(feature(cfg, s, '10', 'cfu', '10').reply).toBe('error')
+    feature(cfg, s, '10', 'cfu', '')
+    feature(cfg, s, '10', 'cfu', '0171 555')
+    expect(extensionPlan(cfg, s, '10')).toBe('goto|p4a-fwd^0171555')
+  })
+
+  it('lässt Mitglieder mit Nicht stören aus', () => {
+    const cfg = sampleConfig()
+    const s = state()
+    s.dnd['11'] = true
+    expect(groupPlan(cfg, s, 'g1', 'Max', '/snd')).toBe('all|30|10|p4a-vmu^10|Zentrale: Max||15')
+  })
+})
+
+describe('Ausgehende Anrufe', () => {
+  it('wählt im Format des Anbieters mit eigener Nummer', () => {
+    const cfg = sampleConfig()
+    cfg.extensions[0].outbound_cid = '030 1234568'
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '0171 5551234', cid: '10' })).toBe('ok|trunk-t1|+491715551234|+49301234568')
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '5551234', cid: '10' })).toBe('ok|trunk-t1|+49305551234|+49301234568')
+  })
+
+  it('beachtet Berechtigungen und Sonderrufnummern', () => {
+    const cfg = sampleConfig()
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '0043 1234', cid: '' })).toBe('deny')
+    expect(routeOutbound(cfg, { ext: '11', fwd: '', num: '0043 1234', cid: '' }).startsWith('ok|')).toBe(true)
+    expect(routeOutbound(cfg, { ext: '12', fwd: '', num: '0301234', cid: '' })).toBe('deny')
+    expect(routeOutbound(cfg, { ext: '12', fwd: '', num: '112', cid: '' })).toBe('ok|trunk-t1|112|+49301234567')
+    expect(routeOutbound(cfg, { ext: '11', fwd: '', num: '0900 123456', cid: '' })).toBe('deny')
+    expect(routeOutbound(cfg, { ext: '11', fwd: '', num: '11833', cid: '' })).toBe('deny')
+    expect(routeOutbound(cfg, { ext: '99', fwd: '', num: '0301234', cid: '' })).toBe('deny')
+  })
+
+  it('folgt Wahlregeln mit Ausweichkonto', () => {
+    const cfg = sampleConfig()
+    cfg.trunks.push({ ...cfg.trunks[0], id: 't2', name: 'sipgate', number_format: 'e164_no_plus', numbers: [], default_cid: '' })
+    cfg.outbound = [{ id: 'o1', name: 'Mobil', prefixes: ['015', '016', '017'], trunks: ['t2', 't1'], extensions: [] }]
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '01715551234', cid: '' })).toBe(
+      'ok|trunk-t2|491715551234||trunk-t1|+491715551234|+49301234567',
+    )
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '030555', cid: '' })).toBe('deny')
+  })
+})
