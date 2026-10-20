@@ -36,8 +36,8 @@ import {
   useMediaQuery,
 } from '@mui/material'
 import { useEffect, useState } from 'react'
-import { SCHEMES, THEMES, swatch } from '../../../../shared/themes'
-import type { AccountSettings } from '../../../../shared/types'
+import { SCHEMES, STYLES, THEMES, swatch } from '../../../../shared/themes'
+import type { AccountSettings, DesignStyle } from '../../../../shared/types'
 import { api } from '../../api'
 import { convertToWav, playWav } from '../../audio'
 import { useApp } from '../../state'
@@ -400,6 +400,22 @@ function GeneralTab() {
   return (
     <>
       <Group title="Darstellung">
+        <Row>
+          <TextField
+            select
+            size="small"
+            label="Designstil"
+            value={settings.appearance.style}
+            onChange={(e) => void api.setAppearance({ style: e.target.value as DesignStyle })}
+            sx={{ my: 1 }}
+          >
+            {STYLES.map((s) => (
+              <MenuItem key={s.key} value={s.key}>
+                {s.name}
+              </MenuItem>
+            ))}
+          </TextField>
+        </Row>
         <Box sx={{ p: 2 }}>
           <Typography sx={{ mb: 1.5 }}>Farbthema</Typography>
           <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))', gap: 1 }}>

@@ -32,6 +32,11 @@ export const SCHEMES = [
   { key: 'dark', name: 'Dunkel' },
 ] as const
 
+export const STYLES = [
+  { key: 'classic', name: 'Material UI (klassisch)' },
+  { key: 'm3', name: 'Material Design 3 (Material You)' },
+] as const
+
 export interface Roles {
   primary: string
   onPrimary: string

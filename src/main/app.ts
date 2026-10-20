@@ -248,7 +248,7 @@ export class App {
     this.stateChanged()
   }
 
-  setAppearance(values: { theme?: string; scheme?: 'system' | 'light' | 'dark' }): void {
+  setAppearance(values: Partial<AppState['settings']['appearance']>): void {
     Object.assign(this.store.settings.appearance, values)
     this.store.saveSettings()
     nativeTheme.themeSource = this.store.settings.appearance.scheme
