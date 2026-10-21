@@ -2,12 +2,13 @@
  * Automatische Einrichtung durch eine Phone4all-Telefonanlage: Die App sucht die
  * Anlage im LAN (UDP-Broadcast), holt mit Einrichtungslink oder Nebenstelle + PIN
  * ein Profil und übernimmt Konto, Passwort und Telefonbuch. Das Profil wird später
- * über denselben Link aufgefrischt, damit Änderungen an der Anlage ankommen.
+ * über denselben Link aufgefrischt, damit Änderungen an der Anlage ankommen. Die
+ * Anlage kann außerdem Ansichten vorgeben (App-Profil) und zentrale Kalender liefern.
  */
 
 import dgram from 'node:dgram'
 import os from 'node:os'
-import type { AccountSettings, Contact, PbxFound, PbxPreview } from '../shared/types'
+import type { AccountSettings, AppPolicy, Contact, HomeCard, PageName, PbxCalendar, PbxFound, PbxPreview } from '../shared/types'
 import { loadJson, saveJson } from './files'
 import type { Store } from './store'
 
@@ -15,6 +16,10 @@ export const DISCOVERY_PORT = 15060
 export const LINK_SCHEME = 'sip-telefon'
 const PROFILE_FORMAT = 'phone4all-provisioning'
 const REFRESH_INTERVAL = 6 * 60 * 60 * 1000
+/** So oft fragt die App, ob sich Profil oder zentrale Termine geändert haben */
+const POLL_INTERVAL = 2 * 60 * 1000
+const PAGES: PageName[] = ['home', 'dial', 'contacts', 'calendar', 'history']
+const CARDS: HomeCard[] = ['status', 'today', 'favorites', 'recent', 'events']
 const URL_SECRET = 'pbx:url'
 
 export interface PbxProfile {
@@ -26,6 +31,36 @@ export interface PbxProfile {
   password: string
   url: string
   phonebook: { name: string; company: string; phone: string; mobile: string }[]
+  app: AppPolicy | null
+  calendars: PbxCalendar[]
+  revision: string
+}
+
+/** Vorgaben aus dem Profil prüfen; unbekannte Ansichten werden ignoriert. */
+export function parsePolicy(data: unknown): AppPolicy | null {
+  const a = data as Partial<AppPolicy> | null
+  if (!a || typeof a !== 'object' || !Array.isArray(a.pages)) return null
+  const pages = PAGES.filter((p) => a.pages!.includes(p))
+  if (!pages.length) return null
+  return {
+    pages,
+    start_tab: pages.includes(a.start_tab as PageName) ? (a.start_tab as PageName) : pages[0],
+    home_cards: Array.isArray(a.home_cards) ? a.home_cards.filter((c, i, l): c is HomeCard => CARDS.includes(c) && l.indexOf(c) === i) : [],
+    lock_layout: Boolean(a.lock_layout),
+    lock_account: Boolean(a.lock_account),
+  }
+}
+
+function parseCalendars(data: unknown): PbxCalendar[] {
+  if (!Array.isArray(data)) return []
+  return data
+    .filter((c) => c && typeof c.id === 'string' && /^[\w-]+$/.test(c.id))
+    .map((c) => ({
+      id: c.id,
+      name: String(c.name ?? c.id),
+      color: /^#[0-9a-f]{6}$/i.test(String(c.color)) ? String(c.color) : '#1a73e8',
+      writable: Boolean(c.writable),
+    }))
 }
 
 /** Prüft die Antwort der Anlage, damit kein beliebiges JSON das Konto überschreibt. */
@@ -45,6 +80,9 @@ export function parseProfile(data: unknown): PbxProfile {
     password: p.password,
     url: typeof p.url === 'string' && /^https?:\/\//.test(p.url) ? p.url : '',
     phonebook: Array.isArray(p.phonebook) ? p.phonebook.filter((e) => e && typeof e.phone === 'string') : [],
+    app: parsePolicy(p.app),
+    calendars: parseCalendars(p.calendars),
+    revision: String(p.revision ?? ''),
   }
 }
 
@@ -160,6 +198,10 @@ export interface ProvisioningHost {
   restartEngine(): void
   stateChanged(): void
   phonebookChanged(): void
+  /** Liste der zentralen Kalender hat sich geändert */
+  calendarsChanged(): void
+  /** Termine in zentralen Kalendern haben sich geändert */
+  eventsChanged(): void
   toast(text: string): void
 }
 
@@ -167,6 +209,8 @@ export class Provisioning {
   /** Abgerufen, aber noch nicht bestätigt */
   private pending: PbxProfile | null = null
   private timer: NodeJS.Timeout | null = null
+  private poller: NodeJS.Timeout | null = null
+  private revision = { profile: '', events: '' }
   phonebook: Omit<Contact, 'id'>[]
 
   constructor(
@@ -183,7 +227,35 @@ export class Provisioning {
   start(): void {
     this.timer = setInterval(() => void this.refresh(), REFRESH_INTERVAL)
     this.timer.unref()
+    this.poller = setInterval(() => void this.poll(), POLL_INTERVAL)
+    this.poller.unref()
     void this.refresh()
+  }
+
+  /** Die Anlage verwaltet die Kontodaten (App-Profil) */
+  get accountLocked(): boolean {
+    return this.active && Boolean(this.host.store.settings.provisioning.policy?.lock_account)
+  }
+
+  /** Profil-Adresse der Anlage (…/provision/<token>), Basis für Kalender-Abfragen */
+  get url(): string {
+    return this.active ? this.host.store.getSecret(URL_SECRET) : ''
+  }
+
+  /** Fragt nur den Änderungsstand ab und lädt bei Bedarf Profil oder Termine nach. */
+  async poll(): Promise<void> {
+    const url = this.url
+    if (!url) return
+    try {
+      const r = await fetch(`${url}/revision`, { signal: AbortSignal.timeout(10000) })
+      if (!r.ok) return
+      const rev = (await r.json()) as { profile?: string; events?: string }
+      if (rev.profile && rev.profile !== this.revision.profile) await this.refresh()
+      if (rev.events && this.revision.events && rev.events !== this.revision.events) this.host.eventsChanged()
+      if (rev.events) this.revision.events = rev.events
+    } catch {
+      // Anlage gerade nicht erreichbar
+    }
   }
 
   /** Profil per Link abrufen (zur Bestätigung). */
@@ -213,11 +285,14 @@ export class Provisioning {
 
   /** Verbindung zur Anlage lösen; das Konto bleibt eingerichtet. */
   disconnect(): void {
+    if (this.accountLocked) throw new Error('Die Telefonanlage verwaltet dieses Konto. Bitte in der Anlage das App-Profil ändern.')
     const { store } = this.host
     store.deleteSecret(URL_SECRET)
-    store.settings.provisioning = { pbx: '', extension: '', server: '', updated: 0 }
+    store.settings.provisioning = { pbx: '', extension: '', server: '', updated: 0, policy: null, calendars: [] }
     store.saveSettings()
+    this.revision = { profile: '', events: '' }
     this.setPhonebook([])
+    this.host.calendarsChanged()
     this.host.stateChanged()
   }
 
@@ -240,10 +315,20 @@ export class Provisioning {
     Object.assign(store.account, account)
     const secure = store.setPassword(p.password)
     if (p.url) store.setSecret(URL_SECRET, p.url)
-    store.settings.provisioning = { pbx: p.pbx.name, extension: p.extension, server: p.account.domain, updated: Date.now() }
+    const calendarsChanged = JSON.stringify(p.calendars) !== JSON.stringify(store.settings.provisioning.calendars)
+    store.settings.provisioning = {
+      pbx: p.pbx.name,
+      extension: p.extension,
+      server: p.account.domain,
+      updated: Date.now(),
+      policy: p.app,
+      calendars: p.calendars,
+    }
+    this.revision.profile = p.revision
     store.settings.registered = true
     store.saveSettings()
     if (JSON.stringify(p.phonebook) !== JSON.stringify(this.phonebook)) this.setPhonebook(p.phonebook)
+    if (calendarsChanged || initial) this.host.calendarsChanged()
     if (changed || initial) this.host.restartEngine()
     if (changed && !initial) this.host.toast(`Konto von „${p.pbx.name}“ aktualisiert`)
     this.host.stateChanged()

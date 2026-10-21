@@ -56,7 +56,7 @@ function useWidth(): number {
 }
 
 /** Seitennavigation für breite Fenster */
-function NavRail({ page, onChange, missed }: { page: PageName; onChange: (p: PageName) => void; missed: boolean }) {
+function NavRail({ pages, page, onChange, missed }: { pages: typeof PAGES; page: PageName; onChange: (p: PageName) => void; missed: boolean }) {
   return (
     <Tabs
       orientation="vertical"
@@ -64,7 +64,7 @@ function NavRail({ page, onChange, missed }: { page: PageName; onChange: (p: Pag
       onChange={(_e, v: PageName) => onChange(v)}
       sx={{ width: 96, flexShrink: 0, borderRight: 1, borderColor: 'divider' }}
     >
-      {PAGES.map(([key, label, icon]) => (
+      {pages.map(([key, label, icon]) => (
         <Tab
           key={key}
           value={key}
@@ -108,7 +108,12 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
 export function MainWindow() {
   const { state } = useApp()
   const width = useWidth()
-  const [page, setPage] = useState<PageName>(state.settings.home.start_tab)
+  // Die Telefonanlage kann Bereiche und Startansicht vorgeben (App-Profil)
+  const policy = state.settings.provisioning.policy
+  const pages = policy ? PAGES.filter(([k]) => policy.pages.includes(k)) : PAGES
+  const [page, setPageRaw] = useState<PageName>(policy?.start_tab ?? state.settings.home.start_tab)
+  const visible = pages.some(([k]) => k === page) ? page : pages[0][0]
+  const setPage = useCallback((p: PageName) => setPageRaw(p), [])
   const [contact, setContact] = useState<Partial<Contact> | null>(null)
   const [event, setEvent] = useState<{ event: Partial<CalEvent>; isNew: boolean } | null>(null)
   const [prefs, setPrefs] = useState<string | null>(null)
@@ -121,7 +126,7 @@ export function MainWindow() {
   const wide = columns > 1
   const call = activeCall(state.calls)
 
-  const navigate = useCallback((p: PageName) => setPage(p), [])
+  const navigate = setPage
   useUiEvent('navigate', navigate)
   useUiEvent('edit-contact', useCallback((c: Partial<Contact>) => setContact(c), []))
   useUiEvent('open-event', useCallback((e: { event: Partial<CalEvent>; isNew: boolean }) => setEvent(e), []))
@@ -172,7 +177,7 @@ export function MainWindow() {
   if (call) {
     content = <CallPanel call={call} />
   } else {
-    switch (page) {
+    switch (visible) {
       case 'home':
         content = <HomePage columns={columns} />
         break
@@ -212,16 +217,16 @@ export function MainWindow() {
         </Alert>
       )}
       <Stack direction="row" sx={{ flex: 1, minHeight: 0 }}>
-        {wide && !call && <NavRail page={page} onChange={setPage} missed={state.missedUnseen} />}
+        {wide && !call && <NavRail pages={pages} page={visible} onChange={setPage} missed={state.missedUnseen} />}
         <Stack sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>{content}</Stack>
       </Stack>
       {!wide && !call && (
         <BottomNavigation
           showLabels
-          value={page}
+          value={visible}
           onChange={(_e, v: PageName) => setPage(v)}
         >
-          {PAGES.map(([key, label, icon]) => (
+          {pages.map(([key, label, icon]) => (
             <BottomNavigationAction
               key={key}
               value={key}

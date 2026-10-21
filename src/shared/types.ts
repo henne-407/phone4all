@@ -117,7 +117,33 @@ export interface Settings {
   run_in_background: boolean
   autostart: boolean
   /** Von einer Phone4all-Telefonanlage eingerichtet (leer = von Hand) */
-  provisioning: { pbx: string; extension: string; server: string; updated: number }
+  provisioning: {
+    pbx: string
+    extension: string
+    server: string
+    updated: number
+    /** Vorgaben der Anlage für die Ansichten (null = keine) */
+    policy: AppPolicy | null
+    /** Zentrale Kalender der Anlage */
+    calendars: PbxCalendar[]
+  }
+}
+
+/** Von der Telefonanlage vorgegebene Ansichten (App-Profil) */
+export interface AppPolicy {
+  pages: PageName[]
+  start_tab: PageName
+  /** Karten der Startseite in Reihenfolge (leer = wie eingestellt) */
+  home_cards: HomeCard[]
+  lock_layout: boolean
+  lock_account: boolean
+}
+
+export interface PbxCalendar {
+  id: string
+  name: string
+  color: string
+  writable: boolean
 }
 
 /** Gefundene oder abgefragte Telefonanlage, bevor das Konto übernommen wird. */

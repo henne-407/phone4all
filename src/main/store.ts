@@ -37,7 +37,7 @@ export const DEFAULT_SETTINGS: Settings = {
   registered: true,
   run_in_background: true,
   autostart: false,
-  provisioning: { pbx: '', extension: '', server: '', updated: 0 },
+  provisioning: { pbx: '', extension: '', server: '', updated: 0, policy: null, calendars: [] },
 }
 
 type SecretEntry = { enc: string } | { plain: string }

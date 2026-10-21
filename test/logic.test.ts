@@ -7,7 +7,8 @@ import { accountLine } from '../src/main/baresip'
 import { guessColumns, mergeInto, parseCsv, parseFileData, parseVcards } from '../src/main/contactImport'
 import { expandEvents, newCalendar, parseCalendar, updateCalendar } from '../src/main/ical'
 import { encodeWav } from '../src/main/ringtones'
-import { broadcastAddresses, normalizeServer, parseProfile, profileUrlFromLink } from '../src/main/provisioning'
+import { fromPbxEvent, pbxTime, toPbxTime } from '../src/main/calendars'
+import { broadcastAddresses, normalizeServer, parsePolicy, parseProfile, profileUrlFromLink } from '../src/main/provisioning'
 import { MsSqlSource, quoteIdent } from '../src/main/sqlSource'
 import { covers, fmtEventTime, formatDuration, formatTalk } from '../src/shared/format'
 import { findNumbers, normalizeNumber, numberFromUri, numbersMatch } from '../src/shared/numbers'
@@ -293,6 +294,29 @@ describe('Einrichtung durch die Telefonanlage', () => {
     expect(parseProfile(profile).account.domain).toBe('192.168.1.10')
     expect(() => parseProfile({ ...profile, format: 'x' })).toThrow()
     expect(() => parseProfile({ ...profile, password: 'a;b' })).toThrow()
+  })
+
+  it('übernimmt Ansichten und Kalender der Anlage', () => {
+    const p = parseProfile({
+      ...profile,
+      app: { pages: ['dial', 'home', 'unbekannt'], start_tab: 'history', home_cards: ['status', 'status', 'x'], lock_layout: 1, lock_account: true },
+      calendars: [{ id: 'betrieb', name: 'Betrieb', color: '#0b8043', writable: true }, { id: '../x', name: 'böse' }],
+      revision: 'abc',
+    })
+    expect(p.app).toEqual({ pages: ['home', 'dial'], start_tab: 'home', home_cards: ['status'], lock_layout: true, lock_account: true })
+    expect(p.calendars).toEqual([{ id: 'betrieb', name: 'Betrieb', color: '#0b8043', writable: true }])
+    expect(p.revision).toBe('abc')
+    expect(parseProfile(profile).app).toBeNull()
+    expect(parsePolicy({ pages: [] })).toBeNull()
+  })
+
+  it('rechnet Termine der Anlage um', () => {
+    const allDay = fromPbxEvent({ uid: 'u', summary: 'Ferien', start: '2026-12-24', end: '2026-12-27', allDay: true, location: '', description: '' })
+    expect(allDay.start).toBe(new Date(2026, 11, 24).getTime())
+    expect(allDay.end).toBe(new Date(2026, 11, 27).getTime())
+    expect(toPbxTime(allDay.start, true)).toBe('2026-12-24')
+    const timed = pbxTime('2026-03-02T09:00:00.000Z', false)
+    expect(toPbxTime(timed, false)).toBe('2026-03-02T09:00:00.000Z')
   })
 
   it('berechnet Broadcast-Adressen', () => {

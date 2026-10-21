@@ -126,10 +126,17 @@ export class App {
         restartEngine: () => this.phone.restartEngine(),
         stateChanged: () => this.stateChanged(),
         phonebookChanged: () => void this.sync.sync(),
+        calendarsChanged: () => void this.calendar.reload(),
+        eventsChanged: () => this.calendar.emit('events-changed'),
         toast: (text) => this.send('toast', text),
       },
       path.join(DIRS.data, 'pbx-phonebook.json'),
     )
+    this.calendar.pbxSource = () => {
+      const p = this.store.settings.provisioning
+      const url = this.provisioning.url
+      return url && p.calendars.length ? { url, name: p.pbx, calendars: p.calendars } : null
+    }
     this.sync.sources.push(() =>
       this.provisioning.active
         ? {
