@@ -1,5 +1,6 @@
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import MailOutlineIcon from '@mui/icons-material/MailOutlined'
+import PersonIcon from '@mui/icons-material/Person'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
@@ -20,7 +21,7 @@ import {
 import { useEffect, useState } from 'react'
 import type { Extension, Permission } from '../../../server/model'
 import { api } from '../api'
-import { CollectionPage, FormGrid, Full, NumberField, Select } from '../components/common'
+import { CollectionPage, FormGrid, Full, Initials, NumberField, Select, StatusDot } from '../components/common'
 import { usePbx } from '../state'
 import { useStatus } from '../useStatus'
 
@@ -141,6 +142,13 @@ function ExtensionForm({ value, onChange, isNew }: { value: Extension; onChange:
           helperText={numbers.length ? `Eigene Nummern: ${numbers.join(', ')}` : 'Leer = Standardnummer des SIP-Kontos'}
         />
         <Select label="Darf anrufen" value={value.permission} onChange={(v) => set('permission', v)} options={PERMISSIONS} />
+        <Select
+          label="App-Profil"
+          value={value.app_profile}
+          onChange={(v) => set('app_profile', v)}
+          options={[['', 'Keine Vorgaben'], ...config.appprofiles.map((p): [string, string] => [p.id, p.name])]}
+          helperText="Legt fest, welche Ansichten die SIP-Telefon-App zeigt"
+        />
         <NumberField label="Klingeldauer (Sekunden)" value={value.ring_seconds} onChange={(v) => set('ring_seconds', v)} min={5} />
         <NumberField label="Geräte gleichzeitig" value={value.max_devices} onChange={(v) => set('max_devices', v)} min={1} helperText="z. B. App am PC, Tischtelefon, Handy" />
       </FormGrid>
@@ -179,34 +187,46 @@ export default function Extensions() {
   return (
     <CollectionPage<Extension>
       kind="extensions"
+      overline="Personen"
       title="Nebenstellen"
       singular="Nebenstelle"
       description="Jede Person bekommt eine interne Rufnummer. Darauf können sich mehrere Geräte anmelden – die SIP-Telefon-App, Tischtelefone oder Softphones."
       emptyText="Noch keine Nebenstellen. Lege die erste an, z. B. 10 für dich selbst."
+      emptyIcon={<PersonIcon />}
       newItem={() => ({ number: nextNumber(config.extensions) })}
-      columns={[
-        { label: 'Nr.', render: (e) => <b>{e.number}</b> },
-        { label: 'Name', render: (e) => e.name },
-        {
-          label: 'Geräte',
-          render: (e) => {
-            const n = online(e.number)
-            return <Chip size="small" color={n ? 'success' : 'default'} variant={n ? 'filled' : 'outlined'} label={n ? `${n} online` : 'offline'} />
-          },
-        },
-        {
-          label: 'Status',
-          hideOnMobile: true,
-          render: (e) => (
-            <Stack direction="row" sx={{ gap: 0.5 }}>
-              {status?.dnd[e.number] && <Chip size="small" color="warning" label="Nicht stören" />}
-              {status?.cfu[e.number] && <Chip size="small" label={`→ ${status.cfu[e.number]}`} />}
-              {e.voicemail.enabled && <Chip size="small" variant="outlined" label="Voicemail" />}
+      card={(e) => {
+        const n = online(e.number)
+        const groups = config.groups.filter((g) => g.members.includes(e.number))
+        const profile = config.appprofiles.find((p) => p.id === e.app_profile)
+        return (
+          <Box>
+            <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+              <Initials name={e.name || e.number} size={44} />
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography variant="h6" noWrap>
+                  {e.name}
+                </Typography>
+                <Typography variant="body2" sx={{ color: 'text.secondary' }} noWrap>
+                  {e.email || 'keine E-Mail'}
+                </Typography>
+              </Box>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: 'primary.main' }}>
+                {e.number}
+              </Typography>
             </Stack>
-          ),
-        },
-        { label: 'E-Mail', hideOnMobile: true, render: (e) => e.email },
-      ]}
+            <StatusDot color={n ? 'success' : 'default'} label={n ? `${n} ${n === 1 ? 'Gerät' : 'Geräte'} angemeldet` : 'Kein Gerät angemeldet'} />
+            <Stack direction="row" sx={{ gap: 0.75, flexWrap: 'wrap', mt: 1.5 }}>
+              {status?.dnd[e.number] && <Chip size="small" color="warning" label="Nicht stören" />}
+              {status?.cfu[e.number] && <Chip size="small" color="info" label={`Umgeleitet → ${status.cfu[e.number]}`} />}
+              {e.voicemail.enabled && <Chip size="small" variant="outlined" label="Voicemail" />}
+              {groups.map((g) => (
+                <Chip key={g.id} size="small" variant="outlined" label={g.name} />
+              ))}
+              {profile && <Chip size="small" variant="outlined" color="primary" label={`App: ${profile.name}`} />}
+            </Stack>
+          </Box>
+        )
+      }}
       extraActions={(e) =>
         status?.dnd[e.number] ? (
           <Tooltip title="Nicht stören ausschalten">

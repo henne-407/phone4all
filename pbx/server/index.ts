@@ -4,14 +4,15 @@ import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
 import { Asterisk } from './asterisk'
+import { CalendarStore } from './calendars'
 import { Auth, SESSION_COOKIE, SESSION_MAX_AGE } from './auth'
 import { readCalls, tailLog } from './cdr'
 import { HttpError, type Request, Router, makeRequest, sendFile, sendJson, sendText, serveStatic } from './http'
 import { sendMail } from './mail'
-import { BUNDESLAENDER, COLLECTIONS, type CollectionName, SECTIONS, type SectionName } from './model'
+import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, SECTIONS, type SectionName } from './model'
 import { PATHS, SETTINGS } from './paths'
 import { PROVIDERS } from './providers'
-import { appLink, baseUrl, landingPage, profile, startDiscovery } from './provisioning'
+import { appLink, baseUrl, landingPage, profile, startDiscovery, visibleCalendars } from './provisioning'
 import {
   extensionPlan,
   feature,
@@ -31,6 +32,7 @@ const auth = new Auth()
 const asterisk = new Asterisk()
 const guard = new Guard(() => store.config.security)
 const updater = new Updater()
+const calendars = new CalendarStore(() => store.config)
 auth.init()
 
 // -- Konfiguration übernehmen (gebündelt, damit viele Änderungen nur ein Reload sind)
@@ -121,6 +123,54 @@ pub.get('/provision/:token', (r) => {
   return profile(store.config, ext, requestBase(r))
 })
 
+function tokenExtension(token: string): Extension {
+  const ext = store.config.extensions.find((e) => e.provision_token && e.provision_token === token)
+  if (!ext) throw new HttpError(404, 'Unbekannter Einrichtungslink.')
+  return ext
+}
+
+function range(r: Request): [number, number] {
+  const start = Date.parse(r.query.get('start') ?? '')
+  const end = Date.parse(r.query.get('end') ?? '')
+  if (Number.isNaN(start) || Number.isNaN(end) || end <= start || end - start > 400 * 86400000) {
+    throw new HttpError(400, 'Zeitraum fehlt oder ist zu groß (start/end als ISO-Datum, höchstens 400 Tage).')
+  }
+  return [start, end]
+}
+
+/** Die App fragt regelmäßig, ob sich Profil oder Termine geändert haben. */
+pub.get('/provision/:token/revision', (r) => {
+  const ext = tokenExtension(r.params.token)
+  return { profile: profile(store.config, ext, requestBase(r)).revision, events: String(calendars.revision) }
+})
+
+/** Termine der zentralen Kalender, die diese Nebenstelle sieht */
+pub.get('/provision/:token/events', (r) => {
+  const ext = tokenExtension(r.params.token)
+  const [start, end] = range(r)
+  const only = r.query.get('calendar')
+  return visibleCalendars(store.config, ext)
+    .filter((c) => !only || c.id === only)
+    .flatMap((c) => calendars.events(c.id, start, end).map((e) => ({ ...e, calendar: c.id })))
+})
+
+function writableFor(token: string, id: string): void {
+  const cal = visibleCalendars(store.config, tokenExtension(token)).find((c) => c.id === id)
+  if (!cal) throw new HttpError(404, 'Kalender nicht gefunden.')
+  if (!cal.writable || cal.kind !== 'events') throw new HttpError(403, 'Dieser Kalender ist schreibgeschützt.')
+}
+
+pub.put('/provision/:token/events/:calendar/:uid', async (r) => {
+  writableFor(r.params.token, r.params.calendar)
+  return calendars.upsert(r.params.calendar, await r.json(), r.params.uid)
+})
+
+pub.delete('/provision/:token/events/:calendar/:uid', (r) => {
+  writableFor(r.params.token, r.params.calendar)
+  calendars.remove(r.params.calendar, r.params.uid)
+  return { ok: true }
+})
+
 /** Einrichtung mit Nebenstelle und Einrichtungs-PIN */
 pub.post('/provision', async (r) => {
   if (auth.blocked(r.ip)) throw new HttpError(429, 'Zu viele Fehlversuche. Bitte 15 Minuten warten.')
@@ -171,6 +221,7 @@ for (const kind of COLLECTIONS) {
   })
   api.delete(`/api/${kind}/:id`, (r) => {
     store.remove(kind as CollectionName, r.params.id)
+    if (kind === 'calendars') calendars.cleanup()
     applySoon()
     return { ok: true }
   })
@@ -225,6 +276,21 @@ api.post('/api/extensions/:id/invite', async (r) => {
       'Funktionen am Telefon: *97 Voicemail, *76 Nicht stören, *21<Nummer> Weiterleitung (*21 aus), *8 Heranholen.',
     ].join('\n'),
   )
+  return { ok: true }
+})
+
+// Zentrale Kalender
+
+api.get('/api/calendars/:id/events', (r) => {
+  const [start, end] = range(r)
+  return calendars.events(r.params.id, start, end)
+})
+api.post('/api/calendars/:id/events', async (r) => {
+  const ev = await r.json<{ uid?: string }>()
+  return calendars.upsert(r.params.id, ev, ev.uid)
+})
+api.delete('/api/calendars/:id/events/:uid', (r) => {
+  calendars.remove(r.params.id, r.params.uid)
   return { ok: true }
 })
 
@@ -307,6 +373,7 @@ api.get('/api/export', (r) => {
 api.post('/api/import', async (r) => {
   const data = await r.json<ExportFile>()
   store.importData(data)
+  calendars.revision++
   applySoon()
   return { ok: true }
 })
@@ -315,6 +382,7 @@ api.get('/api/backups', () => store.backups())
 api.post('/api/backups', () => ({ name: store.backup('manuell') }))
 api.post('/api/backups/:name/restore', (r) => {
   store.restoreBackup(r.params.name)
+  calendars.revision++
   applySoon()
   return { ok: true }
 })

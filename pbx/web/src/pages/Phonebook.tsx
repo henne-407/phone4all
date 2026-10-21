@@ -43,9 +43,10 @@ export default function Phonebook() {
     <Box>
       <CollectionPage<PhonebookEntry>
         kind="phonebook"
-        title="Telefonbuch"
+        overline="Zusammenarbeit"
+        title="Zentrale Kontakte"
         singular="Kontakt"
-        description="Gemeinsame Kontakte für alle: Die Anlage zeigt bei Anrufen den Namen, und die SIP-Telefon-App bekommt das Telefonbuch bei der Einrichtung mit."
+        description="Das gemeinsame Telefonbuch: Die Anlage zeigt bei Anrufen den Namen, und alle SIP-Telefon-Apps übernehmen die Kontakte automatisch – Änderungen hier kommen innerhalb von zwei Minuten an."
         columns={[
           { label: 'Name', render: (e) => <b>{e.name}</b> },
           { label: 'Firma', hideOnMobile: true, render: (e) => e.company },

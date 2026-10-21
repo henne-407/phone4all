@@ -22,6 +22,7 @@ export default function Conferences() {
   return (
     <CollectionPage<Conference>
       kind="conferences"
+      overline="Zusammenarbeit"
       title="Konferenzräume"
       singular="Konferenzraum"
       description="Telefonkonferenzen für beliebig viele Teilnehmer, intern und – als Ziel einer Rufnummer – auch von außen erreichbar."

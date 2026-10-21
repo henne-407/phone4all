@@ -467,7 +467,7 @@ export default function System() {
   const Page = TABS[tab][1]
   return (
     <Box>
-      <PageHeader title="System" />
+      <PageHeader overline="System" title="Einstellungen und Wartung" description="Name, E-Mail, Sicherheit, Sicherungen und Updates der Anlage." />
       <Tabs value={tab} onChange={(_e, v: number) => setTab(v)} variant="scrollable" sx={{ mb: 2 }}>
         {TABS.map(([label]) => (
           <Tab key={label} label={label} />
