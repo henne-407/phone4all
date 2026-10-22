@@ -1,25 +1,35 @@
+import CallIcon from '@mui/icons-material/Call'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import PersonIcon from '@mui/icons-material/Person'
+import PhoneInTalkIcon from '@mui/icons-material/PhoneInTalk'
+import ShieldIcon from '@mui/icons-material/Shield'
 import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked'
-import { Alert, Box, Button, Card, CardContent, Chip, List, ListItem, ListItemIcon, ListItemText, Stack, Typography } from '@mui/material'
+import { Alert, Box, Button, Card, CardActionArea, CardContent, Chip, List, ListItem, ListItemIcon, ListItemText, Stack, Typography, useTheme } from '@mui/material'
 import type { ReactNode } from 'react'
 import { PageHeader, formatDuration } from '../components/common'
+import { go } from '../router'
 import { usePbx } from '../state'
 import { useStatus } from '../useStatus'
 
-function Stat({ label, value, sub, color }: { label: string; value: ReactNode; sub?: ReactNode; color?: string }) {
+function Stat({ label, value, sub, color, icon, onClick }: { label: string; value: ReactNode; sub?: ReactNode; color: string; icon: ReactNode; onClick?: () => void }) {
   return (
-    <Card sx={{ flex: '1 1 200px' }}>
-      <CardContent>
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          {label}
-        </Typography>
-        <Typography variant="h4" sx={{ my: 0.5, color }}>
-          {value}
-        </Typography>
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          {sub}
-        </Typography>
-      </CardContent>
+    <Card sx={{ flex: '1 1 220px', '&:hover': onClick ? { borderColor: 'primary.main' } : undefined }}>
+      <CardActionArea onClick={onClick} disabled={!onClick} sx={{ height: '100%' }}>
+        <CardContent sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <Box sx={{ width: 48, height: 48, borderRadius: 3, bgcolor: color, color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{icon}</Box>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+              {label}
+            </Typography>
+            <Typography variant="h5" sx={{ fontWeight: 700, lineHeight: 1.3 }}>
+              {value}
+            </Typography>
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+              {sub}
+            </Typography>
+          </Box>
+        </CardContent>
+      </CardActionArea>
     </Card>
   )
 }
@@ -36,8 +46,9 @@ const FEATURES: [string, string][] = [
   ['*43', 'Echo-Test (Mikrofon prüfen)'],
 ]
 
-export default function Dashboard({ go }: { go: (page: string) => void }) {
+export default function Dashboard() {
   const { config, version } = usePbx()
+  const theme = useTheme()
   const [status] = useStatus(4000)
   const extOnline = config.extensions.filter((e) => status?.endpoints.some((x) => x.number === e.number && x.contacts.some((c) => c.status !== 'Unreachable'))).length
   const regTrunks = config.trunks.filter((t) => t.enabled && t.register && !t.ip_auth)
@@ -48,10 +59,11 @@ export default function Dashboard({ go }: { go: (page: string) => void }) {
     [config.trunks.length > 0, 'SIP-Konto für Anrufe nach außen einrichten', 'trunks'],
     [config.inbound.length > 0 || config.trunks.some((t) => t.inbound_default.type !== 'hangup'), 'Festlegen, wohin eingehende Anrufe gehen', 'flows'],
     [Boolean(config.mail.host), 'E-Mail-Versand für Voicemail und Einladungen', 'system'],
+    [config.appprofiles.length > 0 || config.calendars.length > 0, 'Optional: App-Profile und zentrale Kalender für die Apps', 'appprofiles'],
   ]
   return (
     <Box>
-      <PageHeader title={config.system.name} description={`Telefonanlage · Version ${version}`} />
+      <PageHeader overline="Übersicht" title={config.system.name} description={`Telefonanlage · Version ${version}`} />
       {status?.update.available && (
         <Alert severity="info" sx={{ mb: 2 }} action={<Button onClick={() => go('system')}>Ansehen</Button>}>
           Version {status.update.latest?.version} ist verfügbar.
@@ -63,15 +75,38 @@ export default function Dashboard({ go }: { go: (page: string) => void }) {
         </Alert>
       )}
       <Stack direction="row" sx={{ gap: 2, flexWrap: 'wrap', mb: 2 }}>
-        <Stat label="Nebenstellen online" value={`${extOnline} / ${config.extensions.length}`} sub="mit mindestens einem Gerät" />
+        <Stat
+          label="Nebenstellen online"
+          value={`${extOnline} / ${config.extensions.length}`}
+          sub="mit mindestens einem Gerät"
+          color={theme.m3.node.extension}
+          icon={<PersonIcon />}
+          onClick={() => go('extensions')}
+        />
         <Stat
           label="SIP-Konten angemeldet"
           value={`${registered} / ${regTrunks.length}`}
-          color={registered < regTrunks.length ? 'warning.main' : undefined}
+          color={registered < regTrunks.length ? theme.palette.warning.main : theme.m3.node.number}
+          icon={<CallIcon />}
           sub={registered < regTrunks.length ? 'Zugangsdaten prüfen' : 'alles in Ordnung'}
+          onClick={() => go('trunks')}
         />
-        <Stat label="Gespräche jetzt" value={calls.length} sub={status?.uptime ? `Laufzeit ${formatDuration(Number(status.uptime))}` : ''} />
-        <Stat label="Gesperrte Adressen" value={status?.bans.length ?? 0} sub="nach Fehlanmeldungen" />
+        <Stat
+          label="Gespräche jetzt"
+          value={calls.length}
+          color={theme.palette.primary.main}
+          icon={<PhoneInTalkIcon />}
+          sub={status?.uptime ? `Anlage läuft seit ${formatDuration(Number(status.uptime))}` : ''}
+          onClick={() => go('calls')}
+        />
+        <Stat
+          label="Gesperrte Adressen"
+          value={status?.bans.length ?? 0}
+          color={status?.bans.length ? theme.palette.error.main : theme.m3.node.hangup}
+          icon={<ShieldIcon />}
+          sub="nach Fehlanmeldungen"
+          onClick={() => go('system')}
+        />
       </Stack>
       {steps.some(([done]) => !done) && (
         <Card sx={{ mb: 2 }}>

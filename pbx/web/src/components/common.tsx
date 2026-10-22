@@ -4,9 +4,11 @@ import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import {
   Autocomplete,
+  Avatar,
   Box,
   Button,
   Card,
+  CardActionArea,
   CardContent,
   Chip,
   Dialog,
@@ -28,34 +30,41 @@ import {
   useMediaQuery,
   useTheme,
 } from '@mui/material'
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { type CollectionName, DESTINATION_LABELS, type Destination, type DestinationType, blankItem } from '../../../server/model'
+import { takeEditRequest } from '../router'
 import { usePbx } from '../state'
 
-export function PageHeader({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
+export function PageHeader({ title, description, action, overline }: { title: string; description?: string; action?: ReactNode; overline?: string }) {
   return (
-    <Stack direction="row" sx={{ alignItems: 'flex-start', mb: 3, gap: 2 }}>
+    <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ alignItems: { sm: 'flex-end' }, mb: 3, gap: 2 }}>
       <Box sx={{ flex: 1 }}>
-        <Typography variant="h5" component="h1">
+        {overline && (
+          <Typography variant="overline" sx={{ color: 'primary.main', display: 'block', lineHeight: 1.6 }}>
+            {overline}
+          </Typography>
+        )}
+        <Typography variant="h4" component="h1">
           {title}
         </Typography>
         {description && (
-          <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5, maxWidth: 760 }}>
+          <Typography variant="body1" sx={{ color: 'text.secondary', mt: 0.75, maxWidth: 780 }}>
             {description}
           </Typography>
         )}
       </Box>
-      {action}
+      {action && <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>{action}</Stack>}
     </Stack>
   )
 }
 
-export function Section({ title, description, children, action }: { title?: string; description?: string; children: ReactNode; action?: ReactNode }) {
+export function Section({ title, description, children, action, icon }: { title?: string; description?: string; children: ReactNode; action?: ReactNode; icon?: ReactNode }) {
   return (
     <Card sx={{ mb: 2 }}>
       <CardContent sx={{ p: { xs: 2, sm: 3 }, '&:last-child': { pb: { xs: 2, sm: 3 } } }}>
         {(title || action) && (
-          <Stack direction="row" sx={{ alignItems: 'center', mb: description ? 0.5 : 2 }}>
+          <Stack direction="row" sx={{ alignItems: 'center', mb: description ? 0.5 : 2, gap: 1.5 }}>
+            {icon && <Box sx={{ color: 'primary.main', display: 'flex' }}>{icon}</Box>}
             <Typography variant="h6" sx={{ flex: 1 }}>
               {title}
             </Typography>
@@ -73,6 +82,20 @@ export function Section({ title, description, children, action }: { title?: stri
   )
 }
 
+/** Überschrift innerhalb eines Formulars */
+export function FormHeading({ children, hint }: { children: ReactNode; hint?: string }) {
+  return (
+    <Box sx={{ mt: 1, mb: 1.5 }}>
+      <Typography variant="subtitle1">{children}</Typography>
+      {hint && (
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+          {hint}
+        </Typography>
+      )}
+    </Box>
+  )
+}
+
 /** Formularfelder in zwei Spalten (schmal: eine Spalte) */
 export function FormGrid({ children, columns = 2 }: { children: ReactNode; columns?: number }) {
   return (
@@ -84,6 +107,59 @@ export function FormGrid({ children, columns = 2 }: { children: ReactNode; colum
 
 export function Full({ children }: { children: ReactNode }) {
   return <Box sx={{ gridColumn: '1 / -1' }}>{children}</Box>
+}
+
+/** Kartenraster für Übersichten */
+export function CardGrid({ children, min = 300 }: { children: ReactNode; min?: number }) {
+  return <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: `repeat(auto-fill, minmax(min(${min}px, 100%), 1fr))` }}>{children}</Box>
+}
+
+/** Rundes Kürzel (Initialen) in einer festen Farbe je Name */
+export function Initials({ name, color, size = 40 }: { name: string; color?: string; size?: number }) {
+  const theme = useTheme()
+  const letters = name
+    .split(/[\s-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join('')
+  const palette = Object.values(theme.m3.node)
+  const hash = [...name].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7)
+  const bg = color ?? palette[hash % palette.length]
+  return (
+    <Avatar sx={{ width: size, height: size, bgcolor: bg, color: theme.palette.getContrastText(bg), fontSize: size * 0.4, fontWeight: 600 }}>
+      {letters || '?'}
+    </Avatar>
+  )
+}
+
+/** Statuspunkt mit Text, z. B. „● Angemeldet“ */
+export function StatusDot({ color, label }: { color: 'success' | 'error' | 'warning' | 'default'; label: string }) {
+  const theme = useTheme()
+  const c = color === 'default' ? theme.palette.text.disabled : theme.palette[color].main
+  return (
+    <Stack direction="row" component="span" sx={{ alignItems: 'center', gap: 0.75, color: color === 'default' ? 'text.secondary' : c, fontWeight: 600, fontSize: 13 }}>
+      <Box component="span" sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: c, flexShrink: 0 }} />
+      {label}
+    </Stack>
+  )
+}
+
+export function EmptyState({ icon, title, text, action }: { icon?: ReactNode; title: string; text?: string; action?: ReactNode }) {
+  return (
+    <Card sx={{ borderStyle: 'dashed' }}>
+      <Stack sx={{ alignItems: 'center', textAlign: 'center', p: { xs: 3, sm: 5 }, gap: 1 }}>
+        {icon && <Box sx={{ color: 'text.secondary', '& svg': { fontSize: 44 } }}>{icon}</Box>}
+        <Typography variant="h6">{title}</Typography>
+        {text && (
+          <Typography variant="body2" sx={{ color: 'text.secondary', maxWidth: 480 }}>
+            {text}
+          </Typography>
+        )}
+        {action && <Box sx={{ mt: 1 }}>{action}</Box>}
+      </Stack>
+    </Card>
+  )
 }
 
 /** Liste freier Texte als Chips (Rufnummern, Präfixe, Netze …) */
@@ -239,45 +315,27 @@ export function describeDestination(d: Destination, config: ReturnType<typeof us
   }
 }
 
-export interface Column<T> {
-  label: string
-  render: (item: T) => ReactNode
-  hideOnMobile?: boolean
-}
+export type FormComponent<T> = (props: { value: T; onChange: (v: T) => void; isNew: boolean }) => ReactNode
 
 /**
- * Liste mit Tabelle, „Neu“-Knopf und Bearbeiten-Dialog. Das Formular bekommt eine
- * Arbeitskopie und meldet Änderungen per onChange.
+ * Bearbeiten-Dialog für einen Eintrag einer Liste. Liefert Funktionen zum Öffnen und
+ * das Dialog-Element, damit auch Diagramme und Karten Einträge bearbeiten können.
  */
-export function CollectionPage<T extends { id: string }>({
-  kind,
-  title,
-  description,
-  singular,
-  columns,
-  Form,
-  newItem,
-  emptyText,
-  extraActions,
-}: {
-  kind: CollectionName
-  title: string
-  description?: string
-  singular: string
-  columns: Column<T>[]
-  Form: (props: { value: T; onChange: (v: T) => void; isNew: boolean }) => ReactNode
-  newItem?: () => Partial<T>
-  emptyText?: string
-  extraActions?: (item: T) => ReactNode
-}) {
+export function useEditor<T extends { id: string }>(kind: CollectionName, singular: string, Form: FormComponent<T>, newItem?: () => Partial<T>) {
   const pbx = usePbx()
-  const items = pbx.config[kind] as unknown as T[]
+  const theme = useTheme()
+  const mobile = useMediaQuery(theme.breakpoints.down('sm'))
   const [editing, setEditing] = useState<T | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirm, setConfirm] = useState(false)
-  const theme = useTheme()
-  const mobile = useMediaQuery(theme.breakpoints.down('sm'))
   const isNew = Boolean(editing && !editing.id)
+  const items = pbx.config[kind] as unknown as T[]
+
+  const openNew = (preset?: Partial<T>): void => setEditing({ ...blankItem(kind), ...newItem?.(), ...preset, id: '' } as unknown as T)
+  const openItem = (id: string): void => {
+    const item = items.find((x) => x.id === id)
+    if (item) setEditing(structuredClone(item))
+  }
 
   const save = async (): Promise<void> => {
     if (!editing) return
@@ -305,70 +363,11 @@ export function CollectionPage<T extends { id: string }>({
     setConfirm(false)
   }
 
-  const visible = columns.filter((c) => !(mobile && c.hideOnMobile))
-  return (
-    <Box>
-      <PageHeader
-        title={title}
-        description={description}
-        action={
-          !mobile && (
-            <Button variant="contained" startIcon={<AddIcon />} onClick={() => setEditing({ ...blankItem(kind), ...newItem?.(), id: '' } as unknown as T)}>
-              {singular} anlegen
-            </Button>
-          )
-        }
-      />
-      <Card>
-        {items.length ? (
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  {visible.map((c) => (
-                    <TableCell key={c.label} sx={{ color: 'text.secondary', fontWeight: 500 }}>
-                      {c.label}
-                    </TableCell>
-                  ))}
-                  {extraActions && <TableCell />}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {items.map((item) => (
-                  <TableRow key={item.id} hover sx={{ cursor: 'pointer', '&:last-child td': { border: 0 } }} onClick={() => setEditing(structuredClone(item))}>
-                    {visible.map((c) => (
-                      <TableCell key={c.label}>{c.render(item)}</TableCell>
-                    ))}
-                    {extraActions && (
-                      <TableCell align="right" onClick={(e) => e.stopPropagation()} sx={{ whiteSpace: 'nowrap' }}>
-                        {extraActions(item)}
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        ) : (
-          <Box sx={{ p: 4, textAlign: 'center', color: 'text.secondary' }}>{emptyText ?? `Noch keine Einträge.`}</Box>
-        )}
-      </Card>
-      {mobile && (
-        <Fab
-          color="primary"
-          variant="extended"
-          sx={{ position: 'fixed', right: 16, bottom: 16 }}
-          onClick={() => setEditing({ ...blankItem(kind), ...newItem?.(), id: '' } as unknown as T)}
-        >
-          <AddIcon sx={{ mr: 1 }} />
-          {singular}
-        </Fab>
-      )}
+  const dialog = (
+    <>
       <Dialog open={Boolean(editing)} onClose={() => setEditing(null)} fullWidth maxWidth="md" fullScreen={mobile}>
         <DialogTitle>{isNew ? `${singular} anlegen` : `${singular} bearbeiten`}</DialogTitle>
-        <DialogContent sx={{ pt: '8px !important' }}>
-          {editing && <Form value={editing} onChange={setEditing} isNew={isNew} />}
-        </DialogContent>
+        <DialogContent sx={{ pt: '8px !important' }}>{editing && <Form value={editing} onChange={setEditing} isNew={isNew} />}</DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           {!isNew && (
             <IconButton aria-label="Löschen" color="error" onClick={() => setConfirm(true)} sx={{ mr: 'auto' }}>
@@ -389,6 +388,156 @@ export function CollectionPage<T extends { id: string }>({
         onClose={() => setConfirm(false)}
         onConfirm={() => void remove()}
       />
+    </>
+  )
+  return { openNew, openItem, dialog }
+}
+
+export interface Column<T> {
+  label: string
+  render: (item: T) => ReactNode
+  hideOnMobile?: boolean
+}
+
+/**
+ * Seite mit allen Einträgen einer Liste: als Tabelle (columns) oder als Karten (card),
+ * „Anlegen“-Knopf und Bearbeiten-Dialog. #/seite?edit=<id> öffnet einen Eintrag direkt.
+ */
+export function CollectionPage<T extends { id: string }>({
+  kind,
+  page,
+  overline,
+  title,
+  description,
+  singular,
+  columns,
+  card,
+  Form,
+  newItem,
+  emptyText,
+  emptyIcon,
+  extraActions,
+  before,
+  after,
+}: {
+  kind: CollectionName
+  /** Name der Seite in der Adresse (für #/seite?edit=…) */
+  page?: string
+  overline?: string
+  title: string
+  description?: string
+  singular: string
+  columns?: Column<T>[]
+  card?: (item: T) => ReactNode
+  Form: FormComponent<T>
+  newItem?: () => Partial<T>
+  emptyText?: string
+  emptyIcon?: ReactNode
+  extraActions?: (item: T) => ReactNode
+  before?: ReactNode
+  after?: ReactNode
+}) {
+  const pbx = usePbx()
+  const items = pbx.config[kind] as unknown as T[]
+  const editor = useEditor<T>(kind, singular, Form, newItem)
+  const theme = useTheme()
+  const mobile = useMediaQuery(theme.breakpoints.down('sm'))
+
+  useEffect(() => {
+    const id = takeEditRequest(page ?? kind)
+    if (id === 'new') editor.openNew()
+    else if (id) editor.openItem(id)
+  }, [])
+
+  const visible = (columns ?? []).filter((c) => !(mobile && c.hideOnMobile))
+  let list: ReactNode
+  if (!items.length) {
+    list = (
+      <EmptyState
+        icon={emptyIcon}
+        title={`Noch keine Einträge`}
+        text={emptyText}
+        action={
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => editor.openNew()}>
+            {singular} anlegen
+          </Button>
+        }
+      />
+    )
+  } else if (card) {
+    list = (
+      <CardGrid>
+        {items.map((item) => (
+          <Card key={item.id} sx={{ display: 'flex', flexDirection: 'column', '&:hover': { borderColor: 'primary.main' } }}>
+            <CardActionArea onClick={() => editor.openItem(item.id)} sx={{ flex: 1, alignItems: 'stretch', display: 'flex', flexDirection: 'column' }}>
+              <CardContent sx={{ flex: 1, width: '100%' }}>{card(item)}</CardContent>
+            </CardActionArea>
+            {extraActions && (
+              <Box sx={{ px: 1.5, pb: 1.5 }} onClick={(e) => e.stopPropagation()}>
+                {extraActions(item)}
+              </Box>
+            )}
+          </Card>
+        ))}
+      </CardGrid>
+    )
+  } else {
+    list = (
+      <Card>
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                {visible.map((c) => (
+                  <TableCell key={c.label}>{c.label}</TableCell>
+                ))}
+                {extraActions && <TableCell />}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {items.map((item) => (
+                <TableRow key={item.id} hover sx={{ cursor: 'pointer', '&:last-child td': { border: 0 } }} onClick={() => editor.openItem(item.id)}>
+                  {visible.map((c) => (
+                    <TableCell key={c.label}>{c.render(item)}</TableCell>
+                  ))}
+                  {extraActions && (
+                    <TableCell align="right" onClick={(e) => e.stopPropagation()} sx={{ whiteSpace: 'nowrap' }}>
+                      {extraActions(item)}
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Card>
+    )
+  }
+
+  return (
+    <Box>
+      <PageHeader
+        overline={overline}
+        title={title}
+        description={description}
+        action={
+          !mobile && (
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => editor.openNew()}>
+              {singular} anlegen
+            </Button>
+          )
+        }
+      />
+      {before}
+      {list}
+      {after}
+      {mobile && (
+        <Fab color="primary" variant="extended" sx={{ position: 'fixed', right: 16, bottom: 16 }} onClick={() => editor.openNew()}>
+          <AddIcon sx={{ mr: 1 }} />
+          {singular}
+        </Fab>
+      )}
+      {editor.dialog}
     </Box>
   )
 }

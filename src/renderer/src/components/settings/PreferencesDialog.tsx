@@ -75,9 +75,11 @@ function AccountTab({
 }) {
   const { state } = useApp()
   const pbx = state.settings.provisioning
+  // Die Anlage kann die Kontodaten sperren; sie kommen dann nur noch aus dem Profil
+  const locked = Boolean(pbx.pbx && pbx.policy?.lock_account)
   const [pbxSetup, setPbxSetup] = useState(false)
   const field = (key: keyof AccountSettings, label: string, extra: object = {}) => (
-    <TextField key={key} label={label} value={acc[key] ?? ''} onChange={(e) => setAcc({ ...acc, [key]: e.target.value })} {...extra} />
+    <TextField key={key} label={label} value={acc[key] ?? ''} disabled={locked} onChange={(e) => setAcc({ ...acc, [key]: e.target.value })} {...extra} />
   )
   const num = (key: 'port' | 'local_port' | 'regint', label: string, helper: string, min = 0, max = 65535) => (
     <TextField
@@ -94,7 +96,7 @@ function AccountTab({
         severity={pbx.pbx ? 'success' : 'info'}
         icon={false}
         action={
-          pbx.pbx ? (
+          locked ? undefined : pbx.pbx ? (
             <Button color="inherit" size="small" onClick={() => void api.pbxDisconnect()}>
               Trennen
             </Button>
@@ -106,7 +108,7 @@ function AccountTab({
         }
       >
         {pbx.pbx
-          ? `Eingerichtet von „${pbx.pbx}“ als Nebenstelle ${pbx.extension}. Änderungen an der Anlage werden automatisch übernommen.`
+          ? `Eingerichtet von „${pbx.pbx}“ als Nebenstelle ${pbx.extension}. Änderungen an der Anlage werden automatisch übernommen.${locked ? ' Die Kontodaten verwaltet die Anlage.' : ''}`
           : 'Phone4all-Telefonanlage? Dann richtet sich die App mit Nebenstelle und Einrichtungs-PIN von selbst ein.'}
       </Alert>
       {pbxSetup && <PbxSetupDialog onClose={() => setPbxSetup(false)} onApplied={onPbxApplied} />}
@@ -120,13 +122,14 @@ function AccountTab({
       <TextField
         label="Passwort"
         type="password"
+        disabled={locked}
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         error={password.includes(';')}
         helperText={password.includes(';') ? 'Das Zeichen „;“ wird von baresip nicht unterstützt' : ' '}
       />
       {field('display_name', 'Anzeigename (optional)')}
-      <Accordion disableGutters variant="outlined" sx={{ mt: 1 }}>
+      <Accordion disableGutters variant="outlined" sx={{ mt: 1 }} disabled={locked}>
         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
           <ListItemText primary="Erweiterte Kontoeinstellungen" secondary="Nur nötig, wenn deine Anlage es verlangt" />
         </AccordionSummary>

@@ -1,3 +1,5 @@
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
+import CallIcon from '@mui/icons-material/Call'
 import {
   Accordion,
   AccordionDetails,
@@ -5,19 +7,21 @@ import {
   Alert,
   Autocomplete,
   Box,
+  Button,
+  Card,
+  CardActionArea,
   Chip,
   FormControlLabel,
   MenuItem,
+  Stack,
   Switch,
-  Tab,
-  Tabs,
   TextField,
   Typography,
 } from '@mui/material'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import { useState } from 'react'
-import type { NumberFormat, OutboundRoute, Trunk, Transport } from '../../../server/model'
-import { ChipsInput, CollectionPage, DestinationPicker, FormGrid, Full, NumberField, Select, describeDestination } from '../components/common'
+import type { NumberFormat, Trunk, Transport } from '../../../server/model'
+import { CardGrid, ChipsInput, CollectionPage, DestinationPicker, FormGrid, FormHeading, Full, Initials, NumberField, Select, StatusDot, describeDestination } from '../components/common'
+import { go } from '../router'
 import { usePbx } from '../state'
 import { useStatus } from '../useStatus'
 
@@ -36,15 +40,55 @@ const TRANSPORTS: [Transport, string][] = [
 
 const CODECS = ['opus', 'g722', 'alaw', 'ulaw', 'gsm']
 
-const REG_LABEL: Record<string, [string, 'success' | 'error' | 'warning' | 'default']> = {
+export const REG_LABEL: Record<string, [string, 'success' | 'error' | 'warning' | 'default']> = {
   Registered: ['Angemeldet', 'success'],
   Unregistered: ['Nicht angemeldet', 'warning'],
   Rejected: ['Abgelehnt', 'error'],
 }
 
+function ProviderTiles({ onPick }: { onPick: (key: string) => void }) {
+  const { providers } = usePbx()
+  return (
+    <Box>
+      <Typography variant="body1" sx={{ mb: 2 }}>
+        Bei welchem Anbieter ist der Anschluss? Die Vorlage füllt Server und Rufnummernformat vor.
+      </Typography>
+      <CardGrid min={220}>
+        {providers.map((p) => (
+          <Card key={p.key} sx={{ '&:hover': { borderColor: 'primary.main' } }}>
+            <CardActionArea onClick={() => onPick(p.key)} sx={{ p: 2, height: '100%' }}>
+              <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5 }}>
+                <Initials name={p.name.split(' (')[0]} size={36} />
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography sx={{ fontWeight: 600, lineHeight: 1.3 }}>{p.name.split(' (')[0]}</Typography>
+                  {p.name.includes(' (') && (
+                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.3 }}>
+                      {p.name.slice(p.name.indexOf('(') + 1, -1)}
+                    </Typography>
+                  )}
+                </Box>
+              </Stack>
+            </CardActionArea>
+          </Card>
+        ))}
+      </CardGrid>
+    </Box>
+  )
+}
+
 function TrunkForm({ value, onChange, isNew }: { value: Trunk; onChange: (v: Trunk) => void; isNew: boolean }) {
   const { providers } = usePbx()
   const set = <K extends keyof Trunk>(k: K, v: Trunk[K]): void => onChange({ ...value, [k]: v })
+  if (!value.provider) {
+    return (
+      <ProviderTiles
+        onPick={(key) => {
+          const p = providers.find((x) => x.key === key)!
+          onChange({ ...value, ...p.values, provider: p.key, name: p.name.split(' (')[0] } as Trunk)
+        }}
+      />
+    )
+  }
   const tpl = providers.find((p) => p.key === value.provider) ?? providers[providers.length - 1]
   const label = (field: keyof NonNullable<typeof tpl.labels>, fallback: string): string => tpl.labels?.[field] ?? fallback
   return (
@@ -88,10 +132,8 @@ function TrunkForm({ value, onChange, isNew }: { value: Trunk; onChange: (v: Tru
           <ChipsInput label="Rufnummern dieses Kontos" value={value.numbers} onChange={(v) => set('numbers', v)} helperText="z. B. 030 123456 – Enter nach jeder Nummer. Für eingehende Rufnummern und die Absenderkennung." />
         </Full>
         <Full>
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            Eingehende Anrufe ohne eigene Regel
-          </Typography>
-          <DestinationPicker label="Weiter zu" value={value.inbound_default} onChange={(d) => set('inbound_default', d)} />
+          <FormHeading hint="Für Nummern, denen unter „Rufabfolgen“ kein eigener Ablauf zugeordnet ist">Eingehende Anrufe</FormHeading>
+          <DestinationPicker label="Gehen zu" value={value.inbound_default} onChange={(d) => set('inbound_default', d)} />
         </Full>
         <FormControlLabel control={<Switch checked={value.enabled} onChange={(e) => set('enabled', e.target.checked)} />} label="Aktiv" />
       </FormGrid>
@@ -145,94 +187,77 @@ function TrunkForm({ value, onChange, isNew }: { value: Trunk; onChange: (v: Tru
   )
 }
 
-function RouteForm({ value, onChange }: { value: OutboundRoute; onChange: (v: OutboundRoute) => void }) {
-  const { config } = usePbx()
-  const set = <K extends keyof OutboundRoute>(k: K, v: OutboundRoute[K]): void => onChange({ ...value, [k]: v })
-  const trunkName = (id: string): string => config.trunks.find((t) => t.id === id)?.name ?? id
-  return (
-    <FormGrid>
-      <TextField label="Name" value={value.name} onChange={(e) => set('name', e.target.value)} required autoFocus />
-      <ChipsInput label="Gewählte Nummer beginnt mit" value={value.prefixes} onChange={(v) => set('prefixes', v)} helperText="z. B. 015, 016, 017 für Mobilfunk oder 00 für Ausland; leer = alle" options={['015', '016', '017', '00', '0800', '110', '112']} />
-      <Full>
-        <Autocomplete
-          multiple
-          options={config.trunks.map((t) => t.id)}
-          value={value.trunks}
-          onChange={(_e, v) => set('trunks', v)}
-          getOptionLabel={trunkName}
-          renderInput={(p) => <TextField {...p} label="Über SIP-Konten" helperText="Reihenfolge = Ausweichreihenfolge, wenn ein Konto nicht erreichbar ist" />}
-        />
-      </Full>
-      <Full>
-        <Autocomplete
-          multiple
-          options={config.extensions.map((e) => e.number)}
-          value={value.extensions}
-          onChange={(_e, v) => set('extensions', v)}
-          getOptionLabel={(n) => `${n} – ${config.extensions.find((e) => e.number === n)?.name ?? ''}`}
-          renderInput={(p) => <TextField {...p} label="Nur für Nebenstellen" helperText="Leer = für alle" />}
-        />
-      </Full>
-    </FormGrid>
-  )
-}
-
 export default function Trunks() {
-  const { config } = usePbx()
-  const [tab, setTab] = useState(0)
+  const { config, providers } = usePbx()
   const [status] = useStatus(10000)
+  const state = (t: Trunk): [string, 'success' | 'error' | 'warning' | 'default'] => {
+    if (!t.enabled) return ['Ausgeschaltet', 'default']
+    if (!t.register || t.ip_auth) return ['Ohne Registrierung', 'default']
+    const s = status?.registrations.find((r) => r.trunk === t.id)?.status ?? ''
+    return REG_LABEL[s] ?? [s || 'Wird geprüft …', 'default']
+  }
   return (
-    <Box>
-      <Tabs value={tab} onChange={(_e, v: number) => setTab(v)} sx={{ mb: 2 }}>
-        <Tab label="SIP-Konten" />
-        <Tab label="Wahlregeln" />
-      </Tabs>
-      {tab === 0 ? (
-        <CollectionPage<Trunk>
-          kind="trunks"
-          title="SIP-Konten"
-          singular="SIP-Konto"
-          description="Verbindungen nach außen: Telefonanschluss, SIP-Trunk oder eine vorgeschaltete FRITZ!Box. Vorlagen für die gängigen Anbieter füllen Server und Formate vor."
-          emptyText="Noch kein SIP-Konto. Ohne Konto telefoniert die Anlage nur intern."
-          newItem={() => ({ provider: 'telekom', registrar: 'tel.t-online.de', number_format: 'e164', did_source: 'to', name: 'Telekom' })}
-          columns={[
-            { label: 'Name', render: (t) => <b>{t.name}</b> },
-            { label: 'Server', hideOnMobile: true, render: (t) => t.registrar },
-            { label: 'Rufnummern', hideOnMobile: true, render: (t) => t.numbers.join(', ') },
-            {
-              label: 'Status',
-              render: (t) => {
-                if (!t.enabled) return <Chip size="small" variant="outlined" label="Aus" />
-                if (!t.register || t.ip_auth) return <Chip size="small" variant="outlined" label="Ohne Registrierung" />
-                const s = status?.registrations.find((r) => r.trunk === t.id)?.status ?? ''
-                const [text, color] = REG_LABEL[s] ?? [s || '…', 'default']
-                return <Chip size="small" color={color} label={text} />
-              },
-            },
-          ]}
-          Form={TrunkForm}
-        />
-      ) : (
-        <CollectionPage<OutboundRoute>
-          kind="outbound"
-          title="Wahlregeln"
-          singular="Wahlregel"
-          description="Welche Anrufe über welches SIP-Konto gehen. Die erste passende Regel gilt. Ohne Regeln nutzt die Anlage alle Konten der Reihe nach. Notrufe (110, 112) gehen immer raus."
-          emptyText="Keine Regeln – alle Anrufe gehen über das erste erreichbare SIP-Konto."
-          columns={[
-            { label: 'Name', render: (r) => <b>{r.name}</b> },
-            { label: 'Nummern', render: (r) => r.prefixes.join(', ') || 'alle' },
-            { label: 'Über', render: (r) => r.trunks.map((id) => config.trunks.find((t) => t.id === id)?.name ?? '?').join(' → ') },
-            { label: 'Für', hideOnMobile: true, render: (r) => r.extensions.join(', ') || 'alle' },
-          ]}
-          Form={RouteForm}
-        />
+    <CollectionPage<Trunk>
+      kind="trunks"
+      page="trunks"
+      overline="Nach außen"
+      title="SIP-Konten"
+      singular="SIP-Konto"
+      description="Die Verbindungen ins Telefonnetz: Telefonanschluss, SIP-Trunk oder eine vorgeschaltete FRITZ!Box. Jede Karte zeigt den Anmeldestatus, die Rufnummern und wohin Anrufe gehen."
+      emptyText="Ohne SIP-Konto telefoniert die Anlage nur intern. Vorlagen für Telekom, Vodafone, 1&1, sipgate und weitere füllen alles Wichtige vor."
+      emptyIcon={<CallIcon />}
+      newItem={() => ({ provider: '' })}
+      card={(t) => {
+        const [text, color] = state(t)
+        const routes = config.outbound.filter((r) => r.trunks.includes(t.id))
+        return (
+          <Box>
+            <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5, mb: 2 }}>
+              <Initials name={t.name} size={44} />
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography variant="h6" noWrap>
+                  {t.name}
+                </Typography>
+                <Typography variant="body2" sx={{ color: 'text.secondary' }} noWrap>
+                  {providers.find((p) => p.key === t.provider)?.name.split(' (')[0] ?? 'Eigener Anbieter'} · {t.registrar}
+                </Typography>
+              </Box>
+            </Stack>
+            <StatusDot color={color} label={text} />
+            <Typography variant="overline" sx={{ display: 'block', mt: 2, color: 'text.secondary' }}>
+              Rufnummern
+            </Typography>
+            <Stack direction="row" sx={{ gap: 0.75, flexWrap: 'wrap' }}>
+              {t.numbers.length ? t.numbers.map((n) => <Chip key={n} size="small" label={n} />) : <Typography variant="body2">keine eingetragen</Typography>}
+            </Stack>
+            <Typography variant="overline" sx={{ display: 'block', mt: 2, color: 'text.secondary' }}>
+              Anrufe
+            </Typography>
+            <Stack direction="row" sx={{ alignItems: 'center', gap: 1 }}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                Eingehend
+              </Typography>
+              <ArrowForwardIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+              <Typography variant="body2">{describeDestination(t.inbound_default, config)}</Typography>
+            </Stack>
+            <Stack direction="row" sx={{ alignItems: 'center', gap: 1 }}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                Ausgehend
+              </Typography>
+              <ArrowForwardIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+              <Typography variant="body2">
+                {!config.outbound.length ? 'für alle Anrufe' : routes.length ? routes.map((r) => r.name).join(', ') : 'keine Wahlregel nutzt dieses Konto'}
+              </Typography>
+            </Stack>
+          </Box>
+        )
+      }}
+      extraActions={() => (
+        <Button size="small" onClick={() => go('flows')}>
+          Rufabfolgen ansehen
+        </Button>
       )}
-      {tab === 0 && config.trunks.length > 0 && (
-        <Typography variant="body2" sx={{ color: 'text.secondary', mt: 2 }}>
-          Eingehende Anrufe ohne passende Regel gehen zu: {config.trunks.map((t) => `${t.name} → ${describeDestination(t.inbound_default, config)}`).join(' · ')}
-        </Typography>
-      )}
-    </Box>
+      Form={TrunkForm}
+    />
   )
 }

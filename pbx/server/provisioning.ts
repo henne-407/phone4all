@@ -4,8 +4,9 @@
  * Im LAN findet sie die Anlage per UDP-Broadcast (Port 15060).
  */
 
+import { createHash } from 'node:crypto'
 import dgram from 'node:dgram'
-import type { Extension, PbxConfig } from './model'
+import type { AppHomeCard, AppPage, CentralCalendar, Extension, PbxConfig } from './model'
 import { SETTINGS } from './paths'
 
 export const DISCOVERY_PORT = 15060
@@ -35,6 +36,32 @@ export interface ProvisioningProfile {
   url: string
   phonebook: { name: string; company: string; phone: string; mobile: string }[]
   features: Record<string, string>
+  /** Vorgaben für die Ansichten der App (null = keine) */
+  app: AppPolicy | null
+  /** Zentrale Kalender, Termine unter <url>/events */
+  calendars: { id: string; name: string; color: string; writable: boolean }[]
+  /** Ändert sich mit jeder Änderung am Profil; die App fragt <url>/revision ab */
+  revision: string
+}
+
+export interface AppPolicy {
+  pages: AppPage[]
+  start_tab: AppPage
+  home_cards: AppHomeCard[]
+  lock_layout: boolean
+  lock_account: boolean
+}
+
+/** Kalender, die eine Nebenstelle sieht (über ihr App-Profil eingeschränkt) */
+export function visibleCalendars(cfg: PbxConfig, ext: Extension): CentralCalendar[] {
+  const p = cfg.appprofiles.find((x) => x.id === ext.app_profile)
+  return cfg.calendars.filter((c) => !p?.calendars.length || p.calendars.includes(c.id))
+}
+
+function policy(cfg: PbxConfig, ext: Extension): AppPolicy | null {
+  const p = cfg.appprofiles.find((x) => x.id === ext.app_profile)
+  if (!p) return null
+  return { pages: p.pages, start_tab: p.start_tab, home_cards: p.home_cards, lock_layout: p.lock_layout, lock_account: p.lock_account }
 }
 
 /** Basis-URL der Weboberfläche aus Sicht des Aufrufers */
@@ -66,7 +93,7 @@ export function profile(cfg: PbxConfig, ext: Extension, base: string): Provision
     ...cfg.conferences.map((c) => ({ name: c.name || `Konferenz ${c.number}`, company: `${cfg.system.name} · Konferenz`, phone: c.number, mobile: '' })),
     ...cfg.phonebook.map((p) => ({ name: p.name, company: p.company, phone: p.phone, mobile: p.mobile })),
   ]
-  return {
+  const result: Omit<ProvisioningProfile, 'revision'> = {
     format: PROVISIONING_FORMAT,
     version: 1,
     pbx: { name: cfg.system.name, version: SETTINGS.version },
@@ -94,7 +121,11 @@ export function profile(cfg: PbxConfig, ext: Extension, base: string): Provision
       pickup: '*8',
       echo: '*43',
     },
+    app: policy(cfg, ext),
+    calendars: visibleCalendars(cfg, ext).map((c) => ({ id: c.id, name: c.name, color: c.color, writable: c.writable && c.kind === 'events' })),
   }
+  const revision = createHash('sha256').update(JSON.stringify(result)).digest('hex').slice(0, 16)
+  return { ...result, revision }
 }
 
 /** Antwortet auf Suchanfragen der App im LAN. */

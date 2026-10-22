@@ -1,8 +1,11 @@
-/** Kalender: CalDAV (alle Plattformen) und Evolution Data Server (GNOME Online-Konten, nur Linux). */
+/**
+ * Kalender: CalDAV (alle Plattformen), Evolution Data Server (GNOME Online-Konten, nur Linux)
+ * und die zentralen Kalender einer Phone4all-Telefonanlage.
+ */
 
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import type { CalEvent, CalendarInfo, DavAccount } from '../shared/types'
+import type { CalEvent, CalendarInfo, DavAccount, PbxCalendar } from '../shared/types'
 import { DavClient, DavError, errorText, hasChild, textOf, type XmlNode, parseXml } from './dav'
 import { eds, edsAvailable } from './eds'
 import { type EventFields, type RawEvent, expandEvents, newCalendar, parseCalendar, updateCalendar } from './ical'
@@ -168,6 +171,116 @@ class EdsBackend implements Backend {
   }
 }
 
+// -- Telefonanlage ----------------------------------------------------------------
+
+/** Termin, wie ihn die Anlage liefert: ganztägig als Datum (Ende exklusiv), sonst ISO-Zeitpunkt. */
+export interface PbxEvent {
+  uid: string
+  summary: string
+  start: string
+  end: string
+  allDay: boolean
+  location: string
+  description: string
+  calendar?: string
+}
+
+const pad = (n: number): string => String(n).padStart(2, '0')
+
+/** Ganztägig: „2026-12-24“ → lokale Mitternacht; sonst ISO → ms */
+export function pbxTime(value: string, allDay: boolean): number {
+  if (allDay) {
+    const [y, m, d] = value.split('-').map(Number)
+    return new Date(y, m - 1, d).getTime()
+  }
+  return Date.parse(value)
+}
+
+export function toPbxTime(ms: number, allDay: boolean): string {
+  const d = new Date(ms)
+  return allDay ? `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` : d.toISOString()
+}
+
+export function fromPbxEvent(e: PbxEvent): RawEvent & { href: string } {
+  return {
+    uid: e.uid,
+    summary: e.summary,
+    start: pbxTime(e.start, e.allDay),
+    end: pbxTime(e.end, e.allDay),
+    allDay: e.allDay,
+    location: e.location ?? '',
+    description: e.description ?? '',
+    recurring: false,
+    href: '',
+  }
+}
+
+export interface PbxSource {
+  /** Profil-Adresse …/provision/<token> */
+  url: string
+  name: string
+  calendars: PbxCalendar[]
+}
+
+/** Zentrale Kalender der Telefonanlage über den Einrichtungslink der Nebenstelle */
+export class PbxBackend implements Backend {
+  constructor(private url: string) {}
+
+  list(source: PbxSource): Calendar[] {
+    return source.calendars.map((c) => ({
+      id: `pbx:${c.id}`,
+      name: c.name,
+      color: c.color,
+      writable: c.writable,
+      group: source.name,
+      href: c.id,
+      backend: this,
+    }))
+  }
+
+  private async call(method: string, path: string, body?: unknown): Promise<Response> {
+    let r: Response
+    try {
+      r = await fetch(`${this.url}${path}`, {
+        method,
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(15000),
+      })
+    } catch {
+      throw new DavError('Telefonanlage nicht erreichbar')
+    }
+    if (!r.ok) {
+      const data = (await r.json().catch(() => null)) as { error?: string } | null
+      throw new DavError(data?.error || `Telefonanlage antwortet mit Fehler ${r.status}`)
+    }
+    return r
+  }
+
+  async events(cal: Calendar, start: number, end: number): Promise<(RawEvent & { href: string })[]> {
+    const q = new URLSearchParams({ start: new Date(start).toISOString(), end: new Date(end).toISOString(), calendar: cal.href })
+    const list = (await (await this.call('GET', `/events?${q}`)).json()) as PbxEvent[]
+    return list.map(fromPbxEvent)
+  }
+
+  async save(cal: Calendar, ev: EventFields): Promise<void> {
+    await this.call('PUT', `/events/${encodeURIComponent(cal.href)}/${encodeURIComponent(ev.uid)}`, {
+      summary: ev.summary,
+      start: toPbxTime(ev.start, ev.allDay),
+      end: toPbxTime(ev.end, ev.allDay),
+      allDay: ev.allDay,
+      location: ev.location,
+      description: ev.description,
+    })
+  }
+
+  async delete(cal: Calendar, uid: string): Promise<void> {
+    await this.call('DELETE', `/events/${encodeURIComponent(cal.href)}/${encodeURIComponent(uid)}`)
+  }
+
+  async refresh(): Promise<void> {}
+}
+
 // -- Verwaltung -------------------------------------------------------------------
 
 /** Hält die Kalenderliste. Ereignisse: 'calendars-changed', 'events-changed'. */
@@ -176,6 +289,8 @@ export class CalendarManager extends EventEmitter {
   errors: string[] = []
   loading = false
   private eds = edsAvailable() ? new EdsBackend() : null
+  /** Zentrale Kalender der Telefonanlage (null = nicht eingerichtet) */
+  pbxSource: () => PbxSource | null = () => null
 
   constructor(private store: Store) {
     super()
@@ -206,6 +321,8 @@ export class CalendarManager extends EventEmitter {
         errors.push(`Evolution-Kalender: ${errorText(e)}`)
       }
     }
+    const pbx = this.pbxSource()
+    if (pbx?.url) calendars.push(...new PbxBackend(pbx.url).list(pbx))
     await Promise.all(
       this.settings.caldav.map(async (conf) => {
         try {

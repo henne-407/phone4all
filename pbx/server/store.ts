@@ -79,6 +79,15 @@ export function validate(cfg: PbxConfig): void {
     if (t.enabled && !t.registrar.trim()) throw new ValidationError(`SIP-Konto ${t.name}: Server/Registrar fehlt.`)
     if (/[\s;]/.test(t.registrar)) throw new ValidationError(`SIP-Konto ${t.name}: ungültiger Server.`)
   }
+  for (const p of cfg.appprofiles) {
+    if (!p.name.trim()) throw new ValidationError('App-Profil ohne Namen.')
+    if (!p.pages.length) throw new ValidationError(`App-Profil ${p.name}: mindestens eine Seite muss sichtbar sein.`)
+    if (!p.pages.includes(p.start_tab)) throw new ValidationError(`App-Profil ${p.name}: Die Startseite muss sichtbar sein.`)
+  }
+  for (const c of cfg.calendars) {
+    if (!c.name.trim()) throw new ValidationError('Kalender ohne Namen.')
+    if (!/^#[0-9a-f]{6}$/i.test(c.color)) throw new ValidationError(`Kalender ${c.name}: ungültige Farbe.`)
+  }
   usedNumbers(cfg)
   const s = cfg.system
   if (s.rtp_start >= s.rtp_end) throw new ValidationError('Der RTP-Portbereich ist ungültig.')
@@ -93,6 +102,8 @@ export interface ExportFile {
   config: PbxConfig
   /** Ansagen und Wartemusik (Pfad relativ zu data/sounds → Base64) */
   files?: Record<string, string>
+  /** Termine der zentralen Kalender (Kalender-ID → Termine) */
+  calendars?: Record<string, unknown[]>
 }
 
 export function stripSecrets(cfg: PbxConfig): PbxConfig {
@@ -179,6 +190,8 @@ export class ConfigStore {
         for (const r of draft.outbound) r.trunks = r.trunks.filter((t) => t !== id)
         for (const r of draft.inbound) if (r.trunk === id) r.trunk = ''
       }
+      if (kind === 'appprofiles') for (const e of draft.extensions) if (e.app_profile === id) e.app_profile = ''
+      if (kind === 'calendars') for (const p of draft.appprofiles) p.calendars = p.calendars.filter((c) => c !== id)
     })
   }
 
@@ -215,6 +228,9 @@ export class ConfigStore {
       exported: new Date().toISOString(),
       version,
       config: secrets ? structuredClone(this.config) : stripSecrets(this.config),
+      calendars: Object.fromEntries(
+        this.config.calendars.filter((c) => c.kind === 'events').map((c) => [c.id, loadJson<unknown[]>(path.join(PATHS.calendars, `${c.id}.json`), [])]),
+      ),
     }
     if (withFiles) {
       data.files = {}
@@ -251,6 +267,11 @@ export class ConfigStore {
     incoming.mail.password ||= this.config.mail.password
     this.backup('vor-import')
     this.update((draft) => Object.assign(draft, incoming))
+    for (const [id, events] of Object.entries(data.calendars ?? {})) {
+      if (/^[\w-]+$/.test(id) && Array.isArray(events) && this.config.calendars.some((c) => c.id === id)) {
+        saveJson(path.join(PATHS.calendars, `${id}.json`), events, 0o644)
+      }
+    }
     for (const [rel, b64] of Object.entries(data.files ?? {})) {
       const [kind, name] = rel.split('/')
       if (!name || !/^[\w.-]+$/.test(name) || (kind !== 'custom' && kind !== 'moh')) continue

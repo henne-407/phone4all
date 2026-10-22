@@ -1,6 +1,7 @@
-import { Autocomplete, Box, Chip, TextField, Typography } from '@mui/material'
+import GroupsIcon from '@mui/icons-material/Groups'
+import { Autocomplete, Box, Chip, Stack, TextField, Tooltip, Typography } from '@mui/material'
 import type { Group, GroupMode, QueueStrategy } from '../../../server/model'
-import { CollectionPage, DestinationPicker, FormGrid, Full, NumberField, Select, describeDestination } from '../components/common'
+import { CollectionPage, Initials, DestinationPicker, FormGrid, FormHeading, Full, NumberField, Select, describeDestination } from '../components/common'
 import { usePbx } from '../state'
 
 const MODES: [GroupMode, string][] = [
@@ -64,9 +65,7 @@ function GroupForm({ value, onChange }: { value: Group; onChange: (v: Group) => 
           <TextField label="Vor den Anrufernamen setzen" value={value.name_prefix} onChange={(e) => set('name_prefix', e.target.value)} />
         )}
         <Full>
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            Wenn niemand abnimmt
-          </Typography>
+          <FormHeading>Wenn niemand abnimmt</FormHeading>
           <DestinationPicker label="Weiter zu" value={value.fallback} onChange={(d) => set('fallback', d)} />
         </Full>
       </FormGrid>
@@ -79,17 +78,45 @@ export default function Groups() {
   return (
     <CollectionPage<Group>
       kind="groups"
+      overline="Personen"
       title="Gruppen"
       singular="Gruppe"
-      description="Mehrere Nebenstellen unter einer Nummer: Sammelruf, Reihum oder Warteschlange mit Wartemusik. Gruppen sind Ziele für eingehende Rufnummern, Sprachmenüs und Zeitsteuerungen."
+      description="Mehrere Nebenstellen unter einer Nummer: Sammelruf, Reihum oder Warteschlange mit Wartemusik. Gruppen sind Ziele in den Rufabfolgen."
       emptyText="Noch keine Gruppen, z. B. „Zentrale“ mit allen Nebenstellen."
-      columns={[
-        { label: 'Nr.', render: (g) => <b>{g.number || '–'}</b> },
-        { label: 'Name', render: (g) => g.name },
-        { label: 'Klingeln', hideOnMobile: true, render: (g) => MODES.find(([m]) => m === g.mode)?.[1] },
-        { label: 'Mitglieder', render: (g) => g.members.join(', ') || '–' },
-        { label: 'Sonst', hideOnMobile: true, render: (g) => describeDestination(g.fallback, config) },
-      ]}
+      emptyIcon={<GroupsIcon />}
+      card={(g) => (
+        <Box>
+          <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+            <Initials name={g.name} size={44} />
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="h6" noWrap>
+                {g.name}
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                {g.number ? `Intern ${g.number}` : 'Ohne interne Nummer'} · {MODES.find(([m]) => m === g.mode)?.[1]}
+              </Typography>
+            </Box>
+          </Stack>
+          <Stack direction="row" sx={{ alignItems: 'center', mb: 1.5, pl: 0.5 }}>
+            {g.members.map((n) => {
+              const e = config.extensions.find((x) => x.number === n)
+              return (
+                <Tooltip key={n} title={`${n} ${e?.name ?? ''}`}>
+                  <Box sx={{ ml: -0.75, border: 2, borderColor: 'background.paper', borderRadius: '50%' }}>
+                    <Initials name={e?.name || n} size={30} />
+                  </Box>
+                </Tooltip>
+              )
+            })}
+            <Typography variant="body2" sx={{ ml: 1, color: 'text.secondary' }}>
+              {g.members.length ? `${g.members.length} ${g.members.length === 1 ? 'Mitglied' : 'Mitglieder'}` : 'Noch keine Mitglieder'}
+            </Typography>
+          </Stack>
+          <Typography variant="body2">
+            <b>Niemand nimmt ab:</b> {describeDestination(g.fallback, config)}
+          </Typography>
+        </Box>
+      )}
       Form={GroupForm}
     />
   )

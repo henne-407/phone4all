@@ -295,9 +295,12 @@ export function HomePage({ columns }: { columns: number }) {
   }, [])
 
   const fill = columns > 1
-  const cards = homeLayout(state.settings.home.cards)
-    .filter(([, v]) => v)
-    .map(([k]) => k)
+  const policy = state.settings.provisioning.policy
+  const cards = policy?.home_cards.length
+    ? policy.home_cards
+    : homeLayout(state.settings.home.cards)
+        .filter(([, v]) => v)
+        .map(([k]) => k)
   const n = Math.max(1, Math.min(columns, cards.length))
   const placed: HomeCard[][] = Array.from({ length: n }, () => [])
   const load = new Array(n).fill(0)
@@ -334,11 +337,13 @@ export function HomePage({ columns }: { columns: number }) {
           </Stack>
         ))}
       </Box>
-      <Stack sx={{ alignItems: 'center', py: 1.5 }}>
-        <Button size="small" startIcon={<EditIcon />} onClick={() => emit('customize-home')}>
-          Startseite anpassen
-        </Button>
-      </Stack>
+      {!policy?.lock_layout && (
+        <Stack sx={{ alignItems: 'center', py: 1.5 }}>
+          <Button size="small" startIcon={<EditIcon />} onClick={() => emit('customize-home')}>
+            Startseite anpassen
+          </Button>
+        </Stack>
+      )}
     </Box>
   )
 }
@@ -378,6 +383,7 @@ export function CustomizeHomeDialog({ onClose }: { onClose: () => void }) {
             </ListItem>
           ))}
         </List>
+        {!state.settings.provisioning.policy && (
         <TextField
           select
           label="Beim Öffnen zuerst anzeigen"
@@ -391,6 +397,7 @@ export function CustomizeHomeDialog({ onClose }: { onClose: () => void }) {
             </MenuItem>
           ))}
         </TextField>
+        )}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
         <Button variant="contained" onClick={onClose}>

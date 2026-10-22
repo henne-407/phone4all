@@ -15,6 +15,7 @@ export const PATHS = {
   state: path.join(DATA, 'state.json'),
   admin: path.join(DATA, 'admin.json'),
   backups: path.join(DATA, 'backups'),
+  calendars: path.join(DATA, 'calendars'),
   sounds: path.join(DATA, 'sounds', 'custom'),
   moh: path.join(DATA, 'sounds', 'moh'),
   recordings: path.join(DATA, 'recordings'),

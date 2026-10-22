@@ -84,6 +84,8 @@ export function createApi(app: App) {
     getPassword: () => store.getPassword(),
     /** Gibt false zurück, wenn kein Schlüsselbund verfügbar war. */
     saveAccount: (acc: AccountSettings, password: string): boolean => {
+      // Von der Telefonanlage gesperrt: Kontodaten kommen nur aus dem Profil
+      if (app.provisioning.accountLocked) return true
       const before = JSON.stringify(store.account)
       const oldPassword = store.getPassword()
       Object.assign(store.account, acc)

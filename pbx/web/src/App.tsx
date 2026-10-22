@@ -1,13 +1,19 @@
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
 import CallIcon from '@mui/icons-material/Call'
+import CampaignIcon from '@mui/icons-material/Campaign'
 import ContactsIcon from '@mui/icons-material/Contacts'
 import DashboardIcon from '@mui/icons-material/Dashboard'
+import DialpadIcon from '@mui/icons-material/Dialpad'
 import GroupsIcon from '@mui/icons-material/Groups'
 import HistoryIcon from '@mui/icons-material/History'
 import LogoutIcon from '@mui/icons-material/Logout'
 import MenuIcon from '@mui/icons-material/Menu'
 import PersonIcon from '@mui/icons-material/Person'
+import PhoneAndroidIcon from '@mui/icons-material/PhoneAndroid'
 import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver'
+import RouteIcon from '@mui/icons-material/Route'
+import ScheduleIcon from '@mui/icons-material/Schedule'
 import SettingsIcon from '@mui/icons-material/Settings'
 import {
   Box,
@@ -21,6 +27,7 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  ListSubheader,
   Stack,
   TextField,
   Toolbar,
@@ -30,44 +37,77 @@ import {
 } from '@mui/material'
 import { type ReactNode, useEffect, useState } from 'react'
 import { api } from './api'
+import Announcements from './pages/Announcements'
+import AppProfiles from './pages/AppProfiles'
+import Calendars from './pages/Calendars'
 import Calls from './pages/Calls'
 import Conferences from './pages/Conferences'
 import Dashboard from './pages/Dashboard'
 import Extensions from './pages/Extensions'
 import Flows from './pages/Flows'
 import Groups from './pages/Groups'
+import Ivrs from './pages/Ivrs'
+import Outbound from './pages/Outbound'
 import Phonebook from './pages/Phonebook'
 import System from './pages/System'
+import TimeConditions from './pages/TimeConditions'
 import Trunks from './pages/Trunks'
+import { go, useRoute } from './router'
 import { PbxProvider } from './state'
 
-const NAV: [string, string, ReactNode][] = [
-  ['dashboard', 'Übersicht', <DashboardIcon />],
-  ['extensions', 'Nebenstellen', <PersonIcon />],
-  ['groups', 'Gruppen', <GroupsIcon />],
-  ['flows', 'Anrufabläufe', <AccountTreeIcon />],
-  ['trunks', 'SIP-Konten', <CallIcon />],
-  ['conferences', 'Konferenzen', <RecordVoiceOverIcon />],
-  ['phonebook', 'Telefonbuch', <ContactsIcon />],
-  ['calls', 'Anrufliste', <HistoryIcon />],
-  ['system', 'System', <SettingsIcon />],
+interface NavItem {
+  key: string
+  label: string
+  icon: ReactNode
+  page: ReactNode
+}
+
+/** Navigation in der Reihenfolge, in der man eine Anlage einrichtet und benutzt */
+const NAV: [string, NavItem[]][] = [
+  ['', [{ key: 'dashboard', label: 'Übersicht', icon: <DashboardIcon />, page: <Dashboard /> }]],
+  [
+    'Personen',
+    [
+      { key: 'extensions', label: 'Nebenstellen', icon: <PersonIcon />, page: <Extensions /> },
+      { key: 'groups', label: 'Gruppen', icon: <GroupsIcon />, page: <Groups /> },
+    ],
+  ],
+  [
+    'Eingehende Anrufe',
+    [
+      { key: 'flows', label: 'Rufabfolgen', icon: <AccountTreeIcon />, page: <Flows /> },
+      { key: 'timeconditions', label: 'Zeitsteuerung', icon: <ScheduleIcon />, page: <TimeConditions /> },
+      { key: 'ivrs', label: 'Sprachmenüs', icon: <DialpadIcon />, page: <Ivrs /> },
+      { key: 'announcements', label: 'Ansagen und Musik', icon: <CampaignIcon />, page: <Announcements /> },
+    ],
+  ],
+  [
+    'Nach außen',
+    [
+      { key: 'trunks', label: 'SIP-Konten', icon: <CallIcon />, page: <Trunks /> },
+      { key: 'outbound', label: 'Wahlregeln', icon: <RouteIcon />, page: <Outbound /> },
+    ],
+  ],
+  [
+    'Zusammenarbeit',
+    [
+      { key: 'phonebook', label: 'Kontakte', icon: <ContactsIcon />, page: <Phonebook /> },
+      { key: 'calendars', label: 'Kalender', icon: <CalendarMonthIcon />, page: <Calendars /> },
+      { key: 'appprofiles', label: 'App-Profile', icon: <PhoneAndroidIcon />, page: <AppProfiles /> },
+      { key: 'conferences', label: 'Konferenzräume', icon: <RecordVoiceOverIcon />, page: <Conferences /> },
+    ],
+  ],
+  [
+    'Auswertung und System',
+    [
+      { key: 'calls', label: 'Anrufliste', icon: <HistoryIcon />, page: <Calls /> },
+      { key: 'system', label: 'System', icon: <SettingsIcon />, page: <System /> },
+    ],
+  ],
 ]
 
-const DRAWER = 260
-
-function usePage(): [string, (p: string) => void] {
-  const read = (): string => {
-    const p = location.hash.replace(/^#\/?/, '')
-    return NAV.some(([k]) => k === p) ? p : 'dashboard'
-  }
-  const [page, setPage] = useState(read)
-  useEffect(() => {
-    const on = (): void => setPage(read())
-    window.addEventListener('hashchange', on)
-    return () => window.removeEventListener('hashchange', on)
-  }, [])
-  return [page, (p) => (location.hash = `/${p}`)]
-}
+const ITEMS = NAV.flatMap(([, items]) => items)
+const DRAWER = 264
 
 function Login({ name, onLogin }: { name: string; onLogin: () => void }) {
   const [password, setPassword] = useState('')
@@ -120,80 +160,100 @@ function Login({ name, onLogin }: { name: string; onLogin: () => void }) {
 }
 
 function Shell({ onLogout }: { onLogout: () => void }) {
-  const [page, go] = usePage()
+  const route = useRoute()
+  const current = ITEMS.find((x) => x.key === route.page) ?? ITEMS[0]
   const theme = useTheme()
   const wide = useMediaQuery(theme.breakpoints.up('md'))
   const [open, setOpen] = useState(false)
   const nav = (
-    <Box sx={{ p: 1.5, display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5, px: 1.5, py: 1.5, mb: 1 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5, px: 2.5, py: 1.5 }}>
         <Box component="img" src="/icon.svg" alt="" sx={{ width: 32, height: 32 }} />
-        <Typography variant="h6">Phone4all</Typography>
+        <Box>
+          <Typography sx={{ fontWeight: 700, fontSize: 17, lineHeight: 1.2 }}>Phone4all</Typography>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+            Telefonanlage
+          </Typography>
+        </Box>
       </Stack>
-      <List disablePadding sx={{ flex: 1 }}>
-        {NAV.map(([key, label, icon]) => (
-          <ListItemButton
-            key={key}
-            selected={page === key}
-            onClick={() => {
-              go(key)
-              setOpen(false)
-            }}
-            sx={{
-              mb: 0.5,
-              '&.Mui-selected': { bgcolor: theme.m3.secondaryContainer, color: theme.m3.onSecondaryContainer },
-              '&.Mui-selected:hover': { bgcolor: theme.m3.secondaryContainer },
-            }}
+      <Box sx={{ flex: 1, overflowY: 'auto', px: 1.5, pb: 1 }}>
+        {NAV.map(([group, items]) => (
+          <List
+            key={group}
+            dense
+            disablePadding
+            subheader={
+              group ? (
+                <ListSubheader disableSticky sx={{ bgcolor: 'transparent', lineHeight: '28px', mt: 0.5, fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', color: 'text.secondary' }}>
+                  {group}
+                </ListSubheader>
+              ) : undefined
+            }
           >
-            <ListItemIcon sx={{ minWidth: 40, color: 'inherit' }}>{icon}</ListItemIcon>
-            <ListItemText primary={label} slotProps={{ primary: { sx: { fontWeight: page === key ? 600 : 500, fontSize: 14 } } }} />
-          </ListItemButton>
+            {items.map(({ key, label, icon }) => (
+              <ListItemButton
+                key={key}
+                selected={current.key === key}
+                onClick={() => {
+                  go(key)
+                  setOpen(false)
+                }}
+                sx={{
+                  mb: 0.25,
+                  py: 0.5,
+                  borderRadius: 2,
+                  '&.Mui-selected': { bgcolor: theme.m3.primaryContainer, color: theme.m3.onPrimaryContainer },
+                  '&.Mui-selected:hover': { bgcolor: theme.m3.primaryContainer },
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 36, color: current.key === key ? 'inherit' : 'text.secondary' }}>{icon}</ListItemIcon>
+                <ListItemText primary={label} slotProps={{ primary: { sx: { fontWeight: current.key === key ? 700 : 500, fontSize: 14 } } }} />
+              </ListItemButton>
+            ))}
+          </List>
         ))}
-      </List>
-      <ListItemButton
-        onClick={() => {
-          void api.post('/api/logout').then(onLogout)
-        }}
-      >
-        <ListItemIcon sx={{ minWidth: 40 }}>
-          <LogoutIcon />
-        </ListItemIcon>
-        <ListItemText primary="Abmelden" slotProps={{ primary: { sx: { fontSize: 14 } } }} />
-      </ListItemButton>
+      </Box>
+      <Box sx={{ p: 1.5, borderTop: 1, borderColor: theme.m3.outlineVariant }}>
+        <ListItemButton
+          sx={{ borderRadius: 2 }}
+          onClick={() => {
+            void api.post('/api/logout').then(onLogout)
+          }}
+        >
+          <ListItemIcon sx={{ minWidth: 36 }}>
+            <LogoutIcon />
+          </ListItemIcon>
+          <ListItemText primary="Abmelden" slotProps={{ primary: { sx: { fontSize: 14 } } }} />
+        </ListItemButton>
+      </Box>
     </Box>
   )
-  const pages: Record<string, ReactNode> = {
-    dashboard: <Dashboard go={go} />,
-    extensions: <Extensions />,
-    groups: <Groups />,
-    flows: <Flows />,
-    trunks: <Trunks />,
-    conferences: <Conferences />,
-    phonebook: <Phonebook />,
-    calls: <Calls />,
-    system: <System />,
-  }
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       {wide ? (
-        <Box component="nav" sx={{ width: DRAWER, flexShrink: 0, position: 'sticky', top: 0, height: '100vh', bgcolor: theme.m3.surfaceContainer }}>
+        <Box
+          component="nav"
+          sx={{ width: DRAWER, flexShrink: 0, position: 'sticky', top: 0, height: '100vh', bgcolor: theme.m3.sidebar, borderRight: 1, borderColor: theme.m3.outlineVariant }}
+        >
           {nav}
         </Box>
       ) : (
-        <Drawer open={open} onClose={() => setOpen(false)} slotProps={{ paper: { sx: { width: DRAWER, bgcolor: theme.m3.surfaceContainer, borderRadius: '0 16px 16px 0' } } }}>
+        <Drawer open={open} onClose={() => setOpen(false)} slotProps={{ paper: { sx: { width: DRAWER, bgcolor: theme.m3.sidebar } } }}>
           {nav}
         </Drawer>
       )}
       <Box component="main" sx={{ flex: 1, minWidth: 0 }}>
         {!wide && (
-          <Toolbar sx={{ gap: 1 }}>
+          <Toolbar sx={{ gap: 1, bgcolor: theme.m3.sidebar, borderBottom: 1, borderColor: theme.m3.outlineVariant, position: 'sticky', top: 0, zIndex: 10 }}>
             <IconButton aria-label="Menü" edge="start" onClick={() => setOpen(true)}>
               <MenuIcon />
             </IconButton>
-            <Typography variant="h6">{NAV.find(([k]) => k === page)?.[1]}</Typography>
+            <Typography variant="h6">{current.label}</Typography>
           </Toolbar>
         )}
-        <Box sx={{ p: { xs: 2, md: 4 }, maxWidth: 1280, mx: 'auto', pb: 12 }}>{pages[page]}</Box>
+        <Box key={current.key} sx={{ p: { xs: 2, md: 4 }, maxWidth: 1280, mx: 'auto', pb: 12 }}>
+          {current.page}
+        </Box>
       </Box>
     </Box>
   )

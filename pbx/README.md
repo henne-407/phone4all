@@ -47,14 +47,19 @@ von 5060/5061 und 10000–10999 im Router sowie die öffentliche Adresse unter
   Sperre für Sonderrufnummern, Gesprächsaufzeichnung
 - **Gruppen**: alle gleichzeitig, reihum oder Warteschlange mit Wartemusik,
   Ausweichziel und Namensvorsatz („Vertrieb: …“)
-- **Anrufabfolgen**: Rufnummern → Zeitsteuerung (Öffnungszeiten, Feiertage je
-  Bundesland, Betriebsferien, Nachtschaltung) → Sprachmenü → Gruppe → Voicemail
+- **Rufabfolgen** als Ablaufdiagramm: Rufnummer → Zeitsteuerung (Öffnungszeiten,
+  Feiertage je Bundesland, Betriebsferien, Nachtschaltung) → Sprachmenü → Gruppe →
+  Voicemail; jeder Schritt ist anklickbar
 - **Ansagen** hochladen oder im Browser aufnehmen, eigene Wartemusik
 - **Konferenzräume** mit PIN
 - **SIP-Konten** mit Vorlagen für Telekom (auch CompanyFlex), Vodafone (Kabel, DSL),
   1&1, o2, sipgate (basic und trunking), easybell, Placetel und FRITZ!Box;
   **Wahlregeln** mit Ausweichkonto
-- **Telefonbuch** (auch CSV-Import) für Anrufernamen, wird an die Apps verteilt
+- **Zentrale Kontakte** (auch CSV-Import) für Anrufernamen, werden an die Apps verteilt
+- **Zentrale Kalender** mit eigenen Terminen (z. B. Betriebsferien) oder den
+  Feiertagen des Bundeslandes; erscheinen in jeder App
+- **App-Profile**: legen fest, welche Bereiche, Startansicht und Startseiten-Karten
+  die SIP-Telefon-App zeigt, und können Startseite und Kontodaten sperren
 - **Anrufliste**, laufende Gespräche, Anmeldestatus aller Geräte
 - **Funktionscodes**: \*97 Voicemail, \*76 Nicht stören, \*21 Rufumleitung,
   \*8 / \*\*Nr. Heranholen, \*28 Nachtschaltung, \*31 anonym, \*43 Echo-Test
@@ -74,8 +79,25 @@ Jede Nebenstelle hat einen Einrichtungslink und eine Einrichtungs-PIN
 2. **Einladung per E-Mail** senden: Der Link darin öffnet die App (`sip-telefon://`).
 3. Den Einrichtungslink kopieren und in der App einfügen.
 
-Die App übernimmt Server, Benutzer, Passwort und das Telefonbuch und fragt die Anlage
-danach regelmäßig nach Änderungen. Ein erneuerter Link macht den alten ungültig.
+Die App übernimmt Server, Benutzer, Passwort, die zentralen Kontakte und Kalender und
+das App-Profil. Danach fragt sie alle zwei Minuten nach Änderungen. Ein erneuerter
+Link macht den alten ungültig.
+
+### Schnittstelle für die App
+
+Alle Adressen hängen am Einrichtungslink der Nebenstelle (`/provision/<token>`), der
+Token ist zugleich die Berechtigung.
+
+| Anfrage | Ergebnis |
+| --- | --- |
+| `GET /provision/<token>` | Profil: Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `revision` |
+| `GET /provision/<token>/revision` | `{ profile, events }` – ändert sich, sobald Profil oder Termine sich ändern |
+| `GET /provision/<token>/events?start=…&end=…&calendar=…` | Termine im Zeitraum (höchstens 400 Tage) |
+| `PUT /provision/<token>/events/<kalender>/<uid>` | Termin anlegen oder ändern (nur beschreibbare Kalender) |
+| `DELETE /provision/<token>/events/<kalender>/<uid>` | Termin löschen |
+
+Termine: `{ uid, summary, start, end, allDay, location, description }`. Ganztägige
+Termine haben Datumsangaben (`2026-12-24`, Ende exklusiv), alle anderen ISO-Zeitpunkte.
 
 Andere Telefone (Tischtelefone, Softphones) werden mit Nebenstelle als Benutzer,
 SIP-Passwort und der Adresse der Anlage als Server angemeldet.
@@ -90,6 +112,7 @@ Alles liegt im Ordner `data/` neben der `docker-compose.yml`:
 | `backups/` | automatische Sicherungen |
 | `voicemail/`, `recordings/` | Nachrichten, Aufzeichnungen |
 | `sounds/` | eigene Ansagen und Wartemusik |
+| `calendars/` | Termine der zentralen Kalender |
 | `log/` | Anrufliste (CDR) und Protokoll |
 
 Umziehen: `data/` kopieren und auf dem neuen Rechner `docker compose up -d` – oder

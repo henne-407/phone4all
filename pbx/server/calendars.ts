@@ -1,0 +1,129 @@
+/**
+ * Zentrale Kalender: Termine für alle Apps (z. B. Betriebsferien, Schichten,
+ * Besprechungsräume) und die gesetzlichen Feiertage des Bundeslandes. Termine liegen
+ * je Kalender in data/calendars/<id>.json.
+ */
+
+import fs from 'node:fs'
+import path from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { loadJson, saveJson } from './files'
+import { holidays } from './holidays'
+import type { CentralCalendar, PbxConfig } from './model'
+import { PATHS } from './paths'
+import { ValidationError } from './store'
+
+/**
+ * Termin wie über die Schnittstelle übertragen. Ganztägig: start/end als Datum
+ * (JJJJ-MM-TT, Ende exklusiv), sonst ISO-Zeitpunkte mit Zeitzone.
+ */
+export interface CalendarEvent {
+  uid: string
+  summary: string
+  start: string
+  end: string
+  allDay: boolean
+  location: string
+  description: string
+  updated: string
+}
+
+const DIR = PATHS.calendars
+const DATE = /^\d{4}-\d{2}-\d{2}$/
+
+function file(id: string): string {
+  if (!/^[\w-]+$/.test(id)) throw new ValidationError('Ungültiger Kalender.')
+  return path.join(DIR, `${id}.json`)
+}
+
+function ms(value: string): number {
+  return Date.parse(value)
+}
+
+/** Prüft und vereinheitlicht einen Termin aus der Weboberfläche oder der App. */
+export function cleanEvent(raw: Partial<CalendarEvent>, uid?: string): CalendarEvent {
+  const allDay = Boolean(raw.allDay)
+  const start = String(raw.start ?? '')
+  const end = String(raw.end ?? '')
+  const valid = (v: string): boolean => (allDay ? DATE.test(v) : !Number.isNaN(ms(v)) && !DATE.test(v))
+  if (!String(raw.summary ?? '').trim()) throw new ValidationError('Der Termin braucht einen Titel.')
+  if (!valid(start) || !valid(end)) throw new ValidationError('Beginn oder Ende ist ungültig.')
+  if (ms(end) < ms(start) || (allDay && ms(end) === ms(start))) throw new ValidationError('Das Ende liegt vor dem Beginn.')
+  return {
+    uid: uid || String(raw.uid || '') || `${randomUUID()}@phone4all`,
+    summary: String(raw.summary).trim().slice(0, 200),
+    start,
+    end,
+    allDay,
+    location: String(raw.location ?? '').slice(0, 200),
+    description: String(raw.description ?? '').slice(0, 4000),
+    updated: new Date().toISOString(),
+  }
+}
+
+export class CalendarStore {
+  /** Ändert sich bei jedem geänderten Termin; die Apps fragen danach. */
+  revision = Date.now()
+
+  constructor(private cfg: () => PbxConfig) {}
+
+  private calendar(id: string): CentralCalendar {
+    const cal = this.cfg().calendars.find((c) => c.id === id)
+    if (!cal) throw new ValidationError('Kalender nicht gefunden.')
+    return cal
+  }
+
+  private load(id: string): CalendarEvent[] {
+    return loadJson<CalendarEvent[]>(file(id), [])
+  }
+
+  private save(id: string, events: CalendarEvent[]): void {
+    saveJson(file(id), events, 0o644)
+    this.revision++
+  }
+
+  /** Termine im Zeitraum [start, end) als Millisekunden. */
+  events(id: string, start: number, end: number): CalendarEvent[] {
+    const cal = this.calendar(id)
+    const overlaps = (e: CalendarEvent): boolean => ms(e.start) < end && ms(e.end) > start
+    if (cal.kind === 'holidays') {
+      const { state } = this.cfg().system
+      const result: CalendarEvent[] = []
+      for (let y = new Date(start).getUTCFullYear(); y <= new Date(end).getUTCFullYear(); y++) {
+        for (const [date, name] of holidays(y, state)) {
+          const next = new Date(Date.parse(date) + 86400000).toISOString().slice(0, 10)
+          result.push({ uid: `${date}-${state}@feiertage.phone4all`, summary: name, start: date, end: next, allDay: true, location: '', description: '', updated: '' })
+        }
+      }
+      return result.filter(overlaps)
+    }
+    return this.load(id).filter(overlaps).sort((a, b) => ms(a.start) - ms(b.start))
+  }
+
+  upsert(id: string, raw: Partial<CalendarEvent>, uid?: string): CalendarEvent {
+    if (this.calendar(id).kind !== 'events') throw new ValidationError('In diesen Kalender können keine Termine eingetragen werden.')
+    const event = cleanEvent(raw, uid)
+    const list = this.load(id).filter((e) => e.uid !== event.uid)
+    list.push(event)
+    this.save(id, list)
+    return event
+  }
+
+  remove(id: string, uid: string): void {
+    this.calendar(id)
+    const list = this.load(id)
+    const rest = list.filter((e) => e.uid !== uid)
+    if (rest.length === list.length) throw new ValidationError('Termin nicht gefunden.')
+    this.save(id, rest)
+  }
+
+  /** Dateien gelöschter Kalender entfernen. */
+  cleanup(): void {
+    const known = new Set(this.cfg().calendars.map((c) => `${c.id}.json`))
+    try {
+      for (const f of fs.readdirSync(DIR)) if (f.endsWith('.json') && !known.has(f)) fs.rmSync(path.join(DIR, f))
+    } catch {
+      // noch keine Kalender
+    }
+  }
+}

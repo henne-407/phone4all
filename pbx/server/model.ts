@@ -47,6 +47,8 @@ export interface Extension {
   provision_pin: string
   /** Geheimer Teil des Einrichtungslinks */
   provision_token: string
+  /** App-Profil (Ansichten der SIP-Telefon-App), leer = ohne Vorgaben */
+  app_profile: string
 }
 
 export type GroupMode = 'all' | 'sequential' | 'queue'
@@ -231,6 +233,53 @@ export interface UpdateSettings {
   hour: number // Stunde für automatische Updates (0–23)
 }
 
+/** Seiten und Startkarten der SIP-Telefon-App (wie dort benannt) */
+export type AppPage = 'home' | 'dial' | 'contacts' | 'calendar' | 'history'
+export type AppHomeCard = 'status' | 'today' | 'favorites' | 'recent' | 'events'
+
+export const APP_PAGES: [AppPage, string][] = [
+  ['home', 'Start'],
+  ['dial', 'Wählen'],
+  ['contacts', 'Kontakte'],
+  ['calendar', 'Kalender'],
+  ['history', 'Verlauf'],
+]
+
+export const APP_HOME_CARDS: [AppHomeCard, string][] = [
+  ['status', 'Status und Nicht stören'],
+  ['today', 'Heute'],
+  ['favorites', 'Favoriten'],
+  ['recent', 'Letzte Anrufe'],
+  ['events', 'Nächste Termine'],
+]
+
+/** Vorgaben für die Ansichten der App, Nebenstellen wählen ein Profil */
+export interface AppProfile {
+  id: string
+  name: string
+  pages: AppPage[]
+  start_tab: AppPage
+  /** Karten der Startseite in Reihenfolge (leer = wie in der App eingestellt) */
+  home_cards: AppHomeCard[]
+  /** Startseite in der App nicht anpassbar */
+  lock_layout: boolean
+  /** Kontodaten in der App nicht änderbar */
+  lock_account: boolean
+  /** Sichtbare zentrale Kalender (leer = alle) */
+  calendars: string[]
+}
+
+/** Zentraler Kalender; Termine liegen in data/calendars/<id>.json */
+export interface CentralCalendar {
+  id: string
+  name: string
+  color: string
+  /** events: eigene Termine, holidays: gesetzliche Feiertage des Bundeslandes */
+  kind: 'events' | 'holidays'
+  /** Termine dürfen in der App angelegt und geändert werden */
+  writable: boolean
+}
+
 export interface PbxConfig {
   version: number
   system: SystemSettings
@@ -244,6 +293,8 @@ export interface PbxConfig {
   conferences: Conference[]
   announcements: Announcement[]
   phonebook: PhonebookEntry[]
+  appprofiles: AppProfile[]
+  calendars: CentralCalendar[]
   mail: MailSettings
   security: SecuritySettings
   updates: UpdateSettings
@@ -280,6 +331,8 @@ export const DEFAULT_CONFIG: PbxConfig = {
   conferences: [],
   announcements: [],
   phonebook: [],
+  appprofiles: [],
+  calendars: [],
   mail: { host: '', port: 587, tls: 'starttls', user: '', password: '', from: '' },
   security: {
     ban_enabled: true,
@@ -305,6 +358,8 @@ export const COLLECTIONS = [
   'conferences',
   'announcements',
   'phonebook',
+  'appprofiles',
+  'calendars',
 ] as const
 export type CollectionName = (typeof COLLECTIONS)[number]
 
@@ -361,6 +416,7 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         record: false,
         provision_pin: '',
         provision_token: '',
+        app_profile: '',
       } satisfies Omit<Extension, 'id'>
     case 'groups':
       return {
@@ -440,6 +496,18 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
       return { name: '', file: '', next: HANGUP } satisfies Omit<Announcement, 'id'>
     case 'phonebook':
       return { name: '', company: '', phone: '', mobile: '' } satisfies Omit<PhonebookEntry, 'id'>
+    case 'appprofiles':
+      return {
+        name: '',
+        pages: ['home', 'dial', 'contacts', 'calendar', 'history'],
+        start_tab: 'home',
+        home_cards: [],
+        lock_layout: false,
+        lock_account: true,
+        calendars: [],
+      } satisfies Omit<AppProfile, 'id'>
+    case 'calendars':
+      return { name: '', color: '#1a73e8', kind: 'events', writable: true } satisfies Omit<CentralCalendar, 'id'>
   }
 }
 
