@@ -7,13 +7,15 @@ import { loadJson, saveJson, writeAtomic } from './files'
 import {
   COLLECTIONS,
   type CollectionName,
+  DECT_MAX_HANDSETS,
   DEFAULT_CONFIG,
+  type DectBase,
   type Extension,
   type PbxConfig,
   withDefaults,
 } from './model'
 import { isInternalNumber } from './numbers'
-import { PATHS } from './paths'
+import { PATHS, SETTINGS } from './paths'
 import type { RuntimeState } from './routing'
 
 const BACKUP_KEEP = 30
@@ -40,6 +42,18 @@ export function fillSecrets(ext: Extension): void {
   if (!ext.provision_token) ext.provision_token = newSecret(32)
   if (!/^\d{6,}$/.test(ext.provision_pin)) ext.provision_pin = newPin()
   if (!ext.voicemail.pin) ext.voicemail.pin = newPin(4)
+}
+
+/** Fehlende Geheimnisse einer DECT-Basis ergänzen; MAC einheitlich schreiben. */
+export function fillDectSecrets(base: DectBase): void {
+  if (!base.token) base.token = newSecret(32)
+  if (!/^\d{4}$/.test(base.pin)) base.pin = newPin(4)
+  base.mac = normalizeMac(base.mac)
+}
+
+/** „7C:2F:80-E0.D6 05“ → „7c2f80e0d605“ */
+export function normalizeMac(mac: string): string {
+  return mac.replace(/[\s:.-]/g, '').toLowerCase()
 }
 
 /** Belegte interne Rufnummern: Nummer → Beschreibung */
@@ -88,7 +102,24 @@ export function validate(cfg: PbxConfig): void {
     if (!c.name.trim()) throw new ValidationError('Kalender ohne Namen.')
     if (!/^#[0-9a-f]{6}$/i.test(c.color)) throw new ValidationError(`Kalender ${c.name}: ungültige Farbe.`)
   }
+  const handsets = new Map<string, string>()
+  for (const b of cfg.dect) {
+    if (!b.name.trim()) throw new ValidationError('DECT-Basis ohne Namen.')
+    if (b.mac && !/^[0-9a-f]{12}$/.test(b.mac)) throw new ValidationError(`DECT-Basis ${b.name}: Die MAC-Adresse hat 12 Zeichen (0–9, A–F), z. B. 7C:2F:80:E0:D6:05.`)
+    if (b.handsets.length > DECT_MAX_HANDSETS) throw new ValidationError(`DECT-Basis ${b.name}: höchstens ${DECT_MAX_HANDSETS} Mobilteile.`)
+    if (/[\s"<>&]/.test(b.admin_password)) throw new ValidationError(`DECT-Basis ${b.name}: Das Passwort darf keine Leerzeichen oder " < > & enthalten.`)
+    for (const n of b.handsets) {
+      if (!n) continue
+      if (!cfg.extensions.some((e) => e.number === n)) throw new ValidationError(`DECT-Basis ${b.name}: Nebenstelle ${n} gibt es nicht.`)
+      if (handsets.has(n)) throw new ValidationError(`Nebenstelle ${n} ist schon einem Mobilteil zugeordnet (${handsets.get(n)}).`)
+      handsets.set(n, b.name)
+    }
+  }
   usedNumbers(cfg)
+  const l = cfg.ldap
+  if (!Number.isInteger(l.port) || l.port < 1 || l.port > 65535) throw new ValidationError('Ungültiger Port für das LDAP-Telefonbuch.')
+  if ([cfg.system.sip_port, cfg.system.tls_port].includes(l.port)) throw new ValidationError('Der LDAP-Port ist schon für SIP belegt.')
+  if (l.port === SETTINGS.httpPort) throw new ValidationError('Der LDAP-Port ist schon für die Weboberfläche belegt.')
   const s = cfg.system
   if (s.rtp_start >= s.rtp_end) throw new ValidationError('Der RTP-Portbereich ist ungültig.')
   if (!/^\d{1,3}$/.test(s.country_code)) throw new ValidationError('Ungültige Ländervorwahl.')
@@ -118,8 +149,13 @@ export function stripSecrets(cfg: PbxConfig): PbxConfig {
     e.voicemail.pin = ''
   }
   for (const t of c.trunks) t.password = ''
+  for (const b of c.dect) {
+    b.token = ''
+    b.admin_password = ''
+  }
   c.mail.password = ''
   c.integration.token = ''
+  c.ldap.password = ''
   return c
 }
 
@@ -130,9 +166,12 @@ export class ConfigStore {
   constructor() {
     const fresh = !fs.existsSync(PATHS.config)
     this.config = withDefaults(loadJson<Partial<PbxConfig>>(PATHS.config, structuredClone(DEFAULT_CONFIG)))
+    const before = JSON.stringify(this.config)
     for (const e of this.config.extensions) fillSecrets(e)
+    for (const b of this.config.dect) fillDectSecrets(b)
     this.state = { dnd: {}, cfu: {}, ...loadJson<Partial<RuntimeState>>(PATHS.state, {}) }
-    if (fresh) this.save()
+    // Neu vergebene Geheimnisse sofort speichern, sonst ändern sie sich beim nächsten Start
+    if (fresh || JSON.stringify(this.config) !== before) this.save()
   }
 
   save(): void {
@@ -148,6 +187,7 @@ export class ConfigStore {
     const draft = structuredClone(this.config)
     change(draft)
     for (const e of draft.extensions) fillSecrets(e)
+    for (const b of draft.dect) fillDectSecrets(b)
     if (draft.integration.enabled && !draft.integration.token) draft.integration.token = newSecret(40)
     validate(draft)
     this.config = draft
@@ -169,6 +209,12 @@ export class ConfigStore {
         saved = { ...list[i], ...item }
         if (kind === 'trunks' && !item.password) saved.password = list[i].password
         if (kind === 'extensions' && !item.secret) saved.secret = list[i].secret
+        // Link und PIN der Basis vergibt nur der Server
+        if (kind === 'dect') {
+          saved.token = list[i].token
+          saved.pin = list[i].pin
+          if (!item.admin_password) saved.admin_password = list[i].admin_password
+        }
         list[i] = saved
       }
       Object.assign(draft, withDefaults(draft))
@@ -187,6 +233,8 @@ export class ConfigStore {
         const ext = this.config.extensions.find((e) => e.id === id)
         if (ext) {
           for (const g of draft.groups) g.members = g.members.filter((m) => m !== ext.number)
+          // Platz des Mobilteils bleibt frei, damit die übrigen ihre Nummer behalten
+          for (const b of draft.dect) b.handsets = b.handsets.map((n) => (n === ext.number ? '' : n))
           delete this.state.dnd[ext.number]
           delete this.state.cfu[ext.number]
         }
@@ -269,8 +317,16 @@ export class ConfigStore {
       const old = this.config.trunks.find((x) => x.id === t.id)
       if (old && !t.password) t.password = old.password
     }
+    for (const b of incoming.dect) {
+      const old = this.config.dect.find((x) => x.id === b.id)
+      if (old) {
+        b.token ||= old.token
+        b.admin_password ||= old.admin_password
+      }
+    }
     incoming.mail.password ||= this.config.mail.password
     incoming.integration.token ||= this.config.integration.token
+    incoming.ldap.password ||= this.config.ldap.password
     this.backup('vor-import')
     this.update((draft) => Object.assign(draft, incoming))
     for (const [id, events] of Object.entries(data.calendars ?? {})) {

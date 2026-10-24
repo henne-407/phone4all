@@ -34,6 +34,7 @@ Sprache hinter Docker-NAT unzuverlässig sind. Benötigte Ports:
 | 5060/udp+tcp, 5061/tcp | SIP, SIP über TLS |
 | 10000–10999/udp | Sprache (RTP) |
 | 15060/udp | Suche der App im lokalen Netz |
+| 389/tcp | Telefonbuch per LDAP (nur wenn eingeschaltet) |
 
 Für Anrufe von außen ist bei den gängigen Anbietern keine Portfreigabe nötig, die
 Anlage meldet sich selbst an. Telefone außerhalb des Büros brauchen eine Freigabe
@@ -56,6 +57,9 @@ von 5060/5061 und 10000–10999 im Router sowie die öffentliche Adresse unter
   1&1, o2, sipgate (basic und trunking), easybell, Placetel und FRITZ!Box;
   **Wahlregeln** mit Ausweichkonto
 - **Zentrale Kontakte** (auch CSV-Import) für Anrufernamen, werden an die Apps verteilt
+  und stehen per **LDAP** für DECT- und Tischtelefone bereit
+- **DECT-Telefone**: Gigaset N610, N670 und N870 IP PRO richten sich per Auto-Provisioning
+  selbst ein (ein SIP-Konto je Mobilteil, Voicemail-Anzeige, Übergabe)
 - **Zentrale Kalender** mit eigenen Terminen (z. B. Betriebsferien) oder den
   Feiertagen des Bundeslandes; erscheinen in jeder App
 - **App-Profile**: legen fest, welche Bereiche, Startansicht und Startseiten-Karten
@@ -103,6 +107,45 @@ Termine haben Datumsangaben (`2026-12-24`, Ende exklusiv), alle anderen ISO-Zeit
 
 Andere Telefone (Tischtelefone, Softphones) werden mit Nebenstelle als Benutzer,
 SIP-Passwort und der Adresse der Anlage als Server angemeldet.
+
+## DECT-Telefone (Gigaset N610 IP PRO)
+
+Jedes Mobilteil ist eine eigene Nebenstelle. Unter *DECT-Telefone* eine Basis mit
+MAC-Adresse anlegen und den Mobilteilen Nebenstellen zuordnen. *Einrichten* zeigt dann:
+
+1. Den **Provisioning-Server** (`http://<anlage>:8080/dect/<schlüssel>/`), der in der
+   Weboberfläche der Basis unter *Einstellungen → System → Provisioning und
+   Konfiguration* eingetragen wird. Die Basis holt dort `<mac>.xml` mit dem SIP-Zugang
+   der Anlage und einem Konto je Mobilteil, später auch jede Änderung. Wer den Eintrag
+   nicht nutzen will, lädt die Datei herunter und spielt sie in der Basis ein.
+2. Die **PIN** für die Anmeldung der Mobilteile. Nach jedem Abruf ist die Anmeldung
+   15 Minuten lang offen (*Menü → Einstellungen → Anmeldung → Mobilteil anmelden*).
+3. Die Werte für das **LDAP-Telefonbuch**, falls es unter *Kontakte* eingeschaltet ist.
+
+Was über die Anlage läuft: Anrufernamen, Halten, Makeln, Übergeben (R-Taste oder
+Auflegen), Anklopfen, Nachrichtenanzeige bei neuer Voicemail (*97), HD-Sprache (G.722),
+\*8 Heranholen, \*76 Nicht stören, \*21 Rufumleitung. Besetztlampen (BLF) kennt die N610
+nicht. Die Datei folgt dem Format der Gigaset-Firmware für N610/N670/N870
+(`productID="e2"`); ältere Basen wie die N510 brauchen ein anderes Format und werden
+von Hand eingerichtet.
+
+## Telefonbuch per LDAP
+
+Unter *Kontakte → Telefonbuch für DECT- und Tischtelefone* einschalten. Die Anlage
+beantwortet LDAP-Suchen (nur lesen) auf Port 389 aus dem lokalen Netz bzw. den unter
+*System → Sicherheit* erlaubten Netzen:
+
+| Einstellung | Wert |
+| --- | --- |
+| Suchbasis | `dc=phone4all` |
+| Anmeldung | ohne, oder `cn=telefonbuch,dc=phone4all` mit dem eingestellten Kennwort, oder Nebenstelle und SIP-Passwort |
+| Namensfilter | `(\|(cn=%)(sn=%)(o=%))` |
+| Nummernfilter | `(\|(telephoneNumber=%)(mobile=%))` |
+| Attribute | `cn`, `givenName`, `sn`, `o`, `telephoneNumber`, `mobile` |
+
+Enthalten sind Nebenstellen, Gruppen, Konferenzräume und die zentralen Kontakte.
+Rufnummern werden unabhängig von der Schreibweise gefunden (`030 1234567`,
+`+49301234567`). Test: `ldapsearch -x -H ldap://<anlage> -b dc=phone4all '(cn=*)'`.
 
 ## Diagnose und Watchdog
 
