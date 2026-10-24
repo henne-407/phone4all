@@ -1,92 +1,232 @@
+<div align="center">
+
+<img src="resources/icons/icon.svg" width="112" alt="Phone4all-Logo">
+
 # Phone4all
 
-**Eine moderne Telefonanlage, die einfach bleibt.** Phone4all besteht aus einer
-Telefonanlage im Docker-Container, einer Desktop-App für Linux, macOS und Windows, einer
-Mobil-App für Android und iPhone und einer Integration für Home Assistant. Alles ist auf
-Deutsch, richtet sich weitgehend selbst ein und funktioniert auf Wunsch auch unterwegs
-über HTTPS.
+**Moderne Telefonanlage, die einfach bleibt.**
+
+Telefonanlage im Docker-Container · Desktop-App für Linux, macOS und Windows ·
+Mobil-App für Android und iPhone · DECT · Home Assistant
 
 [![Build](https://github.com/henne-407/phone4all/actions/workflows/build.yml/badge.svg)](https://github.com/henne-407/phone4all/actions/workflows/build.yml)
 [![Telefonanlage](https://github.com/henne-407/phone4all/actions/workflows/pbx.yml/badge.svg)](https://github.com/henne-407/phone4all/actions/workflows/pbx.yml)
 [![Home Assistant](https://github.com/henne-407/phone4all/actions/workflows/homeassistant.yml/badge.svg)](https://github.com/henne-407/phone4all/actions/workflows/homeassistant.yml)
+[![Release](https://img.shields.io/github/v/release/henne-407/phone4all?label=Release)](https://github.com/henne-407/phone4all/releases)
 [![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-blue.svg)](LICENSE)
 
-<p align="center">
-  <img src="docs/bilder/anlage-uebersicht.png" width="49%" alt="Weboberfläche der Telefonanlage: Übersicht">
-  <img src="docs/bilder/app-hell.png" width="49%" alt="Desktop-App SIP-Telefon: Startseite">
-</p>
+[**Schnellstart**](#-schnellstart) · [**Funktionen**](#-funktionen) ·
+[**Dokumentation**](#-dokumentation) · [**Downloads**](https://github.com/henne-407/phone4all/releases)
 
-## Was dazugehört
+<br>
 
-| Teil | Wofür | Läuft auf | Doku |
-| --- | --- | --- | --- |
-| **Telefonanlage** | Asterisk 20 mit deutscher Weboberfläche: Nebenstellen, Gruppen, Rufabfolgen, Sprachmenüs, Voicemail, SIP-Konten aller großen Anbieter | Docker auf Linux-Server, VM, NAS (z. B. TrueNAS), Raspberry Pi | [Bedienung](docs/telefonanlage.md) · [Referenz](pbx/README.md) |
-| **SIP-Telefon (Desktop)** | Softphone mit Anruf-Pop-up, Kontakten, Kalender und Anrufverlauf | Linux, macOS, Windows | [Desktop-App](docs/desktop-app.md) |
-| **SIP-Telefon (Mobil)** | Telefonieren mit der eigenen Nebenstelle im Büro und unterwegs | Android, iPhone | [Mobil-App](docs/mobil-app.md) |
-| **DECT-Telefone** | Gigaset N610/N670/N870 IP PRO richten sich selbst ein, Telefonbuch per LDAP | Gigaset-Basis | [DECT-Anleitung](docs/dect.md) |
-| **Home Assistant** | Verpasste Anrufe und Störungen als Sensoren, Ereignisse und Benachrichtigungen | Home Assistant (HACS) | [Home Assistant](docs/home-assistant.md) |
+<img src="docs/bilder/anlage-uebersicht.png" width="88%" alt="Weboberfläche der Telefonanlage">
 
-Die Telefonanlage ist das Herz: Sie verteilt Konten, Telefonbuch, Kalender und
-App-Profile an alle Apps. Die Desktop-App funktioniert aber auch allein mit jeder anderen
-SIP-Anlage (FRITZ!Box, 3CX, Starface, sipgate …).
+</div>
 
-## In fünf Minuten startklar
+<br>
 
-1. **Anlage installieren** – auf einem Debian- oder Ubuntu-Server:
+## 🧩 Ein System, alle Geräte
 
-   ```sh
-   curl -fsSL https://raw.githubusercontent.com/henne-407/phone4all/main/pbx/install.sh | sudo sh
-   ```
+Die Telefonanlage ist das Herz von Phone4all. Sie verteilt Konten, Telefonbuch, Kalender
+und App-Profile an alle Geräte. Neue Telefone richten sich selbst ein: Nebenstelle und PIN
+eingeben, QR-Code scannen oder eine Provisioning-Adresse eintragen, fertig.
 
-   Das Skript zeigt am Ende Adresse und erstes Passwort der Weboberfläche
-   (`http://<server>:8080`, Benutzer `admin`). Andere Wege (Docker Compose, TrueNAS,
-   Proxmox, Raspberry Pi) stehen unter [Installation](docs/installation.md).
-2. **Einrichten** – die Übersicht führt mit *Erste Schritte* durch Nebenstellen,
-   SIP-Konto beim Anbieter (Vorlagen für Telekom, Vodafone, Deutsche Glasfaser, 1&1, o2,
-   sipgate, easybell, Placetel, FRITZ!Box) und die Rufabfolge für eingehende Anrufe.
-3. **Telefone verbinden** – die [Desktop-App](https://github.com/henne-407/phone4all/releases/latest)
-   findet die Anlage im Netz, Nebenstelle und PIN genügen. Handys scannen den QR-Code der
-   Nebenstelle, Gigaset-Basen holen sich ihre Einrichtung selbst.
+```mermaid
+flowchart LR
+    Anbieter(["☎️ Telefonanbieter<br>Telekom · Vodafone · sipgate …"]) <-- SIP --> PBX
+    subgraph PBX ["🖥️ Telefonanlage · Docker"]
+        direction TB
+        Web["Weboberfläche"] --- Dienst["Verwaltungsdienst"] --- Asterisk["Asterisk 20"]
+    end
+    PBX <--> Desktop["💻 Desktop-App<br>Linux · macOS · Windows"]
+    PBX <-- "HTTPS / WebRTC" --> Mobil["📱 Mobil-App<br>Android · iPhone"]
+    PBX <--> DECT["📞 Gigaset DECT<br>N610 · N670 · N870"]
+    PBX --> HA["🏠 Home Assistant"]
+```
 
-Die ausführliche Anleitung mit allen Schritten steht unter
-[Erste Schritte](docs/erste-schritte.md).
+<table>
+<tr>
+<td width="50%" valign="top">
 
-## Dokumentation
+### 🖥️ Telefonanlage
 
-- [Erste Schritte](docs/erste-schritte.md) – vom leeren Server zum ersten Anruf
-- [Installation der Telefonanlage](docs/installation.md) – Docker, TrueNAS, VM, Raspberry Pi, Updates, Umzug
-- [Telefonanlage bedienen](docs/telefonanlage.md) – die Weboberfläche Seite für Seite
-- [Desktop-App](docs/desktop-app.md) – Installation, Einrichtung, Funktionen, Kalender, Adressbücher
-- [Mobil-App](docs/mobil-app.md) – Android und iPhone
-- [Zugriff von unterwegs](docs/fernzugriff.md) – HTTPS über einen Reverse-Proxy wie Pangolin
-- [DECT-Telefone](docs/dect.md) – Gigaset N610 IP PRO Schritt für Schritt
-- [Home Assistant](docs/home-assistant.md) – Integration, Blueprint, Beispiele
-- [Fehlersuche](docs/fehlersuche.md) – häufige Probleme und ihre Lösung
-- [Entwicklung](docs/entwicklung.md) – Aufbau des Repositorys, Tests, Releases
-- [Referenz der Telefonanlage](pbx/README.md) – Ports, Schnittstellen, Datenablage
+Asterisk 20 mit deutscher Weboberfläche, als ein Docker-Image für Server, VM, NAS
+(z. B. TrueNAS) und Raspberry Pi. Updates per Klick.
 
-## Downloads und Versionen
+[Bedienung](docs/telefonanlage.md) · [Installation](docs/installation.md) · [Referenz](pbx/README.md)
 
-Alle Pakete stehen unter [Releases](https://github.com/henne-407/phone4all/releases).
-Jeder Teil hat eigene Versionen und Tags:
+</td>
+<td width="50%" valign="top">
 
-| Teil | Tag | Ergebnis |
+### 💻 Desktop-App
+
+Softphone mit Anruf-Pop-up, Kontakten, Kalender und Verlauf. Läuft auch mit FRITZ!Box,
+3CX, Starface oder sipgate.
+
+[Anleitung](docs/desktop-app.md) · [Download](https://github.com/henne-407/phone4all/releases/latest)
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### 📱 Mobil-App
+
+Die eigene Nebenstelle auf dem Handy, im Büro und unterwegs über eine HTTPS-Adresse
+(z. B. hinter Pangolin).
+
+[Anleitung](docs/mobil-app.md) · [Fernzugriff](docs/fernzugriff.md)
+
+</td>
+<td valign="top">
+
+### 📞 DECT-Telefone
+
+Gigaset N610/N670/N870 IP PRO richten sich per Auto-Provisioning selbst ein, mit
+Telefonbuch per LDAP.
+
+[Anleitung](docs/dect.md)
+
+</td>
+</tr>
+<tr>
+<td colspan="2" valign="top">
+
+### 🏠 Home Assistant
+
+Verpasste Anrufe, abgemeldete SIP-Konten und Störungen als Sensoren und Ereignisse, mit
+fertigem Blueprint für Benachrichtigungen aufs Handy. Installation über HACS.
+
+[Anleitung](docs/home-assistant.md)
+
+</td>
+</tr>
+</table>
+
+## 🚀 Schnellstart
+
+**1. Anlage installieren** auf einem Debian- oder Ubuntu-Server:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/henne-407/phone4all/main/pbx/install.sh | sudo sh
+```
+
+Am Ende stehen Adresse und erstes Passwort der Weboberfläche da (`http://<server>:8080`,
+Benutzer `admin`). Docker Compose, TrueNAS, Proxmox und Raspberry Pi:
+[Installation](docs/installation.md).
+
+**2. Einrichten.** Die Übersicht führt mit *Erste Schritte* durch Nebenstellen, das
+SIP-Konto beim Anbieter und die Rufabfolge für eingehende Anrufe.
+
+**3. Telefone verbinden.** Die [Desktop-App](https://github.com/henne-407/phone4all/releases/latest)
+findet die Anlage im Netz, Handys scannen den QR-Code der Nebenstelle, Gigaset-Basen
+holen sich ihre Einrichtung selbst.
+
+➡️ Ausführlich: [Erste Schritte](docs/erste-schritte.md)
+
+## ✨ Funktionen
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**Anrufe steuern**
+- Nebenstellen mit mehreren Geräten gleichzeitig
+- Gruppen: alle gleichzeitig, nacheinander, Warteschlange
+- Rufabfolgen als Diagramm, per Drag & Drop bearbeitbar
+- Zeitsteuerung mit Feiertagen je Bundesland
+- Sprachmenüs, Ansagen im Browser aufnehmen
+- Voicemail per E-Mail, Konferenzräume, Aufzeichnung
+
+</td>
+<td width="50%" valign="top">
+
+**Anbinden und zusammenarbeiten**
+- Vorlagen für Telekom, Vodafone, Deutsche Glasfaser, 1&1, o2, sipgate, easybell, Placetel, FRITZ!Box
+- Wahlregeln mit Ausweichkonto
+- Zentrales Telefonbuch, auch per LDAP
+- Zentrale Kalender für alle Apps
+- App-Profile: was die Apps zeigen
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Betrieb**
+- Watchdog mit Selbstheilung und Diagnose
+- Online-Updates, stabil oder Beta
+- Tägliche Sicherung, Export und Import
+- Sperre nach Fehlanmeldungen, TLS/SRTP
+
+</td>
+<td valign="top">
+
+**Unterwegs und zu Hause**
+- Fernzugriff nur über HTTPS, eingebauter TURN-Server
+- Einrichtung per QR-Code oder Einladungs-E-Mail
+- Home Assistant mit Sensoren, Ereignissen, Blueprint
+
+</td>
+</tr>
+</table>
+
+## 📸 Einblicke
+
+<table>
+<tr>
+<td width="50%"><img src="docs/bilder/anlage-rufabfolgen-ausschnitt.png" alt="Rufabfolgen als Diagramm"></td>
+<td width="50%"><img src="docs/bilder/anlage-kalender.png" alt="Zentrale Kalender"></td>
+</tr>
+<tr>
+<td align="center"><sub>Rufabfolgen: der Weg eines Anrufs als Diagramm</sub></td>
+<td align="center"><sub>Zentrale Kalender für alle Apps</sub></td>
+</tr>
+<tr>
+<td><img src="docs/bilder/app-hell.png" alt="Desktop-App hell"></td>
+<td><img src="docs/bilder/app-dunkel.png" alt="Desktop-App dunkel"></td>
+</tr>
+<tr>
+<td align="center"><sub>Desktop-App, helles Design</sub></td>
+<td align="center"><sub>Desktop-App, dunkles Design</sub></td>
+</tr>
+</table>
+
+## 📚 Dokumentation
+
+| | Thema | Inhalt |
+| :---: | --- | --- |
+| 🏁 | [Erste Schritte](docs/erste-schritte.md) | vom leeren Server zum ersten Anruf |
+| 📦 | [Installation](docs/installation.md) | Docker, TrueNAS, VM, Raspberry Pi, Ports, Updates, Umzug |
+| 🖥️ | [Telefonanlage bedienen](docs/telefonanlage.md) | die Weboberfläche Seite für Seite, Funktionscodes |
+| 💻 | [Desktop-App](docs/desktop-app.md) | Installation, Einrichtung, Kalender, Adressbücher |
+| 📱 | [Mobil-App](docs/mobil-app.md) | Android und iPhone |
+| 🌍 | [Zugriff von unterwegs](docs/fernzugriff.md) | HTTPS mit Pangolin oder einem anderen Reverse-Proxy |
+| 📞 | [DECT-Telefone](docs/dect.md) | Gigaset N610 IP PRO Schritt für Schritt |
+| 🏠 | [Home Assistant](docs/home-assistant.md) | Integration, Blueprint, Beispiele |
+| 🩺 | [Fehlersuche](docs/fehlersuche.md) | häufige Probleme und ihre Lösung |
+| 🛠️ | [Entwicklung](docs/entwicklung.md) | Aufbau, Tests, CI, Releases |
+| 📖 | [Referenz der Anlage](pbx/README.md) | Ports, Schnittstellen, Datenablage |
+
+## 📥 Downloads und Versionen
+
+Jeder Teil hat eigene Versionen. Alles steht unter
+[Releases](https://github.com/henne-407/phone4all/releases).
+
+| Teil | Tag | Pakete |
 | --- | --- | --- |
-| Desktop-App | `v…` | `.rpm`, `.deb`, `.AppImage`, `.dmg`, `.exe` |
-| Telefonanlage | `pbx-v…` | Docker-Image `ghcr.io/henne-407/phone4all-pbx` (amd64, arm64) |
-| Mobil-App | `mobile-v…` | `.apk` für Android, unsignierte `.ipa` für iPhone |
-| Home Assistant | – | über HACS direkt aus diesem Repository |
+| 💻 Desktop-App | `v…` | `.rpm` · `.deb` · `.AppImage` · `.dmg` · `.exe` |
+| 🖥️ Telefonanlage | `pbx-v…` | Docker-Image `ghcr.io/henne-407/phone4all-pbx` (amd64, arm64) |
+| 📱 Mobil-App | `mobile-v…` | `.apk` für Android, unsignierte `.ipa` für iPhone |
+| 🏠 Home Assistant | – | über HACS direkt aus diesem Repository |
 
-Die Telefonanlage meldet neue Versionen selbst und installiert sie per Klick
-(*System → Aktualisierung*).
-
-## Fehler melden und mitmachen
+## 🤝 Mitmachen
 
 Fehler und Wünsche bitte als [Issue](https://github.com/henne-407/phone4all/issues/new/choose)
-melden. Hinweise zum Aufbau, zu Tests und zum Code-Stil stehen unter
-[Entwicklung](docs/entwicklung.md).
+melden. Aufbau, Tests und Code-Stil stehen unter [Entwicklung](docs/entwicklung.md).
 
-## Lizenz
+## 📄 Lizenz
 
 [MIT](LICENSE). Phone4all nutzt unter anderem [Asterisk](https://www.asterisk.org)
 (GPLv2, im Docker-Image), [baresip](https://github.com/baresip/baresip),
