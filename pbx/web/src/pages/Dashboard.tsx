@@ -14,7 +14,7 @@ import { useStatus } from '../useStatus'
 
 function Stat({ label, value, sub, color, icon, onClick }: { label: string; value: ReactNode; sub?: ReactNode; color: string; icon: ReactNode; onClick?: () => void }) {
   return (
-    <Card sx={{ flex: '1 1 220px', '&:hover': onClick ? { borderColor: 'primary.main' } : undefined }}>
+    <Card sx={{ flex: '1 1 220px' }}>
       <CardActionArea onClick={onClick} disabled={!onClick} sx={{ height: '100%' }}>
         <CardContent sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
           <Box sx={{ width: 48, height: 48, borderRadius: 3, bgcolor: color, color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{icon}</Box>

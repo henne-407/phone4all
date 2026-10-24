@@ -4,7 +4,7 @@
  * Formen folgen Material 3, die Farben sind auf Lesbarkeit statt Tonflächen ausgelegt.
  */
 
-import { createTheme, type Theme } from '@mui/material/styles'
+import { alpha, createTheme, type Theme } from '@mui/material/styles'
 
 const LIGHT = {
   primary: '#0b57d0',
@@ -115,14 +115,34 @@ export function buildTheme(dark: boolean): Theme {
       MuiCssBaseline: { styleOverrides: { body: { backgroundColor: c.background } } },
       MuiButton: {
         defaultProps: { disableElevation: true },
-        styleOverrides: { root: { borderRadius: 20, paddingInline: 18, minHeight: 38 } },
+        styleOverrides: { root: { borderRadius: 20, paddingInline: 18, minHeight: 38 }, sizeSmall: { minHeight: 32, paddingInline: 12 } },
       },
       MuiFab: { styleOverrides: { root: { borderRadius: 16, textTransform: 'none' } } },
       MuiPaper: { defaultProps: { elevation: 0 }, styleOverrides: { root: { backgroundImage: 'none' } } },
       MuiCard: {
         defaultProps: { elevation: 0 },
-        styleOverrides: { root: { borderRadius: 14, backgroundColor: c.surface, border: `1px solid ${c.outlineVariant}` } },
+        styleOverrides: {
+          root: {
+            borderRadius: 14,
+            backgroundColor: c.surface,
+            border: `1px solid ${c.outlineVariant}`,
+            transition: 'border-color 150ms, background-color 150ms, box-shadow 150ms',
+            // Anklickbare Karten: die ganze Karte reagiert, nicht nur die Klickfläche darin
+            '&:has(> .MuiCardActionArea-root:hover)': {
+              borderColor: c.primary,
+              backgroundColor: alpha(c.primary, 0.04),
+              boxShadow: `0 2px 8px ${alpha(c.primary, 0.12)}`,
+            },
+          },
+        },
       },
+      MuiCardActionArea: {
+        styleOverrides: {
+          root: { borderRadius: 'inherit', '&:hover .MuiCardActionArea-focusHighlight': { opacity: 0 } },
+          focusHighlight: { borderRadius: 'inherit' },
+        },
+      },
+      MuiIconButton: { styleOverrides: { root: { borderRadius: '50%' } } },
       MuiDialog: { styleOverrides: { paper: { borderRadius: 20, backgroundColor: c.surface } } },
       MuiDialogTitle: { styleOverrides: { root: { fontSize: '1.375rem', fontWeight: 600, paddingTop: 20 } } },
       MuiToggleButton: {
@@ -130,6 +150,7 @@ export function buildTheme(dark: boolean): Theme {
           root: {
             textTransform: 'none',
             fontWeight: 600,
+            borderRadius: 10,
             '&.Mui-selected': { backgroundColor: c.primaryContainer, color: c.onPrimaryContainer },
             '&.Mui-selected:hover': { backgroundColor: c.primaryContainer },
           },

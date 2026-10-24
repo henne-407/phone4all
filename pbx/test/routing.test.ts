@@ -59,6 +59,22 @@ describe('Ausgehende Anrufe', () => {
     expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '5551234', cid: '10' })).toBe('ok|trunk-t1|+49305551234|+49301234568')
   })
 
+  it('nimmt das SIP-Konto der eigenen Nummer zuerst', () => {
+    const cfg = sampleConfig()
+    cfg.trunks.push({ ...cfg.trunks[0], id: 't2', name: 'sipgate', number_format: 'e164', numbers: ['040 999888'], default_cid: '' })
+    cfg.extensions[0].outbound_cid = '040 999888'
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '0171 5551234', cid: '10' })).toBe(
+      'ok|trunk-t2|+491715551234|+4940999888|trunk-t1|+491715551234|+49301234567',
+    )
+  })
+
+  it('stellt Anrufe auf eigene Nummern intern durch', () => {
+    const cfg = sampleConfig()
+    cfg.trunks.push({ ...cfg.trunks[0], id: 't2', name: 'sipgate', numbers: ['040 999888'], inbound_default: to('extension', 'e12') })
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '040999888', cid: '10' })).toBe('local|p4a-local^12|Person 10|10|040999888')
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '+49 30 1234567', cid: '10' }).startsWith('local|')).toBe(true)
+  })
+
   it('beachtet Berechtigungen und Sonderrufnummern', () => {
     const cfg = sampleConfig()
     expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '0043 1234', cid: '' })).toBe('deny')

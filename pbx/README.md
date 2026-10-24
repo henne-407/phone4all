@@ -50,11 +50,12 @@ von 5060/5061 und 10000–10999 im Router sowie die öffentliche Adresse unter
   Ausweichziel und Namensvorsatz („Vertrieb: …“)
 - **Rufabfolgen** als Ablaufdiagramm: Rufnummer → Zeitsteuerung (Öffnungszeiten,
   Feiertage je Bundesland, Betriebsferien, Nachtschaltung) → Sprachmenü → Gruppe →
-  Voicemail; jeder Schritt ist anklickbar
+  Voicemail; jeder Schritt ist anklickbar, Zweige lassen sich per Auswahlmenü oder
+  Drag & Drop umhängen
 - **Ansagen** hochladen oder im Browser aufnehmen, eigene Wartemusik
 - **Konferenzräume** mit PIN
 - **SIP-Konten** mit Vorlagen für Telekom (auch CompanyFlex), Vodafone (Kabel, DSL),
-  1&1, o2, sipgate (basic und trunking), easybell, Placetel und FRITZ!Box;
+  Deutsche Glasfaser, 1&1, o2, sipgate (basic und trunking), easybell, Placetel und FRITZ!Box;
   **Wahlregeln** mit Ausweichkonto
 - **Zentrale Kontakte** (auch CSV-Import) für Anrufernamen, werden an die Apps verteilt
   und stehen per **LDAP** für DECT- und Tischtelefone bereit

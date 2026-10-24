@@ -6,7 +6,7 @@ import { Box, Button, Card, CardContent, Chip, IconButton, Stack, Tooltip, Typog
 import { useEffect } from 'react'
 import type { InboundRoute } from '../../../server/model'
 import { EmptyState, PageHeader, useEditor } from '../components/common'
-import { FlowDiagram, NODE_ICONS } from '../components/FlowDiagram'
+import { FlowDiagram, FlowPalette, NODE_ICONS } from '../components/FlowDiagram'
 import { go, takeEditRequest } from '../router'
 import { usePbx } from '../state'
 import { InboundForm } from './FlowForms'
@@ -26,7 +26,7 @@ export default function Flows() {
       <PageHeader
         overline="Eingehende Anrufe"
         title="Rufabfolgen"
-        description="So läuft ein Anruf von außen durch die Anlage: von der angerufenen Nummer über Zeitsteuerung und Sprachmenü bis zur Person oder Voicemail. Ein Klick auf einen Schritt öffnet ihn zum Bearbeiten."
+        description="So läuft ein Anruf von außen durch die Anlage: von der angerufenen Nummer über Zeitsteuerung und Sprachmenü bis zur Person oder Voicemail. Ein Klick auf einen Schritt öffnet ihn; Zweige hängst du mit dem Stift oder per Drag & Drop aus den Bausteinen um."
         action={
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => editor.openNew()}>
             Rufnummer zuordnen
@@ -45,6 +45,7 @@ export default function Flows() {
           }
         />
       )}
+      <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 260px' }, alignItems: 'start' }}>
       <Stack sx={{ gap: 2 }}>
         {config.inbound.map((r) => (
           <Card key={r.id}>
@@ -67,6 +68,7 @@ export default function Flows() {
                   onOpen: () => editor.openItem(r.id),
                 }}
                 dest={r.destination}
+                onChange={(d) => ['inbound', { ...r, destination: d }]}
               />
             </CardContent>
           </Card>
@@ -86,12 +88,21 @@ export default function Flows() {
                 <FlowDiagram
                   entry={{ title: rest.length ? rest.join(', ') : 'alle anderen Nummern', subtitle: t.name, onOpen: () => go('trunks', t.id) }}
                   dest={t.inbound_default}
+                  onChange={(d) => ['trunks', { ...t, inbound_default: d }]}
                 />
               </CardContent>
             </Card>
           )
         })}
       </Stack>
+      {(config.inbound.length > 0 || config.trunks.length > 0) && (
+        <Card sx={{ display: { xs: 'none', lg: 'block' }, position: 'sticky', top: 24, maxHeight: 'calc(100vh - 48px)', overflowY: 'auto' }}>
+          <CardContent>
+            <FlowPalette />
+          </CardContent>
+        </Card>
+      )}
+      </Box>
       {editor.dialog}
     </Box>
   )
