@@ -172,6 +172,7 @@ export class Asterisk extends EventEmitter {
         asteriskData: PATHS.asteriskData,
       },
       ami: { port: SETTINGS.amiPort, secret: this.amiSecret },
+      httpPort: SETTINGS.asteriskHttpPort,
       tls: this.tls,
       banned,
       runUser: SETTINGS.runUser,
@@ -211,7 +212,7 @@ export class Asterisk extends EventEmitter {
       }
     }
     const s = cfg.system
-    const transport = JSON.stringify([s.sip_port, s.tls_port, s.external_address, s.local_nets, s.rtp_start, s.rtp_end])
+    const transport = JSON.stringify([s.sip_port, s.tls_port, s.external_address, s.local_nets, s.rtp_start, s.rtp_end, cfg.remote.enabled])
     const restart = this.lastTransport !== '' && transport !== this.lastTransport
     this.lastTransport = transport
     if (!this.ami.connected) return
@@ -317,7 +318,8 @@ export class Asterisk extends EventEmitter {
       const byAor = new Map<string, EndpointStatus>()
       for (const c of contacts.filter((e) => e.Event === 'ContactList')) {
         // Statische Kontakte der SIP-Konten (trunk-…) gehören nicht zu den Nebenstellen
-        const aor = c.Endpoint ?? (c.ObjectName ?? '').split(';')[0]
+        // Die Mobil-App (<nummer>-app) zählt als weiteres Gerät der Nebenstelle
+        const aor = (c.Endpoint ?? (c.ObjectName ?? '').split(';')[0]).replace(/-app$/, '')
         if (!aor || aor.startsWith('trunk-')) continue
         if (!byAor.has(aor)) byAor.set(aor, { number: aor, contacts: [] })
         byAor.get(aor)!.contacts.push({

@@ -124,6 +124,12 @@ export function validate(cfg: PbxConfig): void {
   if (s.rtp_start >= s.rtp_end) throw new ValidationError('Der RTP-Portbereich ist ungültig.')
   if (!/^\d{1,3}$/.test(s.country_code)) throw new ValidationError('Ungültige Ländervorwahl.')
   if (s.area_code && !/^[1-9]\d{1,4}$/.test(s.area_code)) throw new ValidationError('Die Ortsvorwahl ohne führende 0 eintragen, z. B. 30 für Berlin.')
+  const r = cfg.remote
+  if (r.public_url && !/^https?:\/\/[\w.-]+(:\d+)?\/?$/.test(r.public_url)) {
+    throw new ValidationError('Die öffentliche Adresse bitte als https://name.example.de angeben (ohne Pfad).')
+  }
+  if (r.turn_host && !/^[\w.-]+(:\d+)?$/.test(r.turn_host)) throw new ValidationError('Die TURN-Adresse bitte als name.example.de:3478 angeben.')
+  if (!(r.turn_port > 0 && r.turn_port < 65536)) throw new ValidationError('Ungültiger TURN-Port.')
   const w = cfg.watchdog
   if (!(w.trunk_grace >= 1 && w.trunk_grace <= 60)) throw new ValidationError('Wartezeit für SIP-Konten: 1 bis 60 Minuten.')
   if (w.notify_email && !/^[^\s@<>]+@[^\s@<>]+$/.test(w.notify_email)) throw new ValidationError('Ungültige E-Mail-Adresse für Störungsmeldungen.')

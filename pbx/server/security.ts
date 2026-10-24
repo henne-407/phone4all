@@ -24,6 +24,11 @@ export function remoteIp(address: string | undefined): string {
   return net.isIP(ip) ? ip : ''
 }
 
+/** „IPV4/WS/127.0.0.1/41234“ → 41234 */
+export function remotePort(address: string | undefined): number {
+  return Number((address ?? '').split('/')[3]) || 0
+}
+
 function ipToInt(ip: string): number {
   return ip.split('.').reduce((acc, p) => (acc << 8) + Number(p), 0) >>> 0
 }
@@ -44,9 +49,20 @@ export class Guard extends EventEmitter {
   private failures = new Map<string, number[]>()
   bans: Ban[] = loadJson<Ban[]>(BANS_FILE, [])
 
-  constructor(private settings: () => SecuritySettings) {
+  /**
+   * @param viaProxy liefert für Verbindungen über den WebSocket-Proxy (127.0.0.1:<port>)
+   *                 die Adresse des Telefons
+   */
+  constructor(
+    private settings: () => SecuritySettings,
+    private viaProxy: (port: number) => string = () => '',
+  ) {
     super()
     setInterval(() => this.expire(), 60000).unref()
+  }
+
+  isBanned(ip: string): boolean {
+    return this.bans.some((b) => b.ip === ip)
   }
 
   banned(): string[] {
@@ -56,7 +72,8 @@ export class Guard extends EventEmitter {
   onAmiEvent(e: AmiMessage): void {
     if (!FAILURE_EVENTS.has(e.Event)) return
     const s = this.settings()
-    const ip = remoteIp(e.RemoteAddress)
+    let ip = remoteIp(e.RemoteAddress)
+    if (ip === '127.0.0.1') ip = this.viaProxy(remotePort(e.RemoteAddress)) || ip
     if (!s.ban_enabled || !ip || inList(ip, ['127.0.0.1', ...s.whitelist]) || this.bans.some((b) => b.ip === ip)) return
     const now = Date.now()
     const list = (this.failures.get(ip) ?? []).filter((t) => t > now - s.ban_window * 60000)

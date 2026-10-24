@@ -233,6 +233,19 @@ export interface UpdateSettings {
   hour: number // Stunde für automatische Updates (0–23)
 }
 
+/** Zugriff von unterwegs: Mobil-App über HTTPS (z. B. hinter Pangolin) */
+export interface RemoteSettings {
+  /** SIP über WebSocket (/ws) und WebRTC für die Mobil-App */
+  enabled: boolean
+  /** Öffentliche HTTPS-Adresse der Anlage, z. B. https://telefon.example.de (leer = wie aufgerufen) */
+  public_url: string
+  /** Eingebauter TURN-Server, über den die Sprache von unterwegs läuft */
+  turn: boolean
+  turn_port: number
+  /** TURN-Adresse aus Sicht der App, z. B. telefon.example.de:3478 (leer = Host der öffentlichen Adresse) */
+  turn_host: string
+}
+
 /** Watchdog: Überwachung und Selbstheilung (Diagnose) */
 export interface WatchdogSettings {
   /** Störungen selbst beheben (sonst nur melden) */
@@ -376,6 +389,7 @@ export interface PbxConfig {
   security: SecuritySettings
   updates: UpdateSettings
   provisioning: { discovery: boolean }
+  remote: RemoteSettings
   watchdog: WatchdogSettings
   integration: IntegrationSettings
   ldap: LdapSettings
@@ -425,6 +439,7 @@ export const DEFAULT_CONFIG: PbxConfig = {
   },
   updates: { channel: 'stable', auto: false, hour: 3 },
   provisioning: { discovery: true },
+  remote: { enabled: true, public_url: '', turn: true, turn_port: 3478, turn_host: '' },
   watchdog: { auto_repair: true, trunk_grace: 3, notify_email: '' },
   integration: { enabled: false, token: '' },
   ldap: { enabled: false, port: 389, password: '' },
@@ -448,7 +463,7 @@ export const COLLECTIONS = [
 ] as const
 export type CollectionName = (typeof COLLECTIONS)[number]
 
-export const SECTIONS = ['system', 'mail', 'security', 'updates', 'provisioning', 'watchdog', 'integration', 'ldap'] as const
+export const SECTIONS = ['system', 'mail', 'security', 'updates', 'provisioning', 'remote', 'watchdog', 'integration', 'ldap'] as const
 export type SectionName = (typeof SECTIONS)[number]
 
 export const DESTINATION_LABELS: Record<DestinationType, string> = {

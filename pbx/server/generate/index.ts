@@ -23,6 +23,8 @@ const MODULES = [
   'res_pjsip_mwi_body_generator', 'res_pjsip_pidf_body_generator', 'res_pjsip_dialog_info_body_generator',
   'res_pjsip_xpidf_body_generator', 'res_pjsip_logger', 'res_pjsip_path', 'res_pjsip_dlg_options',
   'res_pjsip_empty_info', 'res_pjsip_messaging', 'res_pjsip_history', 'res_pjsip_sips_contact', 'chan_pjsip',
+  // SIP über WebSocket (Mobil-App)
+  'res_http_websocket', 'res_pjsip_transport_websocket',
   'chan_bridge_media',
   // Brücken
   'bridge_simple', 'bridge_native_rtp', 'bridge_softmix', 'bridge_holding', 'bridge_builtin_features',
@@ -100,11 +102,23 @@ writetimeout = 5000
 }
 
 function rtpConf(cfg: PbxConfig): string {
+  // ICE nur für die Mobil-App (WebRTC); andere Endpunkte haben ice_support=no
   return `[general]
 rtpstart=${cfg.system.rtp_start}
 rtpend=${cfg.system.rtp_end}
 strictrtp=yes
-icesupport=no
+icesupport=${cfg.remote.enabled ? 'yes' : 'no'}
+`
+}
+
+/** HTTP-Server von Asterisk nur lokal: die Anlage reicht /ws von außen weiter */
+function httpConf(cfg: PbxConfig, gen: GenContext): string {
+  if (!cfg.remote.enabled) return '[general]\nenabled=no\n'
+  return `[general]
+enabled=yes
+bindaddr=127.0.0.1
+bindport=${gen.httpPort}
+servername=Phone4all
 `
 }
 
@@ -185,7 +199,8 @@ function queuesConf(cfg: PbxConfig): string {
     )
     for (const num of g.members) {
       const ext = cfg.extensions.find((e) => e.number === num)
-      if (ext) lines.push(`member => Local/${num}@p4a-qmember/n,0,${val(ext.name).replace(/,/g, ' ')},PJSIP/${num}`)
+      // Zustand über den Hinweis, der auch die Mobil-App umfasst
+      if (ext) lines.push(`member => Local/${num}@p4a-qmember/n,0,${val(ext.name).replace(/,/g, ' ')},${cfg.remote.enabled ? `hint:${num}@p4a-local` : `PJSIP/${num}`}`)
     }
     lines.push('')
   }
@@ -303,7 +318,7 @@ export function generate(cfg: PbxConfig, gen: GenContext): Record<string, string
     'ccss.conf': '[general]\n',
     'udptl.conf': '[general]\n',
     'acl.conf': '',
-    'http.conf': '[general]\nenabled=no\n',
+    'http.conf': httpConf(cfg, gen),
     'pjproject.conf': '',
     'stasis.conf': '',
     'cel.conf': '[general]\nenable=no\n',
