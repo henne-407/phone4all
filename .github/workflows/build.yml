@@ -45,6 +45,7 @@ jobs:
             dist/*.AppImage
             dist/*.deb
             dist/*.rpm
+            dist/*.tar.gz
 
   macos:
     needs: test

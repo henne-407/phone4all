@@ -13,6 +13,7 @@ import NotificationsOffIcon from '@mui/icons-material/NotificationsOff'
 import PlayIcon from '@mui/icons-material/PlayArrow'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import SpeakerIcon from '@mui/icons-material/VolumeUp'
+import SystemUpdateIcon from '@mui/icons-material/SystemUpdateAlt'
 import {
   Box,
   Button,
@@ -260,6 +261,13 @@ export function TopBar({ compact, showTitle }: { compact: boolean; showTitle: bo
           />
         </>
       )}
+      {['available', 'downloading', 'ready'].includes(state.update.status) && state.update.latest && (
+        <Tooltip title={`Update auf ${state.update.latest.version}`}>
+          <IconButton onClick={() => emit('open-preferences', 'general')} sx={noDrag} color="primary" aria-label="Update">
+            <SystemUpdateIcon />
+          </IconButton>
+        </Tooltip>
+      )}
       <Tooltip title="Hauptmenü">
         <IconButton onClick={open('main')} sx={noDrag} aria-label="Hauptmenü">
           <MoreIcon />
@@ -319,6 +327,7 @@ export function TopBar({ compact, showTitle }: { compact: boolean; showTitle: bo
           ['Verlauf löschen', () => void api.clearHistory()],
           ['Neu verbinden', () => void api.restartEngine()],
           ['Diagnose', () => emit('open-preferences', 'diagnose')],
+          ['Nach Updates suchen', () => emit('open-preferences', 'general')],
           null,
           ['Über SIP-Telefon', () => emit('about')],
           ['Beenden', () => void api.quit()],
