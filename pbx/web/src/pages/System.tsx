@@ -415,6 +415,82 @@ function Access() {
   )
 }
 
+function HomeAssistant() {
+  const { config, saveSection, reload, toast } = usePbx()
+  const [confirm, setConfirm] = useState(false)
+  const { enabled, token } = config.integration
+  const copy = (text: string): void =>
+    void navigator.clipboard
+      .writeText(text)
+      .then(() => toast('Kopiert'))
+      .catch(() => toast('Kopieren nicht möglich', 'error'))
+  const renew = (): void =>
+    void api
+      .post('/api/integration/token')
+      .then(reload)
+      .then(() => toast('Neuer Schlüssel erzeugt'))
+      .catch((e: Error) => toast(e.message, 'error'))
+  return (
+    <Section
+      title="Home Assistant"
+      description="Verpasste Anrufe, abgemeldete SIP-Konten und andere Probleme in Home Assistant anzeigen und für Automationen nutzen. Die Integration „Phone4all“ liegt im Ordner custom_components des Projekts (über HACS installierbar)."
+    >
+      <FormControlLabel
+        control={
+          <Switch
+            checked={enabled}
+            onChange={(e) =>
+              void saveSection('integration', { enabled: e.target.checked })
+                .then(() => toast('Gespeichert'))
+                .catch((err: Error) => toast(err.message, 'error'))
+            }
+          />
+        }
+        label="Schnittstelle für Home Assistant einschalten"
+      />
+      {enabled && (
+        <Stack sx={{ gap: 2, mt: 2 }}>
+          <TextField
+            label="Adresse der Anlage"
+            value={window.location.origin}
+            slotProps={{ input: { readOnly: true } }}
+            helperText="Über einen Reverse-Proxy (z. B. Pangolin) die HTTPS-Adresse eintragen, unter der Home Assistant die Anlage erreicht."
+            onFocus={(e) => e.target.select()}
+          />
+          <TextField
+            label="Zugriffsschlüssel"
+            value={token}
+            slotProps={{ input: { readOnly: true, sx: { fontFamily: 'monospace' } } }}
+            onFocus={(e) => e.target.select()}
+          />
+          <Stack direction="row" sx={{ gap: 1 }}>
+            <Button variant="contained" onClick={() => copy(token)}>
+              Schlüssel kopieren
+            </Button>
+            <Button onClick={() => setConfirm(true)}>Neuen Schlüssel erzeugen</Button>
+          </Stack>
+          <Alert severity="info" variant="outlined">
+            In Home Assistant unter <b>Einstellungen → Geräte &amp; Dienste → Integration hinzufügen → Phone4all</b> Adresse und Schlüssel
+            eintragen. Home Assistant fragt die Anlage alle 15 Sekunden unter <code>/api/integration/status</code> ab. Steht ein
+            Reverse-Proxy mit eigener Anmeldung davor, diesen Pfad dort freigeben – der Schlüssel schützt ihn.
+          </Alert>
+        </Stack>
+      )}
+      <ConfirmDialog
+        open={confirm}
+        title="Neuen Schlüssel erzeugen?"
+        text="Der bisherige Schlüssel wird ungültig. Home Assistant muss danach mit dem neuen Schlüssel neu eingerichtet werden."
+        confirm="Erzeugen"
+        onClose={() => setConfirm(false)}
+        onConfirm={() => {
+          setConfirm(false)
+          renew()
+        }}
+      />
+    </Section>
+  )
+}
+
 function Log() {
   const { toast } = usePbx()
   const [text, setText] = useState('')
@@ -459,6 +535,7 @@ const TABS: [string, () => React.JSX.Element][] = [
   ['Sicherung', Backup],
   ['Aktualisierung', Updates],
   ['Zugang', Access],
+  ['Home Assistant', HomeAssistant],
   ['Protokoll', Log],
 ]
 
@@ -467,7 +544,7 @@ export default function System() {
   const Page = TABS[tab][1]
   return (
     <Box>
-      <PageHeader overline="System" title="Einstellungen und Wartung" description="Name, E-Mail, Sicherheit, Sicherungen und Updates der Anlage." />
+      <PageHeader overline="System" title="Einstellungen und Wartung" description="Name, E-Mail, Sicherheit, Sicherungen, Updates und Home Assistant." />
       <Tabs value={tab} onChange={(_e, v: number) => setTab(v)} variant="scrollable" sx={{ mb: 2 }}>
         {TABS.map(([label]) => (
           <Tab key={label} label={label} />

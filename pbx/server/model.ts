@@ -233,6 +233,13 @@ export interface UpdateSettings {
   hour: number // Stunde für automatische Updates (0–23)
 }
 
+/** Schnittstelle für Hausautomation (Home Assistant u. a.) */
+export interface IntegrationSettings {
+  enabled: boolean
+  /** Zugriffsschlüssel (Bearer-Token), vergibt der Server */
+  token: string
+}
+
 /** Seiten und Startkarten der SIP-Telefon-App (wie dort benannt) */
 export type AppPage = 'home' | 'dial' | 'contacts' | 'calendar' | 'history'
 export type AppHomeCard = 'status' | 'today' | 'favorites' | 'recent' | 'events'
@@ -299,6 +306,7 @@ export interface PbxConfig {
   security: SecuritySettings
   updates: UpdateSettings
   provisioning: { discovery: boolean }
+  integration: IntegrationSettings
 }
 
 export const HANGUP: Destination = { type: 'hangup', target: '' }
@@ -344,6 +352,7 @@ export const DEFAULT_CONFIG: PbxConfig = {
   },
   updates: { channel: 'stable', auto: false, hour: 3 },
   provisioning: { discovery: true },
+  integration: { enabled: false, token: '' },
 }
 
 /** Listen der Konfiguration, die die Weboberfläche einheitlich bearbeitet. */
@@ -363,7 +372,7 @@ export const COLLECTIONS = [
 ] as const
 export type CollectionName = (typeof COLLECTIONS)[number]
 
-export const SECTIONS = ['system', 'mail', 'security', 'updates', 'provisioning'] as const
+export const SECTIONS = ['system', 'mail', 'security', 'updates', 'provisioning', 'integration'] as const
 export type SectionName = (typeof SECTIONS)[number]
 
 export const DESTINATION_LABELS: Record<DestinationType, string> = {
