@@ -73,6 +73,20 @@ describe('Ausgehende Anrufe', () => {
     cfg.trunks.push({ ...cfg.trunks[0], id: 't2', name: 'sipgate', numbers: ['040 999888'], inbound_default: to('extension', 'e12') })
     expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '040999888', cid: '10' })).toBe('local|p4a-local^12|Person 10|10|040999888')
     expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '+49 30 1234567', cid: '10' }).startsWith('local|')).toBe(true)
+    // Ohne Vorwahl, obwohl das Konto in einem anderen Ortsnetz liegt (Ortsvorwahl der Anlage: 30)
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '999888', cid: '10' })).toBe('local|p4a-local^12|Person 10|10|040999888')
+    // … und im eigenen Ortsnetz
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '1234567', cid: '10' }).startsWith('local|')).toBe(true)
+    // Fremde Ortsnummer geht weiter nach außen
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '5551234', cid: '10' }).startsWith('ok|')).toBe(true)
+  })
+
+  it('stellt eigene Nummern ohne Vorwahl auch ohne eingestellte Ortsvorwahl intern durch', () => {
+    const cfg = sampleConfig()
+    cfg.system.area_code = ''
+    cfg.trunks.push({ ...cfg.trunks[0], id: 't2', name: 'sipgate', numbers: ['040 999888'], inbound_default: to('extension', 'e12') })
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '999888', cid: '10' })).toBe('local|p4a-local^12|Person 10|10|040999888')
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '5551234', cid: '10' })).toBe('invalid')
   })
 
   it('beachtet Berechtigungen und Sonderrufnummern', () => {
