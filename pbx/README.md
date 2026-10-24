@@ -30,15 +30,44 @@ Sprache hinter Docker-NAT unzuverlässig sind. Benötigte Ports:
 
 | Port | Zweck |
 | --- | --- |
-| 8080/tcp | Weboberfläche und Einrichtung der App |
+| 8080/tcp | Weboberfläche, Einrichtung der App, SIP über WebSocket (`/ws`) für die Mobil-App |
 | 5060/udp+tcp, 5061/tcp | SIP, SIP über TLS |
 | 10000–10999/udp | Sprache (RTP) |
 | 15060/udp | Suche der App im lokalen Netz |
+| 3478/udp+tcp | TURN-Server für die Sprache der Mobil-App unterwegs |
 
 Für Anrufe von außen ist bei den gängigen Anbietern keine Portfreigabe nötig, die
-Anlage meldet sich selbst an. Telefone außerhalb des Büros brauchen eine Freigabe
-von 5060/5061 und 10000–10999 im Router sowie die öffentliche Adresse unter
-*System → Allgemein*.
+Anlage meldet sich selbst an. Für die Mobil-App unterwegs reicht ein Reverse-Proxy mit
+HTTPS (siehe [Zugriff von unterwegs](#zugriff-von-unterwegs)). Andere Telefone außerhalb
+des Büros brauchen eine Freigabe von 5060/5061 und 10000–10999 im Router sowie die
+öffentliche Adresse unter *System → Allgemein*.
+
+## Zugriff von unterwegs
+
+Die [Mobil-App](../mobile/README.md) für Android und iPhone braucht von außen nur HTTPS:
+Einrichtung, Kontakte und Kalender laufen wie bei der Desktop-App über `/provision/…`,
+SIP als WebSocket über `/ws` (die Anlage reicht das an Asterisk weiter), die Sprache per
+WebRTC mit DTLS-SRTP. Weil die Anlage hinter dem Proxy keine eigene öffentliche Adresse
+hat, läuft die Sprache über den eingebauten TURN-Server (coturn, Port 3478). Er leitet
+nur zur Anlage selbst weiter, nicht ins Internet, und vergibt Zugangsdaten, die nach
+acht Tagen ablaufen.
+
+Mit **Pangolin** (oder einem anderen Proxy, der WebSockets durchreicht):
+
+1. HTTP-Ressource anlegen, z. B. `telefon.example.de` → `http://<Anlage>:8080`.
+2. In den Regeln der Ressource für `/provision/*`, `/setup/*` und `/ws` die Pangolin-Anmeldung
+   umgehen. Die App weist sich dort mit dem geheimen Einrichtungslink bzw. dem
+   SIP-Passwort aus; die Weboberfläche bleibt hinter der Pangolin-Anmeldung.
+3. Raw-Ressource für TCP **und** UDP auf Port 3478 → `<Anlage>:3478` (Raw-Ressourcen in
+   Pangolin aktivieren und den Port am Pangolin-Server öffnen).
+4. In der Weboberfläche unter *System → Fernzugriff* die öffentliche Adresse
+   `https://telefon.example.de` eintragen. Einrichtungslinks, QR-Codes und Einladungen
+   zeigen dann dorthin.
+
+Jede Nebenstelle bekommt dafür ein zweites Gerät `<nummer>-app` (gleiches Passwort).
+Anrufe klingeln überall gleichzeitig, *Nicht stören*, Weiterleitungen und Gruppen gelten
+für beide. Fehlanmeldungen über den WebSocket sperren die Adresse des Telefons (aus
+`X-Forwarded-For` des Proxys), nicht den Proxy.
 
 ## Funktionen
 
@@ -58,6 +87,8 @@ von 5060/5061 und 10000–10999 im Router sowie die öffentliche Adresse unter
 - **Zentrale Kontakte** (auch CSV-Import) für Anrufernamen, werden an die Apps verteilt
 - **Zentrale Kalender** mit eigenen Terminen (z. B. Betriebsferien) oder den
   Feiertagen des Bundeslandes; erscheinen in jeder App
+- **Mobil-App** für Android und iPhone, auch unterwegs über HTTPS (SIP über WebSocket,
+  WebRTC, eingebauter TURN-Server), Einrichtung per QR-Code
 - **App-Profile**: legen fest, welche Bereiche, Startansicht und Startseiten-Karten
   die SIP-Telefon-App zeigt, und können Startseite und Kontodaten sperren
 - **Anrufliste**, laufende Gespräche, Anmeldestatus aller Geräte
@@ -90,11 +121,16 @@ Token ist zugleich die Berechtigung.
 
 | Anfrage | Ergebnis |
 | --- | --- |
-| `GET /provision/<token>` | Profil: Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `revision` |
+| `GET /provision/<token>` | Profil: Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `remote`, `revision` |
 | `GET /provision/<token>/revision` | `{ profile, events }` – ändert sich, sobald Profil oder Termine sich ändern |
 | `GET /provision/<token>/events?start=…&end=…&calendar=…` | Termine im Zeitraum (höchstens 400 Tage) |
 | `PUT /provision/<token>/events/<kalender>/<uid>` | Termin anlegen oder ändern (nur beschreibbare Kalender) |
 | `DELETE /provision/<token>/events/<kalender>/<uid>` | Termin löschen |
+
+`remote` ist der Zugang für die Mobil-App (`null`, wenn der Fernzugriff aus ist):
+`{ websocket: "wss://…/ws", user: "<nummer>-app", domain, ice_servers: [RTCIceServer …] }`.
+Steht unter *System → Fernzugriff* eine öffentliche Adresse, zeigen `url` und
+`websocket` immer dorthin.
 
 Termine: `{ uid, summary, start, end, allDay, location, description }`. Ganztägige
 Termine haben Datumsangaben (`2026-12-24`, Ende exklusiv), alle anderen ISO-Zeitpunkte.

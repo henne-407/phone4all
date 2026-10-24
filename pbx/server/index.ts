@@ -12,7 +12,8 @@ import { sendMail } from './mail'
 import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, SECTIONS, type SectionName } from './model'
 import { PATHS, SETTINGS } from './paths'
 import { PROVIDERS } from './providers'
-import { appLink, baseUrl, landingPage, profile, startDiscovery, visibleCalendars } from './provisioning'
+import { appLink, baseUrl, landingPage, linkBase, profile, startDiscovery, visibleCalendars } from './provisioning'
+import { Turn, WsProxy, appEndpoint } from './remote'
 import {
   extensionPlan,
   feature,
@@ -30,7 +31,10 @@ import { Updater } from './updates'
 const store = new ConfigStore()
 const auth = new Auth()
 const asterisk = new Asterisk()
-const guard = new Guard(() => store.config.security)
+const turn = new Turn()
+const ws = new WsProxy(() => store.config.remote.enabled, (ip) => guard.isBanned(ip))
+// Fehlanmeldungen über den WebSocket-Proxy der echten Adresse des Telefons zuordnen
+const guard = new Guard(() => store.config.security, (port) => ws.clientOf(port))
 const updater = new Updater()
 const calendars = new CalendarStore(() => store.config)
 auth.init()
@@ -43,10 +47,14 @@ function applySoon(): void {
   applyTimer = setTimeout(() => {
     applyTimer = null
     asterisk.apply(store.config, guard.banned()).catch((e) => console.error('Konfiguration:', e))
+    turn.apply(store.config)
   }, 300)
 }
 
-guard.on('changed', applySoon)
+guard.on('changed', () => {
+  for (const ip of guard.banned()) ws.kick(ip)
+  applySoon()
+})
 asterisk.on('ami', (e) => guard.onAmiEvent(e))
 
 // -- Interne Schnittstelle für den Wählplan (nur von localhost) ------------------
@@ -92,6 +100,12 @@ function requestBase(r: Request): string {
   return baseUrl(host, store.config, (r.raw.headers['x-forwarded-proto'] as string | undefined) ?? 'http')
 }
 
+/** Profil der Nebenstelle mit Zugangsdaten für den TURN-Server */
+function extProfile(r: Request, ext: Extension) {
+  const base = requestBase(r)
+  return profile(store.config, ext, base, turn.iceServers(store.config, linkBase(store.config, base), appEndpoint(ext.number)))
+}
+
 pub.get('/api/session', (r) => ({
   authenticated: auth.valid(r.cookies[SESSION_COOKIE]),
   name: store.config.system.name,
@@ -120,7 +134,7 @@ pub.post('/api/logout', (r) => {
 pub.get('/provision/:token', (r) => {
   const ext = store.config.extensions.find((e) => e.provision_token && e.provision_token === r.params.token)
   if (!ext) throw new HttpError(404, 'Unbekannter Einrichtungslink.')
-  return profile(store.config, ext, requestBase(r))
+  return extProfile(r, ext)
 })
 
 function tokenExtension(token: string): Extension {
@@ -141,7 +155,7 @@ function range(r: Request): [number, number] {
 /** Die App fragt regelmäßig, ob sich Profil oder Termine geändert haben. */
 pub.get('/provision/:token/revision', (r) => {
   const ext = tokenExtension(r.params.token)
-  return { profile: profile(store.config, ext, requestBase(r)).revision, events: String(calendars.revision) }
+  return { profile: extProfile(r, ext).revision, events: String(calendars.revision) }
 })
 
 /** Termine der zentralen Kalender, die diese Nebenstelle sieht */
@@ -180,14 +194,14 @@ pub.post('/provision', async (r) => {
     auth.failed(r.ip)
     throw new HttpError(403, 'Nebenstelle oder Einrichtungs-PIN stimmen nicht.')
   }
-  return profile(store.config, ext, requestBase(r))
+  return extProfile(r, ext)
 })
 
 /** Seite für den Link aus der Einladungs-E-Mail */
 pub.get('/setup/:token', (r) => {
   const ext = store.config.extensions.find((e) => e.provision_token && e.provision_token === r.params.token)
   if (!ext) throw new HttpError(404, 'Unbekannter Einrichtungslink.')
-  sendText(r.res, 200, landingPage(store.config, ext, requestBase(r)), 'text/html; charset=utf-8')
+  sendText(r.res, 200, landingPage(store.config, ext, linkBase(store.config, requestBase(r))), 'text/html; charset=utf-8')
 })
 
 // -- Verwaltung (angemeldet) ----------------------------------------------------------
@@ -247,7 +261,7 @@ api.post('/api/extensions/:id/renew', (r) => {
 api.get('/api/extensions/:id/provisioning', (r) => {
   const ext = store.config.extensions.find((e) => e.id === r.params.id)
   if (!ext) throw new HttpError(404, 'Nebenstelle nicht gefunden.')
-  const base = requestBase(r)
+  const base = linkBase(store.config, requestBase(r))
   return { base, setup: `${base}/setup/${ext.provision_token}`, app: appLink(base, ext), pin: ext.provision_pin }
 })
 
@@ -255,7 +269,7 @@ api.post('/api/extensions/:id/invite', async (r) => {
   const ext = store.config.extensions.find((e) => e.id === r.params.id)
   if (!ext) throw new HttpError(404, 'Nebenstelle nicht gefunden.')
   if (!ext.email) throw new HttpError(400, 'Für diese Nebenstelle ist keine E-Mail-Adresse eingetragen.')
-  const base = requestBase(r)
+  const base = linkBase(store.config, requestBase(r))
   await sendMail(
     store.config.mail,
     ext.email,
@@ -301,6 +315,7 @@ api.get('/api/status', async () => ({
   bans: guard.bans,
   update: updater.info,
   version: SETTINGS.version,
+  remote: { enabled: store.config.remote.enabled, turn: turn.state, connections: ws.count },
 }))
 
 api.put('/api/state/:ext', async (r) => {
@@ -475,6 +490,8 @@ async function main(): Promise<void> {
   asterisk.prepareDirs()
   await asterisk.apply(store.config, guard.banned())
   const server = http.createServer((req, res) => void handle(req, res))
+  server.on('upgrade', (req, socket, head: Buffer) => ws.upgrade(req, socket, head))
+  turn.apply(store.config)
   server.listen(SETTINGS.httpPort, () => console.log(`Weboberfläche auf Port ${SETTINGS.httpPort}`))
   startDiscovery(() => store.config)
   asterisk.start()
@@ -503,6 +520,7 @@ async function main(): Promise<void> {
 
   const shutdown = async (): Promise<void> => {
     server.close()
+    turn.stop()
     await asterisk.stop()
     process.exit(0)
   }

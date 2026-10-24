@@ -1,0 +1,94 @@
+{
+  "expo": {
+    "name": "SIP-Telefon",
+    "slug": "sip-telefon",
+    "scheme": "sip-telefon",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#fef7ff"
+    },
+    "ios": {
+      "bundleIdentifier": "de.phone4all.siptelefon",
+      "supportsTablet": true,
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio",
+          "voip"
+        ],
+        "NSLocalNetworkUsageDescription": "Damit SIP-Telefon die Telefonanlage im lokalen Netz findet und erreicht.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        },
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "de.phone4all.siptelefon",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.CAMERA",
+        "android.permission.READ_CONTACTS",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.VIBRATE"
+      ],
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WRITE_CONTACTS",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "microphonePermission": "SIP-Telefon braucht das Mikrofon für Gespräche.",
+          "cameraPermission": "SIP-Telefon nutzt die Kamera nur zum Scannen des Einrichtungs-QR-Codes."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "SIP-Telefon nutzt die Kamera nur zum Scannen des Einrichtungs-QR-Codes.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Damit Anrufer mit Namen erscheinen und Sie Kontakte direkt anrufen können."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#6750a4"
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ]
+  }
+}

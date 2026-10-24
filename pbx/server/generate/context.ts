@@ -18,6 +18,8 @@ export interface GenContext {
     asteriskData: string // mitgelieferte Klänge (/usr/share/asterisk)
   }
   ami: { port: number; secret: string }
+  /** Port des HTTP-Servers von Asterisk (WebSocket für die Mobil-App) */
+  httpPort: number
   tls: { cert: string; key: string } | null
   banned: string[]
   /** Benutzer, unter dem Asterisk läuft (leer = aktueller Benutzer) */

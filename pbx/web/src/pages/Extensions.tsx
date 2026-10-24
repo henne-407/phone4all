@@ -18,6 +18,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
+import QRCode from 'qrcode'
 import { useEffect, useState } from 'react'
 import type { Extension, Permission } from '../../../server/model'
 import { api } from '../api'
@@ -45,9 +46,13 @@ function copy(text: string, toast: (t: string) => void): void {
 function Provisioning({ ext }: { ext: Extension }) {
   const { toast, reload } = usePbx()
   const [info, setInfo] = useState<{ setup: string; app: string; pin: string; base: string } | null>(null)
+  const [qr, setQr] = useState('')
   useEffect(() => {
     void api.get<typeof info>(`/api/extensions/${ext.id}/provisioning`).then(setInfo)
   }, [ext.id, ext.provision_token, ext.provision_pin])
+  useEffect(() => {
+    if (info) void QRCode.toDataURL(info.setup, { margin: 1, width: 360 }).then(setQr)
+  }, [info])
   if (!info) return null
   const invite = async (): Promise<void> => {
     try {
@@ -69,8 +74,12 @@ function Provisioning({ ext }: { ext: Extension }) {
       </Typography>
       <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
         Den Link öffnen oder in der App unter Einstellungen → Konto → „Von Telefonanlage einrichten“ die Nebenstelle
-        und die PIN eingeben. Im selben Netz findet die App die Anlage von selbst.
+        und die PIN eingeben. Im selben Netz findet die App die Anlage von selbst. Auf dem Handy den QR-Code mit der
+        App scannen.
       </Typography>
+      {qr && (
+        <Box component="img" src={qr} alt="QR-Code zur Einrichtung" sx={{ width: 180, height: 180, borderRadius: 2, bgcolor: '#fff', mb: 2 }} />
+      )}
       <FormGrid>
         <TextField
           label="Einrichtungslink"

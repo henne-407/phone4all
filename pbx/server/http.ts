@@ -2,6 +2,7 @@
 
 import fs from 'node:fs'
 import type http from 'node:http'
+import net from 'node:net'
 import path from 'node:path'
 
 export class HttpError extends Error {
@@ -85,6 +86,32 @@ export class Router {
   }
 }
 
+function isPrivate(ip: string): boolean {
+  return (
+    ip === '127.0.0.1' ||
+    ip === '::1' ||
+    /^10\./.test(ip) ||
+    /^192\.168\./.test(ip) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ||
+    /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip) ||
+    /^f[cd]/i.test(ip)
+  )
+}
+
+/**
+ * Adresse des Aufrufers. Kommt die Verbindung von einem Proxy im eigenen Netz, zählt der
+ * letzte Eintrag in X-Forwarded-For – den hat der Proxy selbst angehängt, frühere
+ * Einträge kann der Aufrufer fälschen.
+ */
+export function clientIp(raw: http.IncomingMessage): string {
+  const direct = (raw.socket.remoteAddress ?? '').replace(/^::ffff:/, '')
+  const fwd = raw.headers['x-forwarded-for']
+  if (!fwd || !isPrivate(direct)) return direct
+  const list = (Array.isArray(fwd) ? fwd.join(',') : fwd).split(',').map((s) => s.trim()).filter(Boolean)
+  const last = (list.at(-1) ?? '').replace(/^::ffff:/, '')
+  return net.isIP(last) ? last : direct
+}
+
 export function makeRequest(raw: http.IncomingMessage, res: http.ServerResponse, limit: number): Request {
   const url = new URL(raw.url ?? '/', 'http://localhost')
   const cookies = Object.fromEntries(
@@ -115,7 +142,7 @@ export function makeRequest(raw: http.IncomingMessage, res: http.ServerResponse,
     path: url.pathname,
     query: url.searchParams,
     params: {},
-    ip: (raw.socket.remoteAddress ?? '').replace(/^::ffff:/, ''),
+    ip: clientIp(raw),
     cookies,
     body,
     json: async <T>() => {

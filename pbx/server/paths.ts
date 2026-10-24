@@ -40,6 +40,9 @@ export const PATHS = {
 export const SETTINGS = {
   httpPort: Number(env.PBX_HTTP_PORT) || 8080,
   amiPort: Number(env.PBX_AMI_PORT) || 5038,
+  /** HTTP-Server von Asterisk (nur 127.0.0.1) für SIP über WebSocket */
+  asteriskHttpPort: Number(env.PBX_ASTERISK_HTTP_PORT) || 8088,
+  turnserver: env.PBX_TURNSERVER || '/usr/bin/turnserver',
   asterisk: env.PBX_ASTERISK_BIN || 'asterisk',
   /** Benutzer für Asterisk (im Container „asterisk“, lokal leer) */
   runUser: env.PBX_ASTERISK_USER ?? '',

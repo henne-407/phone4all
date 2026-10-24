@@ -22,7 +22,7 @@ import {
   Typography,
 } from '@mui/material'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { MailSettings, SecuritySettings, SystemSettings, UpdateSettings } from '../../../server/model'
+import type { MailSettings, RemoteSettings, SecuritySettings, SystemSettings, UpdateSettings } from '../../../server/model'
 import { type UpdateInfo, api } from '../api'
 import { ChipsInput, ConfirmDialog, FormGrid, Full, NumberField, PageHeader, Section, Select } from '../components/common'
 import { usePbx } from '../state'
@@ -415,6 +415,89 @@ function Access() {
   )
 }
 
+const TURN_STATE: Record<string, [string, 'success' | 'default' | 'error' | 'warning']> = {
+  running: ['TURN-Server läuft', 'success'],
+  off: ['TURN-Server aus', 'default'],
+  missing: ['TURN-Server nicht installiert', 'warning'],
+  error: ['TURN-Server gestört', 'error'],
+}
+
+function Remote() {
+  const { config, saveSection } = usePbx()
+  const [r, set] = useDraft<RemoteSettings>(config.remote)
+  const [status] = useStatus(10000)
+  const host = (() => {
+    try {
+      return new URL(r.public_url).hostname
+    } catch {
+      return 'telefon.example.de'
+    }
+  })()
+  const turn = status?.remote ? TURN_STATE[status.remote.turn] : null
+  return (
+    <>
+      <Section
+        title="Mobil-App von unterwegs"
+        description="Die SIP-Telefon-App für Android und iPhone erreicht die Anlage nur über HTTPS: Einrichtung, Kontakte und Kalender wie bisher, SIP als WebSocket unter /ws. Die Sprache ist per DTLS-SRTP verschlüsselt und läuft über den eingebauten TURN-Server."
+      >
+        <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap', mb: 2 }}>
+          {turn && <Chip color={turn[1]} variant="outlined" label={turn[0]} />}
+          {status?.remote && <Chip variant="outlined" label={`Verbundene Apps: ${status.remote.connections}`} />}
+        </Stack>
+        <FormGrid>
+          <Full>
+            <FormControlLabel control={<Switch checked={r.enabled} onChange={(e) => set({ enabled: e.target.checked })} />} label="Mobil-App zulassen (SIP über WebSocket, WebRTC)" />
+          </Full>
+          <Full>
+            <TextField
+              fullWidth
+              label="Öffentliche Adresse"
+              placeholder="https://telefon.example.de"
+              value={r.public_url}
+              onChange={(e) => set({ public_url: e.target.value.trim() })}
+              helperText="Adresse des Reverse-Proxys (z. B. Pangolin). Einrichtungslinks, QR-Codes und Einladungen zeigen dann dorthin, auch wenn Sie die Weboberfläche im LAN öffnen."
+            />
+          </Full>
+          <Full>
+            <FormControlLabel control={<Switch checked={r.turn} onChange={(e) => set({ turn: e.target.checked })} />} label="Eingebauter TURN-Server für die Sprache" />
+          </Full>
+          <NumberField label="TURN-Port" value={r.turn_port} onChange={(v) => set({ turn_port: v })} min={1} />
+          <TextField label="TURN-Adresse für die App" placeholder={`${host}:${r.turn_port}`} value={r.turn_host} onChange={(e) => set({ turn_host: e.target.value.trim() })} helperText="Leer = Name der öffentlichen Adresse mit TURN-Port" />
+        </FormGrid>
+        <SaveBar onSave={() => saveSection('remote', r)} />
+      </Section>
+      <Section title="Einrichtung in Pangolin" description="So gelangt die App über einen Pangolin-Reverse-Proxy zur Anlage. Andere Proxys (Traefik, Caddy, nginx) funktionieren genauso, sie müssen WebSockets durchreichen.">
+        <Box component="ol" sx={{ m: 0, pl: 3, '& li': { mb: 1.5 } }}>
+          <li>
+            <Typography variant="body2">
+              <b>HTTP-Ressource</b> anlegen, z. B. <code>{host}</code>, Ziel <code>http://&lt;Adresse der Anlage&gt;:8080</code>. Pangolin stellt das Zertifikat aus.
+            </Typography>
+          </li>
+          <li>
+            <Typography variant="body2">
+              Unter <b>Regeln</b> für die Pfade <code>/provision/*</code>, <code>/setup/*</code> und <code>/ws</code> die Anmeldung umgehen
+              („Bypass Auth“). Die App meldet sich dort mit ihrem geheimen Einrichtungslink bzw. SIP-Passwort an; die Weboberfläche bleibt hinter der
+              Pangolin-Anmeldung.
+            </Typography>
+          </li>
+          <li>
+            <Typography variant="body2">
+              <b>TCP- und UDP-Ressource</b> (Raw) auf Port <code>{r.turn_port}</code> zur Anlage, Port <code>{r.turn_port}</code>, für die Sprache. Dazu müssen
+              Raw-Ressourcen in Pangolin aktiviert und der Port am Pangolin-Server offen sein.
+            </Typography>
+          </li>
+          <li>
+            <Typography variant="body2">
+              Oben die öffentliche Adresse <code>https://{host}</code> eintragen und speichern. Dann in der App den QR-Code der Nebenstelle scannen
+              (<i>Nebenstellen → Bearbeiten</i>).
+            </Typography>
+          </li>
+        </Box>
+      </Section>
+    </>
+  )
+}
+
 function Log() {
   const { toast } = usePbx()
   const [text, setText] = useState('')
@@ -459,6 +542,7 @@ const TABS: [string, () => React.JSX.Element][] = [
   ['Sicherung', Backup],
   ['Aktualisierung', Updates],
   ['Zugang', Access],
+  ['Fernzugriff', Remote],
   ['Protokoll', Log],
 ]
 

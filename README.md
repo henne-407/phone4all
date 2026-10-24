@@ -10,6 +10,10 @@ Die SIP- und Audio-Arbeit macht [baresip](https://github.com/baresip/baresip), d
 Hintergrundprozess gestartet und über sein `ctrl_tcp`-Modul gesteuert wird. Die App
 selbst ist mit Electron, React und [Material UI](https://mui.com/) gebaut.
 
+Für **Android und iPhone** gibt es die Mobil-App in [mobile/](mobile/README.md). Sie
+arbeitet mit der [Phone4all-Telefonanlage](pbx/README.md) zusammen und funktioniert
+auch unterwegs über HTTPS.
+
 ## Installation
 
 Fertige Pakete baut GitHub Actions bei jedem Push (Artefakte) bzw. für jeden

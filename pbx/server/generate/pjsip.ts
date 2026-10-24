@@ -2,6 +2,7 @@
 
 import type { Extension, PbxConfig, Trunk } from '../model'
 import { formatFor, toE164 } from '../numbers'
+import { appEndpoint } from '../remote'
 import type { GenContext } from './context'
 
 /** Werte für Konfigurationsdateien: keine Zeilenumbrüche, kein Semikolon (Kommentarzeichen). */
@@ -63,6 +64,47 @@ function extensionSections(cfg: PbxConfig, ext: Extension): string {
       `max_contacts=${Math.max(1, Math.min(10, ext.max_devices || 1))}`,
       'remove_existing=yes',
       'qualify_frequency=60',
+      ext.voicemail.enabled && `mailboxes=${ext.number}@default`,
+    ]),
+  ].join('\n')
+}
+
+/** Codecs, die WebRTC-Telefone beherrschen */
+export function webrtcCodecs(list: string[]): string {
+  const ok = list.filter((c) => ['opus', 'g722', 'alaw', 'ulaw'].includes(c))
+  return (ok.length ? ok : ['opus', 'alaw', 'ulaw']).join(',')
+}
+
+/**
+ * Zweites Gerät jeder Nebenstelle für die Mobil-App: SIP über WebSocket, Sprache per
+ * WebRTC (ICE, DTLS-SRTP). Gleiches Passwort, Benutzer „<nummer>-app“. Keine Netz-
+ * beschränkung, weil alle Verbindungen über den Proxy der Anlage (127.0.0.1) kommen.
+ */
+function appSections(cfg: PbxConfig, ext: Extension): string {
+  const id = appEndpoint(ext.number)
+  const cid = ext.outbound_cid ? toE164(ext.outbound_cid, cfg.system.country_code, cfg.system.area_code) : ''
+  return [
+    section(
+      id,
+      [
+        `callerid="${val(ext.name).replace(/"/g, '')}" <${ext.number}>`,
+        `auth=${id}`,
+        `aors=${id}`,
+        ext.voicemail.enabled && `mailboxes=${ext.number}@default`,
+        `set_var=P4A_EXT=${ext.number}`,
+        cid && `set_var=P4A_CID=${cid}`,
+      ],
+      'p4a-app',
+    ),
+    section(id, ['type=auth', 'auth_type=userpass', `username=${id}`, `password=${val(ext.secret)}`]),
+    section(id, [
+      'type=aor',
+      'max_contacts=3',
+      'remove_existing=yes',
+      'remove_unavailable=yes',
+      'qualify_frequency=30',
+      'default_expiration=300',
+      'maximum_expiration=900',
       ext.voicemail.enabled && `mailboxes=${ext.number}@default`,
     ]),
   ].join('\n')
@@ -140,6 +182,30 @@ function trunkSections(cfg: PbxConfig, t: Trunk, ctx: GenContext): string {
   return out.join('\n')
 }
 
+function appTemplate(cfg: PbxConfig): string {
+  const s = cfg.system
+  return section('p4a-app', [
+    'type=endpoint',
+    'context=p4a-from-ext',
+    'transport=transport-ws',
+    'webrtc=yes',
+    'disallow=all',
+    `allow=${webrtcCodecs(s.codecs)}`,
+    'direct_media=no',
+    'rtp_symmetric=yes',
+    'force_rport=yes',
+    'rewrite_contact=yes',
+    'dtmf_mode=rfc4733',
+    `language=${val(s.language)}`,
+    'tone_zone=de',
+    'named_call_group=alle',
+    'named_pickup_group=alle',
+    'allow_subscribe=yes',
+    'send_pai=yes',
+    'moh_suggest=default',
+  ], '!')
+}
+
 export function pjsipConf(cfg: PbxConfig, ctx: GenContext): string {
   const s = cfg.system
   const nat = s.external_address.trim()
@@ -173,6 +239,11 @@ export function pjsipConf(cfg: PbxConfig, ctx: GenContext): string {
       ]),
     )
   }
+  if (cfg.remote.enabled) {
+    // Läuft über den HTTP-Server von Asterisk (http.conf), die Anlage reicht /ws weiter. Die
+    // Adresse muss 0.0.0.0 sein: Asterisk bindet auch die Sprache (RTP) daran
+    parts.push(section('transport-ws', ['type=transport', 'protocol=ws', 'bind=0.0.0.0']))
+  }
   if (ctx.banned.length) {
     parts.push(section('p4a-bans', ['type=acl', ...ctx.banned.map((ip) => `deny=${val(ip)}`)]))
   }
@@ -196,6 +267,7 @@ export function pjsipConf(cfg: PbxConfig, ctx: GenContext): string {
       'moh_suggest=default',
       'media_encryption_optimistic=yes',
     ], '!'),
+    ...(cfg.remote.enabled ? [appTemplate(cfg)] : []),
     section('p4a-trunk', [
       'type=endpoint',
       'context=p4a-from-trunk',
@@ -214,6 +286,7 @@ export function pjsipConf(cfg: PbxConfig, ctx: GenContext): string {
     ], '!'),
   )
   for (const ext of cfg.extensions) parts.push(extensionSections(cfg, ext))
+  if (cfg.remote.enabled) for (const ext of cfg.extensions) parts.push(appSections(cfg, ext))
   for (const t of cfg.trunks.filter((t) => t.enabled && t.registrar.trim())) parts.push(trunkSections(cfg, t, ctx))
   return parts.join('\n')
 }
