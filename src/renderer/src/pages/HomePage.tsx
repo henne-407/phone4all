@@ -136,6 +136,15 @@ function StatusCard({ grow }: { grow: boolean }) {
         <StatusDot kind={state.reg.kind} dnd={state.settings.dnd} />
         <Typography noWrap>{state.reg.text}</Typography>
       </Stack>
+      {state.settings.registered && (state.watchdog.level === 'warning' || state.watchdog.level === 'error') && (
+        <Typography
+          variant="caption"
+          onClick={() => emit('open-preferences', 'diagnose')}
+          sx={{ color: 'text.secondary', cursor: 'pointer', mt: -0.5 }}
+        >
+          Verbindung wird automatisch wiederhergestellt · Diagnose
+        </Typography>
+      )}
       <FormControlLabel
         labelPlacement="start"
         sx={{ mx: 0, justifyContent: 'space-between' }}

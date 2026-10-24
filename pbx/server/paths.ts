@@ -14,6 +14,7 @@ export const PATHS = {
   config: path.join(DATA, 'config.json'),
   state: path.join(DATA, 'state.json'),
   admin: path.join(DATA, 'admin.json'),
+  watchdog: path.join(DATA, 'watchdog.json'),
   backups: path.join(DATA, 'backups'),
   calendars: path.join(DATA, 'calendars'),
   sounds: path.join(DATA, 'sounds', 'custom'),

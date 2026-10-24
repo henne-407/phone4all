@@ -8,6 +8,7 @@ import { CalendarStore } from './calendars'
 import { Auth, SESSION_COOKIE, SESSION_MAX_AGE } from './auth'
 import { readCalls, tailLog } from './cdr'
 import { describeAgent, gigasetFile, requestMac } from './dect'
+import { loadJson, saveJson } from './files'
 import { integrationReport, validToken } from './integration'
 import { LdapServer } from './ldap'
 import { HttpError, type Request, Router, makeRequest, sendFile, sendJson, sendText, serveStatic } from './http'
@@ -30,6 +31,7 @@ import { listSounds, saveSound, soundDir, soundFile, type SoundKind } from './so
 import { ConfigStore, type ExportFile, ValidationError, fillSecrets, newPin, newSecret } from './store'
 import type { DectBase } from './model'
 import { Updater } from './updates'
+import { type WatchEvent, Watchdog } from './watchdog'
 
 const store = new ConfigStore()
 const auth = new Auth()
@@ -39,6 +41,54 @@ const updater = new Updater()
 const calendars = new CalendarStore(() => store.config)
 const ldap = new LdapServer(() => store.config)
 auth.init()
+
+// -- Watchdog: Überwachung und Selbstheilung ------------------------------------------
+
+const watchdog = new Watchdog(
+  {
+    state: () => asterisk.state,
+    processRunning: () => asterisk.processRunning,
+    amiConnected: () => asterisk.ami.connected,
+    ping: () => asterisk.ping(),
+    reconnectAmi: () => asterisk.reconnectAmi(),
+    restart: (reason) => asterisk.kill(`Vom Watchdog neu gestartet: ${reason}`),
+    trunks: () => store.config.trunks.filter((t) => t.enabled && t.register && !t.ip_auth && t.username.trim()),
+    registrations: () => asterisk.registrations(),
+    register: (id) => asterisk.register(id),
+    reloadPjsip: () => asterisk.reloadPjsip(),
+    freeBytes: () => {
+      try {
+        const st = fs.statfsSync(PATHS.data)
+        return st.bavail * st.bsize
+      } catch {
+        return null
+      }
+    },
+  },
+  () => store.config.watchdog,
+)
+watchdog.events = loadJson<WatchEvent[]>(PATHS.watchdog, [])
+
+let saveEventsTimer: NodeJS.Timeout | null = null
+const mailed = new Map<string, number>() // Prüfung → Zeit der letzten Störungsmeldung
+watchdog.on('event', (e: WatchEvent) => {
+  saveEventsTimer ??= setTimeout(() => {
+    saveEventsTimer = null
+    saveJson(PATHS.watchdog, watchdog.events, 0o644)
+  }, 2000)
+  // Störungen per E-Mail: höchstens alle 30 Minuten je Prüfung, Entwarnung nach einer Meldung
+  const to = store.config.watchdog.notify_email
+  if (!to || (e.level !== 'error' && e.level !== 'ok')) return
+  const last = mailed.get(e.check)
+  if (e.level === 'ok' && last === undefined) return
+  if (e.level === 'error' && last !== undefined && e.time - last < 30 * 60000) return
+  if (e.level === 'ok') mailed.delete(e.check)
+  else mailed.set(e.check, e.time)
+  const subject = `${store.config.system.name}: ${e.level === 'ok' ? 'Störung behoben' : 'Störung'}`
+  sendMail(store.config.mail, to, subject, `${new Date(e.time).toLocaleString('de-DE')}\n\n${e.text}\n\nDetails in der Weboberfläche unter System → Diagnose.`).catch(
+    (err: Error) => console.error('Störungsmeldung per E-Mail:', err.message),
+  )
+})
 
 // -- Konfiguration übernehmen (gebündelt, damit viele Änderungen nur ein Reload sind)
 
@@ -120,6 +170,18 @@ pub.post('/api/logout', (r) => {
   auth.logout(r.cookies[SESSION_COOKIE] ?? '')
   r.res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`)
   return { ok: true }
+})
+
+/** Zustand für Docker-Healthcheck, Home Assistant und Überwachung von außen (ohne Details) */
+pub.get('/health', (r) => {
+  const status = watchdog.status()
+  const asteriskDown = status.checks.find((c) => c.id === 'asterisk')?.level === 'error'
+  sendJson(r.res, asteriskDown ? 503 : 200, {
+    status: watchdog.overall(),
+    checks: Object.fromEntries(status.checks.map((c) => [c.id, c.level])),
+    checked: status.checked,
+    version: SETTINGS.version,
+  })
 })
 
 /** Die App ruft ihr Profil mit dem geheimen Token ab (auch zum Auffrischen). */
@@ -387,7 +449,19 @@ api.get('/api/status', async () => ({
   bans: guard.bans,
   update: updater.info,
   version: SETTINGS.version,
+  watchdog: watchdog.status(),
 }))
+
+api.get('/api/watchdog', () => ({ ...watchdog.status(), events: [...watchdog.events].reverse() }))
+api.post('/api/watchdog/check', async () => {
+  await watchdog.tick()
+  return { ...watchdog.status(), events: [...watchdog.events].reverse() }
+})
+api.delete('/api/watchdog/events', () => {
+  watchdog.events = []
+  saveJson(PATHS.watchdog, [], 0o644)
+  return { ok: true }
+})
 
 api.put('/api/state/:ext', async (r) => {
   const { dnd, cfu } = await r.json<{ dnd?: boolean; cfu?: string }>()
@@ -572,6 +646,9 @@ async function main(): Promise<void> {
   server.listen(SETTINGS.httpPort, () => console.log(`Weboberfläche auf Port ${SETTINGS.httpPort}`))
   startDiscovery(() => store.config)
   asterisk.start()
+  watchdog.log('info', 'asterisk', `Verwaltungsdienst gestartet (Version ${SETTINGS.version})`)
+  watchdog.start()
+  setTimeout(() => void watchdog.tick(), 15000).unref()
 
   // Tägliche Sicherung, stündliche Update-Prüfung, automatisches Update im Zeitfenster
   let lastBackup = ''
@@ -596,6 +673,8 @@ async function main(): Promise<void> {
   setInterval(() => void tick().catch(() => undefined), 3600000)
 
   const shutdown = async (): Promise<void> => {
+    watchdog.stop()
+    saveJson(PATHS.watchdog, watchdog.events, 0o644)
     server.close()
     ldap.stop()
     await asterisk.stop()
