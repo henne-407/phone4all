@@ -1,0 +1,64 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Phone4all-Telefonanlage",
+        "description": "In der Weboberfläche der Anlage unter System → Home Assistant die Schnittstelle einschalten und Adresse und Zugriffsschlüssel kopieren.",
+        "data": {
+          "url": "Adresse der Anlage",
+          "token": "Zugriffsschlüssel",
+          "verify_ssl": "SSL-Zertifikat prüfen"
+        },
+        "data_description": {
+          "url": "Zum Beispiel http://192.168.1.10:8080 oder die HTTPS-Adresse des Reverse-Proxys",
+          "verify_ssl": "Nur bei selbst signierten Zertifikaten ausschalten"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Neuer Zugriffsschlüssel",
+        "description": "Die Anlage unter {url} hat den Zugriffsschlüssel abgelehnt. Den aktuellen Schlüssel unter System → Home Assistant eintragen.",
+        "data": {
+          "token": "Zugriffsschlüssel"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Die Anlage ist nicht erreichbar.",
+      "invalid_auth": "Der Zugriffsschlüssel ist falsch oder die Schnittstelle ist ausgeschaltet.",
+      "proxy_auth": "Ein Reverse-Proxy verlangt eine eigene Anmeldung. Dort den Pfad /api/integration/status ohne Anmeldung freigeben.",
+      "unsupported": "Die Anlage ist zu alt. Bitte auf Version 0.3.0 oder neuer aktualisieren.",
+      "unknown": "Unerwarteter Fehler."
+    },
+    "abort": {
+      "already_configured": "Diese Anlage ist schon eingerichtet.",
+      "reauth_successful": "Der neue Zugriffsschlüssel funktioniert."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "problem": { "name": "Problem" },
+      "asterisk": { "name": "Asterisk" },
+      "update": { "name": "Update" },
+      "trunk": { "name": "SIP-Konto {trunk}" }
+    },
+    "sensor": {
+      "missed_today": { "name": "Verpasste Anrufe heute" },
+      "last_missed": { "name": "Letzter verpasster Anruf" },
+      "active_calls": { "name": "Laufende Gespräche" }
+    },
+    "event": {
+      "missed_call_event": {
+        "name": "Verpasster Anruf",
+        "state_attributes": {
+          "event_type": { "state": { "missed_call": "Verpasster Anruf" } }
+        }
+      },
+      "problem_event": {
+        "name": "Störungsmeldung",
+        "state_attributes": {
+          "event_type": { "state": { "problem": "Problem", "resolved": "Behoben" } }
+        }
+      }
+    }
+  }
+}

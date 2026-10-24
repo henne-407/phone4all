@@ -1,0 +1,12 @@
+{
+  "domain": "phone4all",
+  "name": "Phone4all-Telefonanlage",
+  "codeowners": ["@henne-407"],
+  "config_flow": true,
+  "documentation": "https://github.com/henne-407/phone4all/tree/main/pbx#home-assistant",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/henne-407/phone4all/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
