@@ -59,6 +59,17 @@ describe('Ausgehende Anrufe', () => {
     expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '5551234', cid: '10' })).toBe('ok|trunk-t1|+49305551234|+49301234568')
   })
 
+  it('setzt die Ortsvorwahl auch vor kurze Ortsnummern', () => {
+    const cfg = sampleConfig()
+    cfg.extensions[0].outbound_cid = '030 1234568'
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '555', cid: '10' })).toBe('ok|trunk-t1|+4930555|+49301234568')
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '5555', cid: '10' })).toBe('ok|trunk-t1|+49305555|+49301234568')
+    cfg.trunks[0].numbers.push('030 777')
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '777', cid: '10' }).startsWith('local|')).toBe(true)
+    cfg.system.area_code = ''
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '555', cid: '10' })).toBe('invalid')
+  })
+
   it('nimmt das SIP-Konto der eigenen Nummer zuerst', () => {
     const cfg = sampleConfig()
     cfg.trunks.push({ ...cfg.trunks[0], id: 't2', name: 'sipgate', number_format: 'e164', numbers: ['040 999888'], default_cid: '' })

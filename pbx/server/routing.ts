@@ -177,7 +177,12 @@ export function routeOutbound(cfg: PbxConfig, req: OutboundRequest): string {
 
   const dialed = cleanNumber(req.num)
   const special = SPECIAL_NUMBER.test(dialed)
-  const e164 = special ? dialed : toE164(dialed, cc, cfg.system.area_code)
+  let e164 = special ? dialed : toE164(dialed, cc, cfg.system.area_code)
+  // Kurze Ortsnummern (3–4 Stellen): interne Nummern sind hier schon abgefangen
+  // (p4a-local), also gilt alles ohne 0 als Ortsgespräch
+  if (!special && !e164.startsWith('+') && cfg.system.area_code && /^[1-9]\d{2,}$/.test(dialed)) {
+    e164 = `+${cc}${cfg.system.area_code}${dialed}`
+  }
   if (!special && !e164.startsWith('+')) return reply('invalid')
 
   if (special && dialed.startsWith('118') && !actor?.allow_premium) return reply('deny')
