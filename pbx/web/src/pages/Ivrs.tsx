@@ -19,6 +19,26 @@ export default function Ivrs() {
       description="„Für den Vertrieb drücken Sie die 1 …“ – Anrufer wählen per Taste ihr Ziel. Die Ansage legst du unter „Ansagen“ an."
       emptyText="Ein Sprachmenü verteilt Anrufer per Tastendruck an Abteilungen."
       emptyIcon={<DialpadIcon />}
+      columns={[
+        { label: 'Name', render: (i) => <b>{i.name}</b> },
+        { label: 'Intern', render: (i) => i.number || '–', hideOnMobile: true },
+        { label: 'Ansage', render: (i) => config.announcements.find((a) => a.id === i.announcement)?.name ?? 'Ohne Ansage', hideOnMobile: true },
+        {
+          label: 'Tasten',
+          render: (i) =>
+            i.options.length ? (
+              <Stack sx={{ gap: 0.25 }}>
+                {i.options.map((o) => (
+                  <Typography key={o.digit} variant="body2">
+                    <b>{o.digit}</b> {describeDestination(o.destination, config)}
+                  </Typography>
+                ))}
+              </Stack>
+            ) : (
+              '–'
+            ),
+        },
+      ]}
       card={(i) => (
         <Box>
           <Typography variant="h6">{i.name}</Typography>

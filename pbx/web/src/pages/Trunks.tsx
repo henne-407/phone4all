@@ -213,6 +213,28 @@ export default function Trunks() {
       emptyText="Ohne SIP-Konto telefoniert die Anlage nur intern. Vorlagen für Telekom, Vodafone, 1&1, sipgate und weitere füllen alles Wichtige vor."
       emptyIcon={<CallIcon />}
       newItem={() => ({ provider: '' })}
+      columns={[
+        {
+          label: 'Name',
+          render: (t) => (
+            <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5 }}>
+              <Initials name={t.name} size={30} />
+              {t.name}
+            </Stack>
+          ),
+        },
+        { label: 'Anbieter', render: (t) => providers.find((p) => p.key === t.provider)?.name.split(' (')[0] ?? 'Eigener Anbieter', hideOnMobile: true },
+        { label: 'Server', render: (t) => t.registrar, hideOnMobile: true },
+        {
+          label: 'Status',
+          render: (t) => {
+            const [text, color] = state(t)
+            return <StatusDot color={color} label={text} />
+          },
+        },
+        { label: 'Rufnummern', render: (t) => t.numbers.join(', ') || '–' },
+        { label: 'Eingehend', render: (t) => describeDestination(t.inbound_default, config), hideOnMobile: true },
+      ]}
       card={(t) => {
         const [text, color] = state(t)
         const routes = config.outbound.filter((r) => r.trunks.includes(t.id))
