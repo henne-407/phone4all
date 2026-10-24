@@ -10,6 +10,11 @@ import PaletteIcon from '@mui/icons-material/Palette'
 import PlayIcon from '@mui/icons-material/PlayArrow'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import CircleIcon from '@mui/icons-material/Circle'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import ErrorIcon from '@mui/icons-material/Error'
+import InfoIcon from '@mui/icons-material/Info'
+import RemoveCircleIcon from '@mui/icons-material/RemoveCircleOutlined'
+import WarningIcon from '@mui/icons-material/Warning'
 import {
   Accordion,
   AccordionDetails,
@@ -22,7 +27,9 @@ import {
   DialogActions,
   DialogContent,
   IconButton,
+  ListItem,
   ListItemButton,
+  ListItemIcon,
   ListItemText,
   MenuItem,
   Radio,
@@ -37,7 +44,7 @@ import {
 } from '@mui/material'
 import { useEffect, useState } from 'react'
 import { SCHEMES, STYLES, THEMES, swatch } from '../../../../shared/themes'
-import type { AccountSettings, DesignStyle } from '../../../../shared/types'
+import type { AccountSettings, Diagnose, DesignStyle, WatchLevel } from '../../../../shared/types'
 import { api } from '../../api'
 import { convertToWav, playWav } from '../../audio'
 import { useApp } from '../../state'
@@ -557,6 +564,118 @@ function GeneralTab() {
   )
 }
 
+// -- Diagnose (Watchdog) -------------------------------------------------------------
+
+function LevelIcon({ level }: { level: WatchLevel | 'off' }) {
+  if (level === 'ok') return <CheckCircleIcon color="success" />
+  if (level === 'warning') return <WarningIcon color="warning" />
+  if (level === 'error') return <ErrorIcon color="error" />
+  if (level === 'off') return <RemoveCircleIcon color="disabled" />
+  return <InfoIcon color="info" />
+}
+
+const fmtTime = (ms: number): string => new Date(ms).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'medium' })
+
+function DiagnoseTab() {
+  const { state, toast } = useApp()
+  const [data, setData] = useState<Diagnose | null>(null)
+  const [busy, setBusy] = useState(false)
+  const load = (): void => void api.getDiagnose().then(setData)
+  useEffect(() => {
+    load()
+    const t = setInterval(load, 5000)
+    return () => clearInterval(t)
+  }, [state.settings.watchdog])
+
+  const checkNow = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      setData(await api.checkNow())
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <Group
+        title="Zustand"
+        description={
+          data?.checked
+            ? `Zuletzt geprüft: ${new Date(data.checked).toLocaleTimeString('de-DE')} · ${data.repairs} Störungen seit dem Start selbst behoben`
+            : 'Wird alle 20 Sekunden geprüft.'
+        }
+        action={
+          <Button size="small" disabled={busy} onClick={() => void checkNow()}>
+            Jetzt prüfen
+          </Button>
+        }
+      >
+        {(data?.checks ?? []).map((c) => (
+          <ListItem key={c.id}>
+            <ListItemIcon>
+              <LevelIcon level={c.level} />
+            </ListItemIcon>
+            <ListItemText primary={c.name} secondary={c.text} />
+          </ListItem>
+        ))}
+      </Group>
+
+      <Group title="Watchdog">
+        <SwitchRow
+          title="Verbindung automatisch wiederherstellen"
+          subtitle="Meldet bei Abbruch neu an, startet die SIP-Engine neu und verbindet nach Netzwechsel oder Ruhezustand neu – nie während eines Gesprächs"
+          checked={state.settings.watchdog}
+          onChange={(v) => void api.setWatchdog(v)}
+        />
+        <ListItemButton
+          onClick={() => {
+            void api.restartEngine()
+            toast('Verbinde neu …')
+          }}
+        >
+          <ListItemText primary="Jetzt neu verbinden" secondary="Startet die SIP-Engine neu und meldet sich an" />
+          <RefreshIcon fontSize="small" />
+        </ListItemButton>
+        <ListItemButton onClick={() => void api.openLog()}>
+          <ListItemText primary="Protokoll der SIP-Engine öffnen" secondary="baresip.log und watchdog.json" />
+          <LaunchIcon fontSize="small" />
+        </ListItemButton>
+      </Group>
+
+      <Group
+        title="Ereignisse"
+        description="Störungen und was der Watchdog dagegen getan hat, neueste zuerst."
+        action={
+          <Button
+            size="small"
+            color="error"
+            disabled={!data?.events.length}
+            onClick={() => void api.clearDiagnose().then(load)}
+          >
+            Leeren
+          </Button>
+        }
+      >
+        {data?.events.length ? (
+          data.events.slice(0, 100).map((e, i) => (
+            <ListItem key={i}>
+              <ListItemIcon>
+                <LevelIcon level={e.level} />
+              </ListItemIcon>
+              <ListItemText primary={e.text} secondary={fmtTime(e.time)} />
+            </ListItem>
+          ))
+        ) : (
+          <Row>
+            <ListItemText secondary="Keine Ereignisse." />
+          </Row>
+        )}
+      </Group>
+    </>
+  )
+}
+
 // -- Dialog ----------------------------------------------------------------------------
 
 const TABS = [
@@ -564,6 +683,7 @@ const TABS = [
   ['calendar', 'Kalender'],
   ['contacts', 'Kontakte'],
   ['general', 'Allgemein'],
+  ['diagnose', 'Diagnose'],
 ]
 
 export function PreferencesDialog({ page, onClose }: { page: string; onClose: () => void }) {
@@ -622,6 +742,7 @@ export function PreferencesDialog({ page, onClose }: { page: string; onClose: ()
         {tab === 'calendar' && <CalendarTab />}
         {tab === 'contacts' && <ContactsTab onClose={() => void close()} />}
         {tab === 'general' && <GeneralTab />}
+        {tab === 'diagnose' && <DiagnoseTab />}
       </DialogContent>
       <DialogActions sx={{ px: 3, py: 1.5 }}>
         <Button variant="contained" onClick={() => void close()}>

@@ -1,0 +1,87 @@
+blueprint:
+  name: Phone4all – Benachrichtigung bei verpassten Anrufen und Störungen
+  description: >-
+    Schickt eine Nachricht an ein Handy (Home-Assistant-App), wenn ein Anruf an der
+    Telefonanlage verpasst wurde oder die Anlage ein Problem meldet, etwa ein
+    abgemeldetes SIP-Konto. Kurze Aussetzer (z. B. beim Neuladen der Anlage) werden
+    erst nach der Wartezeit gemeldet und entfallen, wenn sie vorher behoben sind.
+  domain: automation
+  source_url: https://github.com/henne-407/phone4all/blob/main/blueprints/automation/phone4all/benachrichtigung.yaml
+  input:
+    notify_device:
+      name: Gerät
+      description: Handy mit der Home-Assistant-App
+      selector:
+        device:
+          filter:
+            integration: mobile_app
+    missed_calls:
+      name: Verpasste Anrufe melden
+      default: true
+      selector:
+        boolean:
+    problems:
+      name: Störungen melden
+      default: true
+      selector:
+        boolean:
+    grace:
+      name: Wartezeit bei Störungen
+      description: So lange muss ein Problem bestehen, bevor es gemeldet wird
+      default:
+        minutes: 2
+      selector:
+        duration:
+
+mode: parallel
+max: 20
+
+triggers:
+  - trigger: event
+    event_type: phone4all_missed_call
+    id: missed
+  - trigger: event
+    event_type: phone4all_problem
+    id: problem
+
+variables:
+  missed_calls: !input missed_calls
+  problems: !input problems
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: missed
+          - condition: template
+            value_template: "{{ missed_calls }}"
+        sequence:
+          - domain: mobile_app
+            type: notify
+            device_id: !input notify_device
+            title: "{{ 'Neue Voicemail' if trigger.event.data.voicemail else 'Verpasster Anruf' }}"
+            message: >-
+              {% set d = trigger.event.data %}
+              {{ d.caller_name ~ ' (' ~ d.caller ~ ')' if d.caller_name else (d.caller or 'Unbekannt') }}
+              an {{ d.called }} um {{ as_timestamp(d.time) | timestamp_custom('%H:%M') }} Uhr
+      - conditions:
+          - condition: trigger
+            id: problem
+          - condition: template
+            value_template: "{{ problems }}"
+        sequence:
+          - wait_for_trigger:
+              - trigger: event
+                event_type: phone4all_problem_resolved
+                event_data:
+                  key: "{{ trigger.event.data.key }}"
+                  entry_id: "{{ trigger.event.data.entry_id }}"
+            timeout: !input grace
+            continue_on_timeout: true
+          - condition: template
+            value_template: "{{ wait.trigger is none }}"
+          - domain: mobile_app
+            type: notify
+            device_id: !input notify_device
+            title: "Störung: {{ trigger.event.data.pbx }}"
+            message: "{{ trigger.event.data.message }}"

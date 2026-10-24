@@ -60,6 +60,21 @@ export function createApi(app: App) {
     setDnd: (active: boolean) => phone.setDnd(active),
     setRegistered: (registered: boolean) => phone.setRegistered(registered),
     restartEngine: () => phone.restartEngine(),
+
+    // -- Diagnose (Watchdog) -------------------------------------------------
+    getDiagnose: () => app.watchdog.diagnose(),
+    checkNow: async () => {
+      await app.watchdog.tick()
+      return app.watchdog.diagnose()
+    },
+    setWatchdog: (enabled: boolean) => {
+      store.settings.watchdog = enabled
+      store.saveSettings()
+      app.watchdog.log('info', enabled ? 'Überwachung eingeschaltet' : 'Überwachung ausgeschaltet')
+      void app.watchdog.tick()
+      app.stateChanged()
+    },
+    clearDiagnose: () => app.clearDiagnose(),
     setAudio: (kind: 'source' | 'sink' | 'alert', device: string) => phone.setAudio(kind, device),
     refreshDevices: () => app.refreshDevices(),
     setRingtone: (key: string) => phone.setRingtone(key),

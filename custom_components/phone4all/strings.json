@@ -1,0 +1,64 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Phone4all PBX",
+        "description": "Enable the Home Assistant interface in the PBX web interface under System → Home Assistant and copy the address and access key.",
+        "data": {
+          "url": "Address of the PBX",
+          "token": "Access key",
+          "verify_ssl": "Verify SSL certificate"
+        },
+        "data_description": {
+          "url": "For example http://192.168.1.10:8080 or the HTTPS address of your reverse proxy",
+          "verify_ssl": "Turn off only for self-signed certificates"
+        }
+      },
+      "reauth_confirm": {
+        "title": "New access key",
+        "description": "The PBX at {url} rejected the access key. Enter the current key from System → Home Assistant.",
+        "data": {
+          "token": "Access key"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "The PBX cannot be reached.",
+      "invalid_auth": "The access key is wrong or the interface is turned off.",
+      "proxy_auth": "A reverse proxy asks for its own login. Allow the path /api/integration/status without login there.",
+      "unsupported": "The PBX is too old. Please update it to version 0.3.0 or newer.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This PBX is already set up.",
+      "reauth_successful": "The new access key works."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "problem": { "name": "Problem" },
+      "asterisk": { "name": "Asterisk" },
+      "update": { "name": "Update" },
+      "trunk": { "name": "SIP account {trunk}" }
+    },
+    "sensor": {
+      "missed_today": { "name": "Missed calls today" },
+      "last_missed": { "name": "Last missed call" },
+      "active_calls": { "name": "Active calls" }
+    },
+    "event": {
+      "missed_call_event": {
+        "name": "Missed call",
+        "state_attributes": {
+          "event_type": { "state": { "missed_call": "Missed call" } }
+        }
+      },
+      "problem_event": {
+        "name": "Problem report",
+        "state_attributes": {
+          "event_type": { "state": { "problem": "Problem", "resolved": "Resolved" } }
+        }
+      }
+    }
+  }
+}

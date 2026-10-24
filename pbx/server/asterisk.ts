@@ -81,6 +81,76 @@ export class Asterisk extends EventEmitter {
   constructor() {
     super()
     this.ami.on('event', (e: AmiMessage) => this.emit('ami', e))
+    // Verbindung weg, Asterisk läuft aber noch (z. B. nach „core restart“): neu verbinden
+    this.ami.on('disconnected', () => {
+      const proc = this.proc
+      if (!proc || this.stopping) return
+      this.state = 'starting'
+      this.message = 'Verbindung zu Asterisk wird wiederhergestellt'
+      void this.connectAmi(proc)
+    })
+  }
+
+  /** Der Asterisk-Prozess läuft (unabhängig von der AMI-Verbindung). */
+  get processRunning(): boolean {
+    return this.proc !== null
+  }
+
+  /** Lebenszeichen über das AMI */
+  async ping(): Promise<boolean> {
+    try {
+      const [res] = await this.ami.action({ Action: 'Ping' }, 5000)
+      return res?.Response === 'Success'
+    } catch {
+      return false
+    }
+  }
+
+  /** Einmaliger Versuch, die AMI-Verbindung wieder aufzubauen. */
+  async reconnectAmi(): Promise<boolean> {
+    if (!this.proc) return false
+    try {
+      await this.ami.connect(SETTINGS.amiPort, 'phone4all', this.amiSecret)
+      this.state = 'running'
+      this.message = ''
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** Hängendes Asterisk beenden; der Neustart folgt wie nach einem Absturz. */
+  async kill(reason: string): Promise<void> {
+    const proc = this.proc
+    if (!proc) return
+    this.message = reason
+    proc.kill('SIGTERM')
+    await new Promise<void>((resolve) => {
+      const t = setTimeout(() => {
+        proc.kill('SIGKILL')
+        resolve()
+      }, 5000)
+      proc.once('exit', () => {
+        clearTimeout(t)
+        resolve()
+      })
+    })
+  }
+
+  /** SIP-Konto sofort neu anmelden (id ohne „trunk-“). */
+  async register(trunk: string): Promise<void> {
+    await this.ami.command(`pjsip send register trunk-${trunk}`)
+  }
+
+  async reloadPjsip(): Promise<void> {
+    await this.ami.command('module reload res_pjsip.so')
+  }
+
+  async registrations(): Promise<{ trunk: string; status: string }[]> {
+    const regs = await this.ami.list({ Action: 'PJSIPShowRegistrationsOutbound' })
+    return regs
+      .filter((r) => r.Event === 'OutboundRegistrationDetail')
+      .map((r) => ({ trunk: (r.ObjectName ?? '').replace(/^trunk-/, ''), status: r.Status ?? '' }))
   }
 
   context(banned: string[]): GenContext {
@@ -238,9 +308,9 @@ export class Asterisk extends EventEmitter {
     }
     if (!this.ami.connected) return result
     try {
-      const [contacts, regs, channels, uptime] = await Promise.all([
+      const [contacts, registrations, channels, uptime] = await Promise.all([
         this.ami.list({ Action: 'PJSIPShowContacts' }),
-        this.ami.list({ Action: 'PJSIPShowRegistrationsOutbound' }),
+        this.registrations(),
         this.ami.list({ Action: 'CoreShowChannels' }),
         this.ami.command('core show uptime seconds'),
       ])
@@ -259,9 +329,7 @@ export class Asterisk extends EventEmitter {
         })
       }
       result.endpoints = [...byAor.values()]
-      result.registrations = regs
-        .filter((r) => r.Event === 'OutboundRegistrationDetail')
-        .map((r) => ({ trunk: (r.ObjectName ?? '').replace(/^trunk-/, ''), status: r.Status ?? '' }))
+      result.registrations = registrations
       const calls = new Map<string, ActiveCall>()
       for (const ch of channels.filter((c) => c.Event === 'CoreShowChannel')) {
         const id = ch.Linkedid || ch.Uniqueid

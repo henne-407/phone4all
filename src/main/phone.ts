@@ -66,6 +66,7 @@ export class Phone {
   private pendingMini = false
   private reminded = new Set<string>()
   private engineRunning = false
+  engineState: EngineState = 'starting'
 
   constructor(
     private store: Store,
@@ -125,6 +126,30 @@ export class Phone {
     return this.engine.stopAndWait()
   }
 
+  // -- Für den Watchdog --------------------------------------------------------
+
+  /** Soll eine Verbindung bestehen? (Konto eingerichtet und nicht abgemeldet) */
+  connectionWanted(): boolean {
+    return this.store.settings.registered && accountLine(this.store.account, '') !== null
+  }
+
+  /** Lebenszeichen: baresip beantwortet eine Abfrage innerhalb von 5 Sekunden. */
+  ping(): Promise<boolean> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), 5000)
+      this.engine.send('reginfo', '', (ok) => {
+        clearTimeout(timer)
+        resolve(ok)
+      })
+    })
+  }
+
+  /** Neu anmelden, ohne baresip neu zu starten */
+  reregister(): void {
+    this.setReg('Verbinde …', 'busy')
+    this.engine.send('uareg', String(Number(this.store.account.regint) || 600))
+  }
+
   // -- Einstellungen mit Wirkung auf die Engine ------------------------------
 
   setRegistered(registered: boolean): void {
@@ -173,6 +198,7 @@ export class Phone {
 
   private onEngineState(state: EngineState, message: string): void {
     this.engineRunning = state === 'running'
+    this.engineState = state
     if (state === 'error') {
       this.setReg('Fehler', 'error')
       this.setBanner({ text: message, button: 'Erneut versuchen', action: 'reconnect' })

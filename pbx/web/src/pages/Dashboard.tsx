@@ -2,6 +2,7 @@ import CallIcon from '@mui/icons-material/Call'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import PersonIcon from '@mui/icons-material/Person'
 import PhoneInTalkIcon from '@mui/icons-material/PhoneInTalk'
+import MonitorHeartIcon from '@mui/icons-material/MonitorHeart'
 import ShieldIcon from '@mui/icons-material/Shield'
 import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked'
 import { Alert, Box, Button, Card, CardActionArea, CardContent, Chip, List, ListItem, ListItemIcon, ListItemText, Stack, Typography, useTheme } from '@mui/material'
@@ -54,6 +55,8 @@ export default function Dashboard() {
   const regTrunks = config.trunks.filter((t) => t.enabled && t.register && !t.ip_auth)
   const registered = regTrunks.filter((t) => status?.registrations.find((r) => r.trunk === t.id)?.status === 'Registered').length
   const calls = status?.calls ?? []
+  const problems = status?.watchdog.checks.filter((c) => c.level !== 'ok') ?? []
+  const worst = problems.some((c) => c.level === 'error') ? 'error' : problems.length ? 'warning' : 'ok'
   const steps: [boolean, string, string][] = [
     [config.extensions.length > 0, 'Nebenstellen anlegen', 'extensions'],
     [config.trunks.length > 0, 'SIP-Konto für Anrufe nach außen einrichten', 'trunks'],
@@ -105,7 +108,15 @@ export default function Dashboard() {
           color={status?.bans.length ? theme.palette.error.main : theme.m3.node.hangup}
           icon={<ShieldIcon />}
           sub="nach Fehlanmeldungen"
-          onClick={() => go('system')}
+          onClick={() => go('system', 'sicherheit')}
+        />
+        <Stat
+          label="Diagnose"
+          value={worst === 'ok' ? 'In Ordnung' : worst === 'error' ? 'Störung' : 'Warnung'}
+          color={worst === 'ok' ? theme.m3.node.number : worst === 'error' ? theme.palette.error.main : theme.palette.warning.main}
+          icon={<MonitorHeartIcon />}
+          sub={problems.length ? problems.map((c) => c.name).join(', ') : `${status?.watchdog.repairs ?? 0} Störungen selbst behoben`}
+          onClick={() => go('system', 'diagnose')}
         />
       </Stack>
       {steps.some(([done]) => !done) && (

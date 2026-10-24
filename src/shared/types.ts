@@ -116,6 +116,8 @@ export interface Settings {
   registered: boolean
   run_in_background: boolean
   autostart: boolean
+  /** Watchdog: Verbindung bei Abbruch selbst wiederherstellen */
+  watchdog: boolean
   /** Von einer Phone4all-Telefonanlage eingerichtet (leer = von Hand) */
   provisioning: {
     pbx: string
@@ -215,6 +217,32 @@ export interface Platform {
   secureStorage: boolean // Passwörter im Schlüsselbund verschlüsselt
 }
 
+/** Watchdog (Diagnose): ok = wieder in Ordnung, info = Maßnahme */
+export type WatchLevel = 'ok' | 'info' | 'warning' | 'error'
+export type CheckLevel = 'ok' | 'warning' | 'error' | 'off'
+
+export interface WatchEvent {
+  time: number
+  level: WatchLevel
+  text: string
+}
+
+export interface WatchCheck {
+  id: 'engine' | 'registration' | 'network'
+  name: string
+  level: CheckLevel
+  text: string
+  since: number
+}
+
+export interface Diagnose {
+  enabled: boolean
+  checked: number
+  repairs: number
+  checks: WatchCheck[]
+  events: WatchEvent[] // neueste zuerst
+}
+
 export interface AppState {
   platform: Platform
   reg: { text: string; kind: RegKind }
@@ -237,4 +265,6 @@ export interface AppState {
   devices: { sources: AudioDevice[]; sinks: AudioDevice[] }
   ringtones: { key: string; name: string; description: string; available: boolean }[]
   missedUnseen: boolean
+  /** Zusammenfassung des Watchdogs */
+  watchdog: { level: CheckLevel; text: string; repairs: number }
 }

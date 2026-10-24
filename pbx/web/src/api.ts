@@ -2,6 +2,13 @@
 
 import type { PbxConfig } from '../../server/model'
 import type { ProviderTemplate } from '../../server/providers'
+import type { WatchEvent, WatchdogStatus } from '../../server/model'
+
+export type { WatchEvent, WatchdogStatus }
+
+export interface WatchdogResponse extends WatchdogStatus {
+  events: WatchEvent[]
+}
 
 export class ApiError extends Error {
   constructor(
@@ -66,6 +73,7 @@ export interface StatusResponse {
   update: UpdateInfo
   version: string
   remote: { enabled: boolean; turn: 'off' | 'running' | 'missing' | 'error'; connections: number }
+  watchdog: WatchdogStatus
 }
 
 export interface UpdateInfo {
