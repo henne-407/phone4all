@@ -79,7 +79,10 @@ services:
 - Die Weboberfläche von TrueNAS belegt Port 80/443, nicht 8080 – das passt. Ist 8080
   belegt, `PBX_HTTP_PORT` setzen.
 - Updates gehen auf beiden Wegen: über den Knopf in der Weboberfläche der Anlage (dafür
-  der Docker-Socket) oder über *Update* in der App-Übersicht von TrueNAS.
+  der Docker-Socket) oder über *Update* in der App-Übersicht von TrueNAS. Zeigt TrueNAS
+  trotz neuer Version „Up to date“, in *System → Shell*
+  `sudo docker pull ghcr.io/henne-407/phone4all-pbx:latest` ausführen und die App
+  stoppen und wieder starten.
 
 ## Variante D: VM (Proxmox, VMware, Hyper-V, VirtualBox)
 

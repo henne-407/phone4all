@@ -50,6 +50,14 @@ Beim ersten Anruf fragt macOS nach dem Mikrofon.
 **Windows** – Installer starten; Windows SmartScreen warnt, weil der Installer
 nicht signiert ist (*Weitere Informationen* → *Trotzdem ausführen*).
 
+**Updates** – die App sucht alle sechs Stunden nach einem neuen Release
+(*Einstellungen → Allgemein → Aktualisierung*, dort auch *Nach Updates suchen*).
+Ist eine neue Version da, erscheint oben ein Update-Symbol. Mit *Automatisch
+aktualisieren* lädt sie die Version selbst und spielt sie ein, sobald das Fenster
+geschlossen ist und kein Gespräch läuft. Das klappt mit AppImage, `.rpm`/`.deb`
+(fragt per pkexec nach dem Passwort), der Installation aus `scripts/install-linux.sh`
+(lädt das `.tar.gz`), macOS und Windows.
+
 ## Einrichtung
 
 Menü (⋮) → **Einstellungen** → **Konto**: Server/Domain, Benutzername und Passwort

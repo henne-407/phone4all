@@ -140,6 +140,16 @@ export function createApi(app: App) {
     },
     quit: () => app.quit(),
 
+    // -- Aktualisierung --------------------------------------------------------------
+    checkUpdate: () => app.updater.check(),
+    installUpdate: () => attempt(() => app.updater.install(true)),
+    openReleasePage: () => shell.openExternal(app.updater.state.latest?.url ?? 'https://github.com/henne-407/phone4all/releases'),
+    setAutoUpdate: (enabled: boolean) => {
+      store.settings.auto_update = enabled
+      store.saveSettings()
+      app.stateChanged()
+    },
+
     // -- Einrichtung durch die Telefonanlage ---------------------------------------
     pbxDiscover: () => discover(),
     pbxFromLink: (link: string) => attempt(() => app.provisioning.fromLink(link)),

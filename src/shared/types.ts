@@ -118,6 +118,8 @@ export interface Settings {
   autostart: boolean
   /** Watchdog: Verbindung bei Abbruch selbst wiederherstellen */
   watchdog: boolean
+  /** Neue Versionen selbst laden und einspielen, sobald kein Gespräch läuft */
+  auto_update: boolean
   /** Von einer Phone4all-Telefonanlage eingerichtet (leer = von Hand) */
   provisioning: {
     pbx: string
@@ -267,4 +269,18 @@ export interface AppState {
   missedUnseen: boolean
   /** Zusammenfassung des Watchdogs */
   watchdog: { level: CheckLevel; text: string; repairs: number }
+  update: UpdateState
+}
+
+/** Stand der App-Aktualisierung */
+export interface UpdateState {
+  status: 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'installing' | 'error'
+  current: string
+  latest: { version: string; notes: string; url: string } | null
+  /** Ohne Paket für diese Installation nur Download-Seite öffnen */
+  canInstall: boolean
+  /** Download-Fortschritt 0…1 */
+  progress: number
+  error: string
+  checked: number
 }

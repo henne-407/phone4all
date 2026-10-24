@@ -31,6 +31,7 @@ import { type Call, type NotifyOptions, Phone, type PhoneUi } from './phone'
 import { Provisioning } from './provisioning'
 import { RINGTONES, ringtonePath } from './ringtones'
 import { Store } from './store'
+import { Updater } from './updater'
 import { Watchdog, networkKey } from './watchdog'
 
 const APP_ID = 'de.hpieper.SipTelefon'
@@ -86,6 +87,7 @@ export class App {
   readonly phone: Phone
   readonly provisioning: Provisioning
   readonly watchdog: Watchdog
+  readonly updater: Updater
   readonly api: Api
   /** Einrichtungslink, den die Oberfläche noch nicht abgeholt hat */
   private pendingLink: string | null = null
@@ -174,6 +176,15 @@ export class App {
         saveJson(this.watchdogPath, this.watchdog.events)
       }, 2000)
     })
+    this.updater = new Updater(
+      {
+        changed: () => this.stateChanged(),
+        busy: () => this.phone.calls.size > 0,
+        visible: () => Boolean(this.main?.isVisible() && !this.main.isMinimized()),
+        quit: () => this.quit(),
+      },
+      () => this.store.settings.auto_update,
+    )
     this.api = createApi(this)
     if (!this.store.settings.home.cards.length) this.store.settings.home.cards = DEFAULT_CARDS
     nativeTheme.themeSource = this.store.settings.appearance.scheme
@@ -201,6 +212,7 @@ export class App {
     this.phone.restartEngine()
     this.provisioning.start()
     this.watchdog.start()
+    if (!process.env.SIP_TELEFON_SCREENSHOT) this.updater.start()
     // Nach dem Ruhezustand sind SIP-Verbindungen und NAT-Zuordnungen meist verloren
     powerMonitor.on('resume', () => setTimeout(() => this.watchdog.onResume(), 5000))
   }
@@ -273,6 +285,7 @@ export class App {
       })),
       missedUnseen: this.missedUnseen,
       watchdog: this.watchdog.summary(),
+      update: this.updater.state,
     }
   }
 
@@ -614,6 +627,7 @@ export class App {
     if (this.quitting) return
     this.quitting = true
     this.watchdog.stop()
+    this.updater.stop()
     saveJson(this.watchdogPath, this.watchdog.events)
     if (this.main && !this.main.isDestroyed()) saveJson(this.boundsPath, this.main.getNormalBounds())
     void this.phone.stop().finally(() => electronApp.exit(0))

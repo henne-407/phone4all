@@ -75,6 +75,42 @@ function docker<T>(method: string, path: string, body?: unknown): Promise<T> {
   })
 }
 
+type ContainerInfo = { Config?: { Labels?: Record<string, string> } }
+
+/** Container-ID aus den Einhängepunkten (/etc/hostname usw. liegen unter …/containers/<id>/). */
+export function containerIdFromMountinfo(text: string): string {
+  return /\/containers\/([0-9a-f]{64})\//.exec(text)?.[1] ?? ''
+}
+
+/**
+ * Den eigenen Container finden. Der Hostname taugt nur ohne „network_mode: host“ –
+ * mit Host-Netz (TrueNAS, unsere Compose) heißt er wie der Rechner.
+ */
+async function findSelf(): Promise<ContainerInfo> {
+  const candidates: string[] = []
+  for (const file of ['/proc/self/mountinfo', '/proc/self/cgroup']) {
+    try {
+      const id = containerIdFromMountinfo(fs.readFileSync(file, 'utf8')) || /[0-9a-f]{64}/.exec(fs.readFileSync(file, 'utf8'))?.[0]
+      if (id) candidates.push(id)
+    } catch {
+      // nicht lesbar
+    }
+  }
+  candidates.push(os.hostname(), 'phone4all-pbx')
+  for (const c of candidates) {
+    try {
+      return await docker<ContainerInfo>('GET', `/containers/${encodeURIComponent(c)}/json`)
+    } catch {
+      // nächster Versuch
+    }
+  }
+  // Notfalls über das Image suchen
+  const list = await docker<{ Id: string; Image: string }[]>('GET', '/containers/json')
+  const mine = (Array.isArray(list) ? list : []).filter((c) => c.Image.includes('phone4all-pbx'))
+  if (mine.length === 1) return docker<ContainerInfo>('GET', `/containers/${mine[0].Id}/json`)
+  throw new Error('Den eigenen Container nicht gefunden – bitte „container_name: phone4all-pbx“ in der Compose setzen.')
+}
+
 interface ComposeInfo {
   project: string
   workdir: string
@@ -85,7 +121,7 @@ async function composeInfo(): Promise<ComposeInfo> {
   if (!fs.existsSync(SOCKET)) {
     throw new Error('Kein Zugriff auf Docker (Socket /var/run/docker.sock nicht eingebunden).')
   }
-  const self = await docker<{ Config?: { Labels?: Record<string, string> } }>('GET', `/containers/${os.hostname()}/json`)
+  const self = await findSelf()
   const labels = self.Config?.Labels ?? {}
   const project = labels['com.docker.compose.project']
   const workdir = labels['com.docker.compose.project.working_dir']

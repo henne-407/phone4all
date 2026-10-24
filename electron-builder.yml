@@ -18,7 +18,8 @@ protocols:
     schemes: [sip-telefon]
 
 linux:
-  target: [AppImage, deb, rpm]
+  # tar.gz: Update für den entpackten Ordner aus scripts/install-linux.sh
+  target: [AppImage, deb, rpm, tar.gz]
   icon: resources/icons/icon.png
   category: Network;Telephony
   executableName: sip-telefon

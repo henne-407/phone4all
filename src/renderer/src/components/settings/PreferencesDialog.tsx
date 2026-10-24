@@ -27,6 +27,7 @@ import {
   DialogActions,
   DialogContent,
   IconButton,
+  LinearProgress,
   ListItem,
   ListItemButton,
   ListItemIcon,
@@ -42,7 +43,7 @@ import {
   Typography,
   useMediaQuery,
 } from '@mui/material'
-import { useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { SCHEMES, STYLES, THEMES, swatch } from '../../../../shared/themes'
 import type { AccountSettings, Diagnose, DesignStyle, WatchLevel } from '../../../../shared/types'
 import { api } from '../../api'
@@ -533,6 +534,8 @@ function GeneralTab() {
         ))}
       </Group>
 
+      <UpdateGroup />
+
       <Group title="Verhalten">
         <SwitchRow
           title="Im Hintergrund weiterlaufen"
@@ -561,6 +564,73 @@ function GeneralTab() {
         </ListItemButton>
       </Group>
     </>
+  )
+}
+
+// -- Aktualisierung --------------------------------------------------------------------
+
+function UpdateGroup() {
+  const { state, toast } = useApp()
+  const u = state.update
+  // Beim Öffnen einmal nachsehen, wenn länger nicht geprüft
+  useEffect(() => {
+    if (Date.now() - u.checked > 600000) void api.checkUpdate()
+  }, [])
+  const install = async (): Promise<void> => {
+    const r = await api.installUpdate()
+    if (!r.ok) toast(r.error)
+    else if (state.calls.length) toast('Das Update wird nach dem Gespräch eingespielt')
+  }
+  const latest = u.latest?.version ?? ''
+  const text: Record<typeof u.status, string> = {
+    idle: 'Noch nicht geprüft',
+    checking: 'Suche nach Updates …',
+    none: 'SIP-Telefon ist aktuell',
+    available: `Version ${latest} ist verfügbar`,
+    downloading: `Lade Version ${latest} … ${Math.round(u.progress * 100)} %`,
+    ready: `Version ${latest} ist geladen – startet beim Aktualisieren neu`,
+    installing: 'Wird eingespielt, SIP-Telefon startet gleich neu …',
+    error: `Fehler: ${u.error}`,
+  }
+  let action: ReactNode = (
+    <Button size="small" disabled={u.status === 'checking'} onClick={() => void api.checkUpdate()}>
+      Nach Updates suchen
+    </Button>
+  )
+  if (u.status === 'available' || u.status === 'ready') {
+    action = u.canInstall ? (
+      <Button size="small" variant="contained" onClick={() => void install()}>
+        Jetzt aktualisieren
+      </Button>
+    ) : (
+      <Button size="small" variant="contained" onClick={() => void api.openReleasePage()}>
+        Herunterladen
+      </Button>
+    )
+  }
+  return (
+    <Group title="Aktualisierung">
+      <Row>
+        <ListItemText primary={`SIP-Telefon ${u.current}`} secondary={text[u.status]} />
+        {action}
+      </Row>
+      {u.status === 'downloading' && <LinearProgress variant="determinate" value={u.progress * 100} sx={{ mx: 2, my: 1 }} />}
+      {(u.status === 'available' || u.status === 'ready') && u.latest?.notes && (
+        <Row>
+          <ListItemText secondary={u.latest.notes.replace(/\*\*Full Changelog\*\*.*$/s, '').trim()} slotProps={{ secondary: { sx: { whiteSpace: 'pre-line' } } }} />
+        </Row>
+      )}
+      <SwitchRow
+        title="Automatisch aktualisieren"
+        subtitle={
+          u.canInstall || u.status === 'idle' || u.status === 'none' || u.status === 'checking'
+            ? 'Lädt neue Versionen selbst und spielt sie ein, wenn das Fenster geschlossen ist und kein Gespräch läuft'
+            : 'Für diese Installation nicht möglich – neue Versionen über „Herunterladen“ installieren'
+        }
+        checked={state.settings.auto_update}
+        onChange={(v) => void api.setAutoUpdate(v)}
+      />
+    </Group>
   )
 }
 

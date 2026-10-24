@@ -38,6 +38,7 @@ export const DEFAULT_SETTINGS: Settings = {
   run_in_background: true,
   autostart: false,
   watchdog: true,
+  auto_update: true,
   provisioning: { pbx: '', extension: '', server: '', updated: 0, policy: null, calendars: [] },
 }
 
