@@ -342,6 +342,33 @@ export interface CentralCalendar {
   writable: boolean
 }
 
+/** Höchstzahl der Mobilteile an einer DECT-Basis (Gigaset N610/N670) */
+export const DECT_MAX_HANDSETS = 20
+
+/** Gigaset-DECT-Basis (N610, N670, N870 IP PRO), eingerichtet per Auto-Provisioning */
+export interface DectBase {
+  id: string
+  name: string
+  /** MAC-Adresse der Basis, 12 Hex-Zeichen (leer = jede Basis mit dem Link) */
+  mac: string
+  /** Nebenstellen der Mobilteile; Position = Mobilteil 1, 2, …; leer = Platz frei */
+  handsets: string[]
+  /** Anmelde-PIN für neue Mobilteile (4 Ziffern), vergibt der Server */
+  pin: string
+  /** Passwort der Weboberfläche der Basis setzen (leer = nicht ändern) */
+  admin_password: string
+  /** Geheimer Teil der Provisioning-Adresse, vergibt der Server */
+  token: string
+}
+
+/** Zentrales Telefonbuch per LDAP für DECT- und Tischtelefone (nur lesen) */
+export interface LdapSettings {
+  enabled: boolean
+  port: number
+  /** Kennwort für die Anmeldung (leer = ohne Anmeldung) */
+  password: string
+}
+
 export interface PbxConfig {
   version: number
   system: SystemSettings
@@ -357,6 +384,7 @@ export interface PbxConfig {
   phonebook: PhonebookEntry[]
   appprofiles: AppProfile[]
   calendars: CentralCalendar[]
+  dect: DectBase[]
   mail: MailSettings
   security: SecuritySettings
   updates: UpdateSettings
@@ -364,6 +392,7 @@ export interface PbxConfig {
   remote: RemoteSettings
   watchdog: WatchdogSettings
   integration: IntegrationSettings
+  ldap: LdapSettings
 }
 
 export const HANGUP: Destination = { type: 'hangup', target: '' }
@@ -398,6 +427,7 @@ export const DEFAULT_CONFIG: PbxConfig = {
   phonebook: [],
   appprofiles: [],
   calendars: [],
+  dect: [],
   mail: { host: '', port: 587, tls: 'starttls', user: '', password: '', from: '' },
   security: {
     ban_enabled: true,
@@ -412,6 +442,7 @@ export const DEFAULT_CONFIG: PbxConfig = {
   remote: { enabled: true, public_url: '', turn: true, turn_port: 3478, turn_host: '' },
   watchdog: { auto_repair: true, trunk_grace: 3, notify_email: '' },
   integration: { enabled: false, token: '' },
+  ldap: { enabled: false, port: 389, password: '' },
 }
 
 /** Listen der Konfiguration, die die Weboberfläche einheitlich bearbeitet. */
@@ -428,10 +459,11 @@ export const COLLECTIONS = [
   'phonebook',
   'appprofiles',
   'calendars',
+  'dect',
 ] as const
 export type CollectionName = (typeof COLLECTIONS)[number]
 
-export const SECTIONS = ['system', 'mail', 'security', 'updates', 'provisioning', 'remote', 'watchdog', 'integration'] as const
+export const SECTIONS = ['system', 'mail', 'security', 'updates', 'provisioning', 'remote', 'watchdog', 'integration', 'ldap'] as const
 export type SectionName = (typeof SECTIONS)[number]
 
 export const DESTINATION_LABELS: Record<DestinationType, string> = {
@@ -576,6 +608,8 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
       } satisfies Omit<AppProfile, 'id'>
     case 'calendars':
       return { name: '', color: '#1a73e8', kind: 'events', writable: true } satisfies Omit<CentralCalendar, 'id'>
+    case 'dect':
+      return { name: '', mac: '', handsets: [], pin: '', admin_password: '', token: '' } satisfies Omit<DectBase, 'id'>
   }
 }
 

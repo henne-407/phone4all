@@ -15,6 +15,7 @@ import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver'
 import RouteIcon from '@mui/icons-material/Route'
 import ScheduleIcon from '@mui/icons-material/Schedule'
 import SettingsIcon from '@mui/icons-material/Settings'
+import SettingsPhoneIcon from '@mui/icons-material/SettingsPhone'
 import {
   Box,
   Button,
@@ -43,6 +44,7 @@ import Calendars from './pages/Calendars'
 import Calls from './pages/Calls'
 import Conferences from './pages/Conferences'
 import Dashboard from './pages/Dashboard'
+import Dect from './pages/Dect'
 import Extensions from './pages/Extensions'
 import Flows from './pages/Flows'
 import Groups from './pages/Groups'
@@ -70,6 +72,7 @@ const NAV: [string, NavItem[]][] = [
     [
       { key: 'extensions', label: 'Nebenstellen', icon: <PersonIcon />, page: <Extensions /> },
       { key: 'groups', label: 'Gruppen', icon: <GroupsIcon />, page: <Groups /> },
+      { key: 'dect', label: 'DECT-Telefone', icon: <SettingsPhoneIcon />, page: <Dect /> },
     ],
   ],
   [

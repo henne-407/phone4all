@@ -122,7 +122,7 @@ export function checkProfile(p: Profile): Profile {
   if (p?.format !== 'phone4all-provisioning') throw new SetupError('Unerwartete Antwort – ist das wirklich eine Phone4all-Telefonanlage?')
   if (!p.remote) {
     throw new SetupError(
-      'Die Telefonanlage erlaubt keine Mobil-App. In der Weboberfläche unter System → Fernzugriff einschalten (ab Version 0.5).',
+      'Die Telefonanlage erlaubt keine Mobil-App. In der Weboberfläche unter System → Fernzugriff einschalten (ab Version 0.6).',
     )
   }
   return p

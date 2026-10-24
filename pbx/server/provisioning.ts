@@ -6,6 +6,7 @@
 
 import { createHash } from 'node:crypto'
 import dgram from 'node:dgram'
+import { directory } from './directory'
 import type { AppHomeCard, AppPage, CentralCalendar, Extension, PbxConfig } from './model'
 import { SETTINGS } from './paths'
 import { type IceServer, appEndpoint, publicBase, websocketUrl } from './remote'
@@ -107,16 +108,7 @@ export function appLink(base: string, ext: Extension): string {
 export function profile(cfg: PbxConfig, ext: Extension, base: string, ice: IceServer[] = []): ProvisioningProfile {
   const pub = linkBase(cfg, base)
   const domain = cfg.system.sip_host.trim() || new URL(base).hostname.replace(/^\[|\]$/g, '')
-  const phonebook = [
-    ...cfg.extensions
-      .filter((e) => e.id !== ext.id)
-      .map((e) => ({ name: e.name, company: cfg.system.name, phone: e.number, mobile: '' })),
-    ...cfg.groups
-      .filter((g) => g.number)
-      .map((g) => ({ name: g.name, company: `${cfg.system.name} · Gruppe`, phone: g.number, mobile: '' })),
-    ...cfg.conferences.map((c) => ({ name: c.name || `Konferenz ${c.number}`, company: `${cfg.system.name} · Konferenz`, phone: c.number, mobile: '' })),
-    ...cfg.phonebook.map((p) => ({ name: p.name, company: p.company, phone: p.phone, mobile: p.mobile })),
-  ]
+  const phonebook = directory(cfg, ext.id).map(({ name, company, phone, mobile }) => ({ name, company, phone, mobile }))
   const result: Omit<ProvisioningProfile, 'revision'> = {
     format: PROVISIONING_FORMAT,
     version: 1,
