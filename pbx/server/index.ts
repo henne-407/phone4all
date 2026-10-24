@@ -8,6 +8,7 @@ import { CalendarStore } from './calendars'
 import { Auth, SESSION_COOKIE, SESSION_MAX_AGE } from './auth'
 import { readCalls, tailLog } from './cdr'
 import { loadJson, saveJson } from './files'
+import { integrationReport, validToken } from './integration'
 import { HttpError, type Request, Router, makeRequest, sendFile, sendJson, sendText, serveStatic } from './http'
 import { sendMail } from './mail'
 import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, SECTIONS, type SectionName } from './model'
@@ -252,6 +253,15 @@ pub.get('/setup/:token', (r) => {
   sendText(r.res, 200, landingPage(store.config, ext, requestBase(r)), 'text/html; charset=utf-8')
 })
 
+/** Zustandsbericht für Home Assistant u. a. (Bearer-Token statt Anmeldung) */
+pub.get('/api/integration/status', async (r) => {
+  if (!validToken(store.config, r.raw.headers.authorization)) {
+    r.res.setHeader('WWW-Authenticate', 'Bearer')
+    throw new HttpError(401, 'Zugriffsschlüssel fehlt oder ist falsch.')
+  }
+  return integrationReport(store.config, store.state, await asterisk.status(), readCalls(500), updater.info, SETTINGS.version, guard.bans.length)
+})
+
 // -- Verwaltung (angemeldet) ----------------------------------------------------------
 
 api.get('/api/config', () => ({
@@ -268,6 +278,8 @@ api.put('/api/config/:section', async (r) => {
   store.update((draft) => {
     const merged = { ...draft[section], ...values } as Record<string, unknown>
     if (section === 'mail' && !values.password) merged.password = draft.mail.password
+    // Den Zugriffsschlüssel vergibt nur der Server
+    if (section === 'integration') merged.token = draft.integration.token
     ;(draft as unknown as Record<string, unknown>)[section] = merged
   })
   applySoon()
@@ -391,6 +403,13 @@ api.put('/api/state/:ext', async (r) => {
   }
   store.saveState()
   return { dnd: store.state.dnd, cfu: store.state.cfu }
+})
+
+api.post('/api/integration/token', () => {
+  store.update((draft) => {
+    draft.integration.token = newSecret(40)
+  })
+  return store.config.integration
 })
 
 api.post('/api/unban', async (r) => {

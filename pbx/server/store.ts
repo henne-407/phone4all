@@ -119,6 +119,7 @@ export function stripSecrets(cfg: PbxConfig): PbxConfig {
   }
   for (const t of c.trunks) t.password = ''
   c.mail.password = ''
+  c.integration.token = ''
   return c
 }
 
@@ -147,6 +148,7 @@ export class ConfigStore {
     const draft = structuredClone(this.config)
     change(draft)
     for (const e of draft.extensions) fillSecrets(e)
+    if (draft.integration.enabled && !draft.integration.token) draft.integration.token = newSecret(40)
     validate(draft)
     this.config = draft
     this.save()
@@ -268,6 +270,7 @@ export class ConfigStore {
       if (old && !t.password) t.password = old.password
     }
     incoming.mail.password ||= this.config.mail.password
+    incoming.integration.token ||= this.config.integration.token
     this.backup('vor-import')
     this.update((draft) => Object.assign(draft, incoming))
     for (const [id, events] of Object.entries(data.calendars ?? {})) {

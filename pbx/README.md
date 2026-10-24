@@ -66,6 +66,8 @@ von 5060/5061 und 10000–10999 im Router sowie die öffentliche Adresse unter
 - **Sicherheit**: Sperre nach Fehlanmeldungen, erlaubte Netze, TLS/SRTP
 - **Konfiguration als Datei** exportieren und importieren (wahlweise mit Passwörtern
   und Ansagen), tägliche automatische Sicherung (30 Tage)
+- **Home Assistant**: verpasste Anrufe, abgemeldete SIP-Konten und andere Störungen als
+  Sensoren und Ereignisse, auch über HTTPS hinter einem Reverse-Proxy
 - **Online-Updates** aus der Weboberfläche (stabil oder Beta), auf Wunsch automatisch
   nachts, wenn niemand telefoniert
 
@@ -117,6 +119,57 @@ Zustand, Einstellungen und Ereignisprotokoll unter *System → Diagnose*, auf Wu
 Störungsmeldungen per E-Mail. `GET /health` liefert ohne Anmeldung eine Kurzfassung
 (`{"status":"ok|warning|error","checks":{…}}`, HTTP 503 wenn Asterisk ausgefallen ist) –
 für den Docker-Healthcheck und Überwachung von außen (z. B. Home Assistant).
+
+## Home Assistant
+
+Die Integration *Phone4all-Telefonanlage* zeigt verpasste Anrufe und Störungen der
+Anlage in Home Assistant an, etwa ein SIP-Konto, das sich beim Anbieter abgemeldet hat.
+
+1. In der Weboberfläche unter *System → Home Assistant* die Schnittstelle einschalten
+   und den Zugriffsschlüssel kopieren.
+2. In Home Assistant über HACS installieren: *HACS → ⋮ → Benutzerdefinierte Repositories*,
+   `https://github.com/henne-407/phone4all` als Typ *Integration* hinzufügen und
+   *Phone4all-Telefonanlage* herunterladen. Ohne HACS den Ordner
+   [`custom_components/phone4all`](../custom_components/phone4all) nach
+   `config/custom_components/` kopieren. Danach Home Assistant neu starten.
+3. *Einstellungen → Geräte & Dienste → Integration hinzufügen → Phone4all*: Adresse der
+   Anlage und Zugriffsschlüssel eintragen.
+
+Home Assistant fragt die Anlage alle 15 Sekunden ab. Das geht im lokalen Netz
+(`http://<anlage>:8080`) oder von außen über HTTPS hinter einem Reverse-Proxy wie
+Pangolin, Traefik oder Nginx. Verlangt der Proxy eine eigene Anmeldung (bei Pangolin die
+Ressourcen-Authentifizierung), dort eine Regel anlegen, die den Pfad
+`/api/integration/status` ohne Anmeldung durchlässt. Diesen Pfad schützt der
+Zugriffsschlüssel, alles andere bleibt hinter der Anmeldung des Proxys.
+
+| Entität | Bedeutung |
+| --- | --- |
+| `binary_sensor.<anlage>_sip_konto_<name>` | je SIP-Konto mit Anmeldung: an = angemeldet |
+| `binary_sensor.<anlage>_problem` | an, solange die Anlage ein Problem meldet; Attribut `problems` listet sie |
+| `sensor.<anlage>_verpasste_anrufe_heute` | verpasste Anrufe seit Mitternacht (auch auf die Voicemail gelaufene); Attribut `calls` mit den letzten zehn |
+| `sensor.<anlage>_letzter_verpasster_anruf` | Zeitpunkt, Anrufer als Attribute `caller`, `caller_name`, `called`, `voicemail` |
+| `sensor.<anlage>_laufende_gesprache` | laufende Gespräche |
+| `event.<anlage>_verpasster_anruf`, `event.<anlage>_storungsmeldung` | letztes Ereignis für Verlauf und Automationen |
+| `binary_sensor.<anlage>_asterisk`, `binary_sensor.<anlage>_update` | Diagnose: Asterisk läuft, neue Version verfügbar |
+
+Für Automationen löst die Integration Ereignisse aus:
+
+| Ereignis | Daten |
+| --- | --- |
+| `phone4all_missed_call` | `caller`, `caller_name`, `called`, `time`, `voicemail`, `pbx` |
+| `phone4all_problem` | `key` (`trunk:<id>`, `asterisk` oder `connection` = Anlage nicht erreichbar), `message`, `pbx` |
+| `phone4all_problem_resolved` | wie oben, sobald das Problem behoben ist |
+
+Fertige Automation als Blueprint (Benachrichtigung aufs Handy, kurze Aussetzer werden
+übergangen):
+[`blueprints/automation/phone4all/benachrichtigung.yaml`](../blueprints/automation/phone4all/benachrichtigung.yaml) –
+in Home Assistant unter *Einstellungen → Automationen → Blueprints → Blueprint importieren*
+die Adresse dieser Datei eintragen.
+
+Schnittstelle für eigene Anbindungen (Node-RED, Skripte):
+`GET /api/integration/status` mit `Authorization: Bearer <Zugriffsschlüssel>` liefert
+SIP-Konten, Nebenstellen, laufende Gespräche, die letzten 25 verpassten Anrufe und die
+aktuellen Probleme als JSON.
 
 ## Daten
 
