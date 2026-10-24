@@ -79,11 +79,12 @@ für beide. Fehlanmeldungen über den WebSocket sperren die Adresse des Telefons
   Ausweichziel und Namensvorsatz („Vertrieb: …“)
 - **Rufabfolgen** als Ablaufdiagramm: Rufnummer → Zeitsteuerung (Öffnungszeiten,
   Feiertage je Bundesland, Betriebsferien, Nachtschaltung) → Sprachmenü → Gruppe →
-  Voicemail; jeder Schritt ist anklickbar
+  Voicemail; jeder Schritt ist anklickbar, Zweige lassen sich per Auswahlmenü oder
+  Drag & Drop umhängen
 - **Ansagen** hochladen oder im Browser aufnehmen, eigene Wartemusik
 - **Konferenzräume** mit PIN
 - **SIP-Konten** mit Vorlagen für Telekom (auch CompanyFlex), Vodafone (Kabel, DSL),
-  1&1, o2, sipgate (basic und trunking), easybell, Placetel und FRITZ!Box;
+  Deutsche Glasfaser, 1&1, o2, sipgate (basic und trunking), easybell, Placetel und FRITZ!Box;
   **Wahlregeln** mit Ausweichkonto
 - **Zentrale Kontakte** (auch CSV-Import) für Anrufernamen, werden an die Apps verteilt
   und stehen per **LDAP** für DECT- und Tischtelefone bereit
@@ -278,7 +279,29 @@ Neue Versionen erscheinen als GitHub-Release `pbx-v…` und als Image
 docker compose pull && docker compose up -d
 ```
 
-Vor jedem Update wird automatisch gesichert.
+Vor jedem Update wird automatisch gesichert. Gibt es eine neue Version, erscheint
+zusätzlich unten im Menü ein Hinweis „Update auf …“.
+
+### TrueNAS
+
+Als Custom App (*Apps → Discover Apps → ⋮ → Install via YAML*):
+
+```yaml
+services:
+  pbx:
+    image: ghcr.io/henne-407/phone4all-pbx:latest   # fester Tag, TrueNAS liest keine .env
+    container_name: phone4all-pbx
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - /mnt/POOL/apps/phone4all/data:/data         # absoluter Pfad auf einem Dataset
+      - /var/run/docker.sock:/var/run/docker.sock   # für Updates aus der Weboberfläche
+    environment:
+      TZ: Europe/Berlin
+```
+
+Dann funktionieren beide Wege: der Knopf in der Weboberfläche und „Update“ in
+der TrueNAS-App-Übersicht.
 
 ## Entwicklung
 

@@ -5,7 +5,7 @@ import { integrationReport, validToken } from '../server/integration'
 import type { UpdateInfo } from '../server/updates'
 import { sampleConfig } from './helpers'
 
-const update: UpdateInfo = { current: '0.3.0', latest: null, available: false, canApply: false, reason: '', checked: 0, error: '' }
+const update: UpdateInfo = { current: '0.3.0', latest: null, available: false, canApply: false, reason: '', project: '', checked: 0, error: '' }
 
 function status(extra: Partial<PbxStatus> = {}): PbxStatus {
   return { asterisk: 'running', message: '', uptime: '120', endpoints: [], registrations: [], calls: [], ...extra }
@@ -61,7 +61,7 @@ describe('Home-Assistant-Schnittstelle', () => {
       call('e', { start: '2026-10-23 18:00:00' }),
       call('f'),
     ]
-    const r = integrationReport(sampleConfig(), { dnd: {}, cfu: {} }, status({ calls: [{ id: 'f', channels: [] }] }), calls, update, '0.3.0', 0, new Date(2026, 9, 24, 12))
+    const r = integrationReport(sampleConfig(), { dnd: {}, cfu: {} }, status({ calls: [{ id: 'f', from: '', fromName: '', to: '', toName: '', channels: [] }] }), calls, update, '0.3.0', 0, new Date(2026, 9, 24, 12))
     expect(r.missed.calls.map((c) => c.id)).toEqual(['a', 'b', 'e'])
     expect(r.missed.calls[1].voicemail).toBe(true)
     expect(r.missed.today).toBe(2)

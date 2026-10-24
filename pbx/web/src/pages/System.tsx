@@ -300,6 +300,26 @@ function Backup() {
   )
 }
 
+/** Nach dem Update: warten, bis der neue Container antwortet (andere Version oder Neustart), dann neu laden. */
+function waitForRestart(version: string): void {
+  let down = false
+  const started = Date.now()
+  const poll = (): void => {
+    if (Date.now() - started > 600000) return
+    api
+      .get<UpdateInfo>('/api/updates')
+      .then((i) => {
+        if (down || i.current !== version) window.location.reload()
+        else setTimeout(poll, 3000)
+      })
+      .catch(() => {
+        down = true
+        setTimeout(poll, 3000)
+      })
+  }
+  setTimeout(poll, 5000)
+}
+
 function Updates() {
   const { config, saveSection, toast } = usePbx()
   const [u, set] = useDraft<UpdateSettings>(config.updates)
@@ -313,15 +333,32 @@ function Updates() {
       .then(setInfo)
       .finally(() => setChecking(false))
   }
-  useEffect(() => void api.get<UpdateInfo>('/api/updates').then(setInfo), [])
+  useEffect(() => void api.get<UpdateInfo>('/api/updates?check=1').then(setInfo), [])
+  const apply = (): void => {
+    setApplying(true)
+    void api
+      .post('/api/updates/apply')
+      .then(() => {
+        toast('Update läuft – die Seite lädt neu, sobald die Anlage wieder da ist.', 'info')
+        waitForRestart(info?.current ?? '')
+      })
+      .catch((e: Error) => {
+        setApplying(false)
+        toast(e.message, 'error')
+      })
+  }
   return (
     <>
       <Section title="Aktualisierung" description="Neue Versionen kommen mit Sicherheitsupdates für Asterisk und das System. Vor jedem Update wird die Konfiguration gesichert; laufende Gespräche brechen ab, deshalb automatische Updates nur nachts.">
-        <Stack direction="row" sx={{ gap: 2, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
+        <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
           <Chip label={`Installiert: ${info?.current ?? '…'}`} />
           {info?.latest && <Chip color={info.available ? 'primary' : 'default'} label={`Neueste: ${info.latest.version}`} />}
+          <Box sx={{ flex: 1 }} />
           <Button onClick={check} disabled={checking}>
             Jetzt prüfen
+          </Button>
+          <Button variant={info?.available ? 'contained' : 'outlined'} disabled={!info?.canApply || applying} onClick={apply}>
+            {applying ? 'Update läuft …' : info?.available && info.latest ? `Auf ${info.latest.version} aktualisieren` : 'Neu laden und neu starten'}
           </Button>
         </Stack>
         {info?.error && (
@@ -329,35 +366,24 @@ function Updates() {
             Prüfung fehlgeschlagen: {info.error}
           </Alert>
         )}
+        {info && !info.canApply && (
+          <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
+            Update aus der Weboberfläche nicht möglich: {info.reason || 'noch nicht geprüft.'} Die Anlage braucht den Docker-Socket (
+            <code>/var/run/docker.sock:/var/run/docker.sock</code> unter <code>volumes</code>) und muss per docker compose bzw. als TrueNAS-App laufen. Bis dahin
+            manuell: <code>docker compose pull &amp;&amp; docker compose up -d</code>
+          </Alert>
+        )}
+        {info?.canApply && (
+          <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
+            Aktualisiert über das Compose-Projekt „{info.project}“: neues Image laden, Container neu erstellen. Die Weboberfläche ist nach etwa einer Minute wieder da.
+          </Typography>
+        )}
         {info?.available && info.latest && (
           <Box sx={{ mb: 2 }}>
             <Typography variant="subtitle1">Neu in {info.latest.version}</Typography>
             <Typography variant="body2" component="pre" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', color: 'text.secondary', maxHeight: 240, overflow: 'auto' }}>
               {info.latest.notes || 'Keine Beschreibung.'}
             </Typography>
-            {info.canApply ? (
-              <Button
-                variant="contained"
-                sx={{ mt: 1 }}
-                disabled={applying}
-                onClick={() => {
-                  setApplying(true)
-                  void api
-                    .post('/api/updates/apply')
-                    .then(() => toast('Update läuft – die Weboberfläche ist gleich wieder da.', 'info'))
-                    .catch((e: Error) => {
-                      setApplying(false)
-                      toast(e.message, 'error')
-                    })
-                }}
-              >
-                Jetzt aktualisieren
-              </Button>
-            ) : (
-              <Alert severity="info" variant="outlined" sx={{ mt: 1 }}>
-                {info.reason} Manuell im Ordner der Anlage: <code>docker compose pull &amp;&amp; docker compose up -d</code>
-              </Alert>
-            )}
           </Box>
         )}
         <FormGrid columns={3}>
@@ -742,6 +768,16 @@ export default function System() {
     const wanted = takeEditRequest('system')
     return Math.max(0, TABS.findIndex(([label]) => label.toLowerCase() === wanted))
   })
+  // Auch wenn die Seite schon offen ist (z. B. Update-Hinweis im Menü)
+  useEffect(() => {
+    const on = (): void => {
+      const wanted = takeEditRequest('system')
+      const i = TABS.findIndex(([label]) => label.toLowerCase() === wanted)
+      if (i >= 0) setTab(i)
+    }
+    window.addEventListener('hashchange', on)
+    return () => window.removeEventListener('hashchange', on)
+  }, [])
   const Page = TABS[tab][1]
   return (
     <Box>

@@ -10,6 +10,7 @@ import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
 import path from 'node:path'
 import { Ami, type AmiMessage } from './ami'
+import { type CallParties, callParties, clean } from './calls'
 import { writeAtomic } from './files'
 import { type GenContext, generate } from './generate'
 import type { PbxConfig } from './model'
@@ -22,7 +23,7 @@ export interface EndpointStatus {
   contacts: { uri: string; agent: string; status: string; rtt: number }[]
 }
 
-export interface ActiveCall {
+export interface ActiveCall extends CallParties {
   id: string
   channels: { channel: string; from: string; fromName: string; to: string; toName: string; state: string; duration: number }[]
 }
@@ -330,21 +331,26 @@ export class Asterisk extends EventEmitter {
       }
       result.endpoints = [...byAor.values()]
       result.registrations = registrations
-      const calls = new Map<string, ActiveCall>()
+      const byCall = new Map<string, AmiMessage[]>()
       for (const ch of channels.filter((c) => c.Event === 'CoreShowChannel')) {
         const id = ch.Linkedid || ch.Uniqueid
-        if (!calls.has(id)) calls.set(id, { id, channels: [] })
-        calls.get(id)!.channels.push({
+        if (!byCall.has(id)) byCall.set(id, [])
+        byCall.get(id)!.push(ch)
+      }
+      const calls: ActiveCall[] = [...byCall].map(([id, chs]) => ({
+        id,
+        ...callParties(chs),
+        channels: chs.map((ch) => ({
           channel: ch.Channel,
-          from: ch.CallerIDNum,
-          fromName: ch.CallerIDName,
-          to: ch.ConnectedLineNum,
-          toName: ch.ConnectedLineName,
+          from: clean(ch.CallerIDNum),
+          fromName: clean(ch.CallerIDName),
+          to: clean(ch.ConnectedLineNum),
+          toName: clean(ch.ConnectedLineName),
           state: ch.ChannelStateDesc,
           duration: durationSeconds(ch.Duration),
-        })
-      }
-      result.calls = [...calls.values()]
+        })),
+      }))
+      result.calls = calls
       const m = /System uptime:\s*(\d+)/.exec(uptime)
       result.uptime = m ? m[1] : ''
     } catch (e) {

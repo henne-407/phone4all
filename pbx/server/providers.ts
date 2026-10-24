@@ -78,6 +78,23 @@ export const PROVIDERS: ProviderTemplate[] = [
     values: { transport: 'udp', register: true, number_format: 'national', codecs: ['alaw', 'g722', 'ulaw'] },
   },
   {
+    key: 'deutsche-glasfaser',
+    name: 'Deutsche Glasfaser',
+    help:
+      'SIP-Zugangsdaten stehen im Schreiben „Ihre Zugangsdaten für die Telefonie“ bzw. im Kundenportal ' +
+      '(nur mit eigenem Router). Benutzername ist die Rufnummer mit Vorwahl ohne Leerzeichen (z. B. 02111234567), ' +
+      'Anmeldename die Benutzerkennung aus dem Schreiben. Je Rufnummer ein SIP-Konto anlegen.',
+    labels: { username: 'Rufnummer mit Vorwahl (z. B. 02111234567)', auth_username: 'Benutzerkennung aus den Zugangsdaten' },
+    values: {
+      registrar: 'dg.voip.dg-w.de',
+      outbound_proxy: 'dg.voip.dg-w.de',
+      transport: 'udp',
+      register: true,
+      number_format: 'national',
+      codecs: ['g722', 'alaw', 'ulaw'],
+    },
+  },
+  {
     key: '1und1',
     name: '1&1',
     help:

@@ -110,7 +110,7 @@ export function MainWindow() {
   const width = useWidth()
   // Die Telefonanlage kann Bereiche und Startansicht vorgeben (App-Profil)
   const policy = state.settings.provisioning.policy
-  const pages = policy ? PAGES.filter(([k]) => policy.pages.includes(k)) : PAGES
+  const pages = policy ? policy.pages.flatMap((k) => PAGES.filter(([p]) => p === k)) : PAGES
   const [page, setPageRaw] = useState<PageName>(policy?.start_tab ?? state.settings.home.start_tab)
   const visible = pages.some(([k]) => k === page) ? page : pages[0][0]
   const setPage = useCallback((p: PageName) => setPageRaw(p), [])

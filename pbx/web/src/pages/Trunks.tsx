@@ -55,7 +55,7 @@ function ProviderTiles({ onPick }: { onPick: (key: string) => void }) {
       </Typography>
       <CardGrid min={220}>
         {providers.map((p) => (
-          <Card key={p.key} sx={{ '&:hover': { borderColor: 'primary.main' } }}>
+          <Card key={p.key}>
             <CardActionArea onClick={() => onPick(p.key)} sx={{ p: 2, height: '100%' }}>
               <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5 }}>
                 <Initials name={p.name.split(' (')[0]} size={36} />
@@ -127,7 +127,13 @@ function TrunkForm({ value, onChange, isNew }: { value: Trunk; onChange: (v: Tru
           onChange={(e) => set('password', e.target.value)}
           helperText={isNew ? undefined : 'Leer lassen = unverändert'}
         />
-        <TextField label="Angezeigte Rufnummer" value={value.default_cid} onChange={(e) => set('default_cid', e.target.value)} helperText="Standard für Anrufe nach außen" />
+        <Select
+          label="Angezeigte Rufnummer"
+          value={value.numbers.includes(value.default_cid) || !value.default_cid ? value.default_cid : ''}
+          onChange={(v) => set('default_cid', v)}
+          options={[['', value.numbers[0] ? `Erste Nummer (${value.numbers[0]})` : 'Erste Nummer des Kontos'], ...value.numbers.map((n): [string, string] => [n, n])]}
+          helperText="Standard für Anrufe nach außen; Nummern unten eintragen"
+        />
         <Full>
           <ChipsInput label="Rufnummern dieses Kontos" value={value.numbers} onChange={(v) => set('numbers', v)} helperText="z. B. 030 123456 – Enter nach jeder Nummer. Für eingehende Rufnummern und die Absenderkennung." />
         </Full>

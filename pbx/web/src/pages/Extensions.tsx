@@ -22,7 +22,7 @@ import QRCode from 'qrcode'
 import { useEffect, useState } from 'react'
 import type { Extension, Permission } from '../../../server/model'
 import { api } from '../api'
-import { CollectionPage, FormGrid, Full, Initials, NumberField, Select, StatusDot } from '../components/common'
+import { CollectionPage, FormGrid, Full, Initials, NumberField, NumberPicker, Select, StatusDot, internalNumberOptions } from '../components/common'
 import { usePbx } from '../state'
 import { useStatus } from '../useStatus'
 
@@ -143,12 +143,16 @@ function ExtensionForm({ value, onChange, isNew }: { value: Extension; onChange:
             },
           }}
         />
-        <TextField
-          select={false}
+        <Select
           label="Rufnummer nach außen"
           value={value.outbound_cid}
-          onChange={(e) => set('outbound_cid', e.target.value)}
-          helperText={numbers.length ? `Eigene Nummern: ${numbers.join(', ')}` : 'Leer = Standardnummer des SIP-Kontos'}
+          onChange={(v) => set('outbound_cid', v)}
+          options={[
+            ['', 'Standardnummer des SIP-Kontos'],
+            ...config.trunks.flatMap((t) => t.numbers.map((n): [string, string] => [n, `${n} (${t.name})`])),
+            ...(value.outbound_cid && !numbers.includes(value.outbound_cid) ? [[value.outbound_cid, `${value.outbound_cid} (in keinem SIP-Konto)`] as [string, string]] : []),
+          ]}
+          helperText="Anrufe nach außen gehen über das SIP-Konto dieser Nummer"
         />
         <Select label="Darf anrufen" value={value.permission} onChange={(v) => set('permission', v)} options={PERMISSIONS} />
         <Select
@@ -166,8 +170,20 @@ function ExtensionForm({ value, onChange, isNew }: { value: Extension; onChange:
         Weiterleitung und Voicemail
       </Typography>
       <FormGrid>
-        <TextField label="Bei besetzt weiterleiten an" value={value.forward.busy} onChange={(e) => set('forward', { ...value.forward, busy: e.target.value })} helperText="Nebenstelle, Gruppe oder externe Nummer; leer = Voicemail" />
-        <TextField label="Ohne Antwort weiterleiten an" value={value.forward.noanswer} onChange={(e) => set('forward', { ...value.forward, noanswer: e.target.value })} helperText="Leer = Voicemail (wenn eingeschaltet)" />
+        <NumberPicker
+          label="Bei besetzt weiterleiten an"
+          value={value.forward.busy}
+          onChange={(v) => set('forward', { ...value.forward, busy: v })}
+          options={internalNumberOptions(config).filter((o) => o.value !== value.number)}
+          helperText="Auswählen oder externe Nummer eintippen; leer = Voicemail"
+        />
+        <NumberPicker
+          label="Ohne Antwort weiterleiten an"
+          value={value.forward.noanswer}
+          onChange={(v) => set('forward', { ...value.forward, noanswer: v })}
+          options={internalNumberOptions(config).filter((o) => o.value !== value.number)}
+          helperText="Leer = Voicemail (wenn eingeschaltet)"
+        />
         <FormControlLabel control={<Switch checked={value.voicemail.enabled} onChange={(e) => set('voicemail', { ...value.voicemail, enabled: e.target.checked })} />} label="Voicemail" />
         <TextField label="Voicemail-PIN" value={value.voicemail.pin} onChange={(e) => set('voicemail', { ...value.voicemail, pin: e.target.value.replace(/\D/g, '') })} disabled={!value.voicemail.enabled} helperText="Abhören mit *97 (am eigenen Telefon ohne PIN)" />
         <FormControlLabel control={<Switch checked={value.voicemail.attach} disabled={!value.voicemail.enabled} onChange={(e) => set('voicemail', { ...value.voicemail, attach: e.target.checked })} />} label="Nachricht als Anhang per E-Mail" />

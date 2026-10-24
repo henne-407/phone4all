@@ -1,0 +1,199 @@
+# Telefonanlage bedienen
+
+Die Weboberfläche erreicht man unter `http://<anlage>:8080`. Die Navigation links ist
+nach Aufgaben gruppiert: *Personen*, *Eingehende Anrufe*, *Nach außen*,
+*Zusammenarbeit*, *Auswertung und System*. Jede Seite erklärt oben in einem Satz, wofür
+sie da ist; Änderungen gelten sofort, ohne Neustart.
+
+Technische Details (Ports, Schnittstellen, Datenablage) stehen in der
+[Referenz](../pbx/README.md), die Installation unter [Installation](installation.md).
+
+## Übersicht
+
+![Übersicht](bilder/anlage-uebersicht.png)
+
+- Kacheln für Nebenstellen online, angemeldete SIP-Konten, laufende Gespräche und
+  gesperrte Adressen.
+- *Erste Schritte* hakt ab, was schon eingerichtet ist, und führt zum nächsten Schritt.
+- *Laufende Gespräche* mit Nebenstelle und Gegenstelle (bei Anrufen von außen die
+  Nummer des Anrufers).
+- *Funktionen am Telefon*: alle Funktionscodes zum Nachschlagen.
+
+## Personen
+
+### Nebenstellen
+
+Jede Person bekommt eine interne Nummer. Darauf können sich mehrere Geräte gleichzeitig
+anmelden: Desktop-App, Mobil-App, Tischtelefon, DECT-Mobilteil. Ein Anruf klingelt
+überall.
+
+| Einstellung | Bedeutung |
+| --- | --- |
+| Rufnummer nach außen | eigene Nummer, die Angerufene sehen (Auswahl aus den Nummern der SIP-Konten); bestimmt auch das SIP-Konto für ausgehende Anrufe |
+| Darf anrufen | intern, Deutschland oder weltweit; Sonderrufnummern getrennt |
+| Klingeldauer | danach greift *Ohne Antwort weiterleiten an* bzw. die Voicemail |
+| Bei besetzt / ohne Antwort weiterleiten an | andere Nebenstelle, Gruppe, Voicemail oder externe Nummer |
+| Voicemail, Voicemail-PIN | Anrufbeantworter; *Nachricht als Anhang per E-Mail* |
+| Gespräche aufzeichnen | Aufnahmen erscheinen in der Anrufliste |
+| App-Profil | was die Apps zeigen (siehe [App-Profile](#app-profile)) |
+| Einrichtungslink, Einrichtungs-PIN, QR-Code | automatische Einrichtung der Apps; *Einladung per E-Mail* schickt beides an die Person |
+
+Die Liste zeigt, welche Geräte angemeldet sind und ob *Nicht stören* oder eine
+Rufumleitung aktiv ist (beides lässt sich hier auch ausschalten).
+
+### Gruppen
+
+Mehrere Nebenstellen unter einer Nummer:
+
+- **Alle gleichzeitig** – klassischer Sammelruf.
+- **Nacheinander** – in der eingestellten Reihenfolge, je Person mit eigener Klingeldauer.
+- **Warteschlange mit Wartemusik** – Verteilung an alle freien gleichzeitig, reihum
+  (gleichmäßig) oder an den, der am längsten nicht telefoniert hat; mit Ansage vorher und
+  maximaler Wartezeit.
+
+*Weiter zu* legt fest, wohin der Anruf geht, wenn niemand annimmt. *Vor den Anrufernamen
+setzen* zeigt am Telefon z. B. „Vertrieb: Anna Müller“, damit man weiß, über welche
+Nummer der Anruf kam. \*8 holt einen klingelnden Anruf der eigenen Gruppe heran.
+
+### DECT-Telefone
+
+Gigaset N610/N670/N870 IP PRO: Basis mit MAC-Adresse anlegen, Mobilteilen Nebenstellen
+zuordnen, Provisioning-Adresse in der Basis eintragen. Anleitung: [DECT-Telefone](dect.md).
+
+## Eingehende Anrufe
+
+### Rufabfolgen
+
+Zeigt als Diagramm, was mit einem Anruf von außen passiert: angerufene Nummer →
+Zeitsteuerung → Sprachmenü → Gruppe oder Nebenstelle → Voicemail oder Auflegen.
+
+![Rufabfolgen](bilder/anlage-rufabfolgen.png)
+
+- **Rufnummer zuordnen** legt eine Regel für eine angerufene Nummer an (Auswahl aus den
+  Nummern der SIP-Konten), optional nur für Anrufer mit bestimmter Vorwahl.
+- Ein Klick auf einen Schritt öffnet ihn zum Bearbeiten.
+- Das Ziel jedes Zweigs (*geht zu*, *geöffnet*, *geschlossen*, *Taste 1*, *niemand nimmt
+  ab* …) lässt sich direkt im Diagramm per Auswahlmenü ändern oder per **Drag & Drop**
+  aus der Bausteinleiste setzen. Tasten eines Sprachmenüs werden im Diagramm hinzugefügt
+  und entfernt.
+- Unten stehen die Abfolgen *Alle übrigen Anrufe über …* für Nummern ohne eigene Regel;
+  sie werden im jeweiligen SIP-Konto eingestellt.
+
+### Zeitsteuerung
+
+Öffnungszeiten je Wochentag (auch mehrere Zeitfenster), Feiertage des Bundeslandes,
+zusätzliche geschlossene Tage (Betriebsferien) und eine manuelle Umschaltung. Am Telefon
+schaltet \*28 + Nummer der Zeitsteuerung in den gegenteiligen Zustand (z. B. früher in die
+Nachtschaltung), ein zweites \*28 kehrt zum Automatikbetrieb zurück. Das Diagramm zeigt,
+ob gerade geöffnet ist.
+
+### Sprachmenüs
+
+„Für den Vertrieb drücken Sie die 1 …“: Ansage, Ziel je Taste, Ziel bei keiner Eingabe
+und bei falscher Taste, wie oft die Ansage wiederholt wird. Auf Wunsch dürfen Anrufer
+Nebenstellen direkt wählen.
+
+### Ansagen und Musik
+
+Ansagen hochladen (WAV, MP3, …) oder direkt im Browser aufnehmen, außerdem eigene
+Wartemusik. Ansagen werden in Sprachmenüs, Gruppen und Rufabfolgen verwendet.
+
+## Nach außen
+
+### SIP-Konten
+
+Die Verbindungen ins Telefonnetz. Jede Karte zeigt Anmeldestatus, Rufnummern und wohin
+Anrufe gehen.
+
+Vorlagen: Telekom (IP-Anschluss und CompanyFlex/DeutschlandLAN SIP-Trunk), Vodafone Kabel,
+Vodafone DSL/Glasfaser, Deutsche Glasfaser, 1&1, o2/Telefónica, sipgate basic/team,
+sipgate trunking, easybell, Placetel, FRITZ!Box (als vorgeschaltete Anlage) und *Anderer
+Anbieter*. Unter *Erweitert*: Transport, Codecs, SRTP, Nummernformat, From-Benutzer/-Domain,
+*Nur IP-Prüfung* für feste SIP-Trunks, Anzahl gleichzeitiger Gespräche und die Anzeige der
+Anrufernummer bei Weiterleitungen (CLIP no screening).
+
+Anrufe auf eine eigene Nummer, die zu einem anderen SIP-Konto gehört, stellt die Anlage
+intern durch, statt sie übers Telefonnetz zu schicken.
+
+### Wahlregeln
+
+Welche ausgehenden Anrufe über welches SIP-Konto gehen, z. B. Mobilfunknummern über
+Konto A, alles andere über Konto B. Die Regeln gelten von oben nach unten; fällt ein
+Konto aus, nimmt die Anlage das nächste der Kette. Regeln können auf einzelne
+Nebenstellen beschränkt werden. Ohne Regeln telefoniert jede Nebenstelle über das Konto
+ihrer *Rufnummer nach außen*.
+
+## Zusammenarbeit
+
+### Kontakte
+
+Das zentrale Telefonbuch (auch CSV-Import). Die Anlage zeigt damit bei Anrufen den Namen,
+alle Apps übernehmen die Kontakte innerhalb von zwei Minuten. Darunter lässt sich das
+**Telefonbuch per LDAP** für DECT- und Tischtelefone einschalten (Werte siehe
+[Referenz](../pbx/README.md#telefonbuch-per-ldap)).
+
+### Kalender
+
+![Zentrale Kalender](bilder/anlage-kalender.png)
+
+Gemeinsame Kalender für alle Apps: *Eigene Termine* (z. B. Betriebsferien, Schichtplan)
+oder *Feiertage des Bundeslandes (automatisch)*. Je Kalender einstellbar, ob alle
+eintragen dürfen oder nur hier geändert wird. Welche Kalender eine App zeigt, legt das
+App-Profil fest.
+
+### App-Profile
+
+![App-Profile](bilder/anlage-app-profile.png)
+
+Ein App-Profil legt fest, was Desktop- und Mobil-App zeigen:
+
+- welche Bereiche (Start, Wählen, Kontakte, Kalender, Verlauf) in welcher Reihenfolge –
+  per Drag & Drop sortierbar,
+- mit welcher Ansicht die App startet,
+- welche Karten auf der Startseite liegen (ebenfalls per Drag & Drop),
+- welche zentralen Kalender erscheinen,
+- ob Startseite und Kontodaten in der App gesperrt sind.
+
+Die Vorschau zeigt, wie die App aussieht. Zugewiesen wird das Profil bei der Nebenstelle;
+die Apps übernehmen Änderungen innerhalb von zwei Minuten.
+
+### Konferenzräume
+
+Telefonkonferenzen mit beliebig vielen Teilnehmern, optional mit PIN. Intern über die
+Nummer des Raums erreichbar, von außen, wenn der Raum Ziel einer Rufabfolge ist.
+
+## Auswertung und System
+
+### Anrufliste
+
+Alle Gespräche, neueste zuerst: eingehend, ausgehend, intern, mit Dauer. Aufnahmen
+lassen sich hier anhören.
+
+### System
+
+| Reiter | Inhalt |
+| --- | --- |
+| Allgemein | Name, Adresse für Telefone, Länder-/Ortsvorwahl, Bundesland, Zeitzone, Ports, öffentliche Adresse (NAT), lokale Netze, Codecs |
+| E-Mail | SMTP-Server für Voicemail und Einladungen, Testmail |
+| Sicherheit | Sperre nach Fehlanmeldungen, nie sperren, Nebenstellen nur aus bestimmten Netzen, gesperrte Adressen |
+| Sicherung | Export, Import, automatische Sicherungen wiederherstellen |
+| Aktualisierung | neue Version installieren, Kanal stabil/Beta, automatisch nachts |
+| Zugang | Passwort der Weboberfläche, Suche der App im lokalen Netz |
+| Fernzugriff | öffentliche HTTPS-Adresse für Mobil-App und Einrichtungslinks ([Anleitung](fernzugriff.md)) |
+| Diagnose | Zustand, Watchdog-Einstellungen, Ereignisprotokoll |
+| Home Assistant | Schnittstelle einschalten, Zugriffsschlüssel ([Anleitung](home-assistant.md)) |
+| Protokoll | Warnungen und Fehler von Asterisk, Neustart der Anlage |
+
+## Funktionscodes am Telefon
+
+| Code | Funktion |
+| --- | --- |
+| \*97 | eigene Voicemail abhören |
+| \*98 | andere Voicemail abhören |
+| \*76 | Nicht stören ein/aus |
+| \*21 + Nummer | alle Anrufe weiterleiten (\*21 allein: aus) |
+| \*8 | Anruf in der eigenen Gruppe heranholen |
+| \*\* + Nebenstelle | Anruf einer Nebenstelle heranholen |
+| \*31 + Nummer | anonym anrufen |
+| \*28 + Nummer | Zeitsteuerung umschalten (Nachtschaltung) |
+| \*43 | Echo-Test (Mikrofon prüfen) |

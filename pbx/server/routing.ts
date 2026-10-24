@@ -188,6 +188,18 @@ export function routeOutbound(cfg: PbxConfig, req: OutboundRequest): string {
     if (PREMIUM.test(e164) && !actor?.allow_premium) return reply('deny')
   }
 
+  // Eigene Rufnummer eines anderen (oder desselben) SIP-Kontos: direkt intern
+  // durchstellen, als käme der Anruf von außen. Über das Telefonnetz zurück klappt
+  // bei vielen Anbietern nicht (besetzt oder „Nummer nicht vergeben“).
+  if (!special && !forwarding) {
+    const own = cfg.trunks.find((t) => t.enabled && t.numbers.some((n) => sameNumber(n, e164, cfg)))
+    if (own) {
+      const inbound = routeInbound(cfg, { trunk: own.id, did: dialed, to: '', cid: actor!.number, name: actor!.name })
+      const [target, , , called] = inbound.split('|')
+      return reply('local', target, actor!.name, actor!.number, called)
+    }
+  }
+
   const enabled = cfg.trunks.filter((t) => t.enabled && t.registrar.trim())
   let trunks: Trunk[] = []
   const routes = cfg.outbound.filter((r) => !r.extensions.length || (actor && r.extensions.includes(actor.number)))
@@ -201,6 +213,13 @@ export function routeOutbound(cfg: PbxConfig, req: OutboundRequest): string {
   // Ohne passende Regel (oder für Notrufe ohne Regel) jedes aktive Konto versuchen
   if (!trunks.length && (!cfg.outbound.length || special)) trunks = enabled
   if (!trunks.length) return reply('deny')
+  // Das Konto, zu dem die eigene Rufnummer der Nebenstelle gehört, zuerst nehmen –
+  // nur dort darf die Nummer auch angezeigt werden
+  const ownCid = !forwarding ? actor?.outbound_cid.trim() : ''
+  if (ownCid) {
+    const owner = trunks.find((t) => t.numbers.some((n) => sameNumber(n, ownCid, cfg)))
+    if (owner) trunks = [owner, ...trunks.filter((t) => t !== owner)]
+  }
 
   const callerE164 = toE164(req.cid, cc, cfg.system.area_code)
   const legs = trunks.flatMap((t) => {

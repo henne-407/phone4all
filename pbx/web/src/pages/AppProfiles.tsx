@@ -3,14 +3,19 @@
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
 import ContactsIcon from '@mui/icons-material/Contacts'
 import DialpadIcon from '@mui/icons-material/Dialpad'
+import DoNotDisturbOnIcon from '@mui/icons-material/DoNotDisturbOn'
+import EventIcon from '@mui/icons-material/Event'
 import HistoryIcon from '@mui/icons-material/History'
 import HomeIcon from '@mui/icons-material/Home'
 import LockIcon from '@mui/icons-material/Lock'
 import PhoneAndroidIcon from '@mui/icons-material/PhoneAndroid'
+import StarIcon from '@mui/icons-material/Star'
+import TodayIcon from '@mui/icons-material/Today'
 import { Box, Checkbox, Chip, FormControlLabel, FormGroup, Stack, Switch, TextField, Typography, useTheme } from '@mui/material'
 import type { ReactNode } from 'react'
 import { APP_HOME_CARDS, APP_PAGES, type AppHomeCard, type AppPage, type AppProfile } from '../../../server/model'
 import { CollectionPage, FormGrid, FormHeading, Full, Select } from '../components/common'
+import { DragColumns } from '../components/DragColumns'
 import { usePbx } from '../state'
 
 const PAGE_ICONS: Record<AppPage, ReactNode> = {
@@ -21,12 +26,20 @@ const PAGE_ICONS: Record<AppPage, ReactNode> = {
   history: <HistoryIcon fontSize="small" />,
 }
 
+const CARD_ICONS: Record<AppHomeCard, ReactNode> = {
+  status: <DoNotDisturbOnIcon fontSize="small" />,
+  today: <TodayIcon fontSize="small" />,
+  favorites: <StarIcon fontSize="small" />,
+  recent: <HistoryIcon fontSize="small" />,
+  events: <EventIcon fontSize="small" />,
+}
+
 const label = (list: [string, string][], key: string): string => list.find(([k]) => k === key)?.[1] ?? key
 
 /** Vorschau: so sieht die App mit diesem Profil aus (Navigation links, Startseite rechts). */
 export function PhonePreview({ profile }: { profile: AppProfile }) {
   const theme = useTheme()
-  const pages = APP_PAGES.filter(([p]) => profile.pages.includes(p))
+  const pages = profile.pages.map((p): [AppPage, string] => [p, label(APP_PAGES, p)])
   return (
     <Box sx={{ display: 'flex', border: 2, borderColor: theme.m3.outline, borderRadius: 3, overflow: 'hidden', height: 216, bgcolor: 'background.default' }}>
       <Stack sx={{ width: 56, py: 1, gap: 0.25, alignItems: 'center', bgcolor: theme.m3.sidebar, borderRight: 1, borderColor: theme.m3.outlineVariant }}>
@@ -71,11 +84,8 @@ export function PhonePreview({ profile }: { profile: AppProfile }) {
 function ProfileForm({ value, onChange }: { value: AppProfile; onChange: (v: AppProfile) => void }) {
   const { config } = usePbx()
   const set = <K extends keyof AppProfile>(k: K, v: AppProfile[K]): void => onChange({ ...value, [k]: v })
-  const togglePage = (p: AppPage, on: boolean): void => {
-    const pages = APP_PAGES.map(([k]) => k).filter((k) => (k === p ? on : value.pages.includes(k)))
+  const setPages = (pages: AppPage[]): void =>
     onChange({ ...value, pages, start_tab: pages.includes(value.start_tab) ? value.start_tab : (pages[0] ?? 'home') })
-  }
-  const toggleCard = (c: AppHomeCard, on: boolean): void => set('home_cards', on ? [...value.home_cards, c] : value.home_cards.filter((x) => x !== c))
   return (
     <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: '1fr', md: '1fr 240px' } }}>
       <FormGrid>
@@ -83,23 +93,23 @@ function ProfileForm({ value, onChange }: { value: AppProfile; onChange: (v: App
           <TextField label="Name" value={value.name} onChange={(e) => set('name', e.target.value)} required autoFocus helperText="z. B. „Empfang“, „Außendienst“, „Nur telefonieren“" />
         </Full>
         <Full>
-          <FormHeading hint="Ausgeblendete Bereiche erscheinen in der App nicht mehr">Sichtbare Bereiche</FormHeading>
-          <FormGroup row>
-            {APP_PAGES.map(([p, l]) => (
-              <FormControlLabel key={p} control={<Checkbox checked={value.pages.includes(p)} onChange={(e) => togglePage(p, e.target.checked)} />} label={l} />
-            ))}
-          </FormGroup>
+          <FormHeading hint="Ziehen zum Ordnen, Ein- und Ausblenden – so erscheint die Navigation in der App">Bereiche der App</FormHeading>
+          <DragColumns options={APP_PAGES} value={value.pages} onChange={setPages} icons={PAGE_ICONS} chosenTitle="In der App" restTitle="Ausgeblendet" emptyText="Mindestens einen Bereich hierher ziehen" />
         </Full>
         <Select label="Öffnet mit" value={value.start_tab} onChange={(v) => set('start_tab', v)} options={APP_PAGES.filter(([p]) => value.pages.includes(p))} />
         <Box />
         {value.pages.includes('home') && (
           <Full>
-            <FormHeading hint="In dieser Reihenfolge. Nichts ausgewählt = jede Person stellt selbst ein">Karten auf der Startseite</FormHeading>
-            <FormGroup row>
-              {APP_HOME_CARDS.map(([c, l]) => (
-                <FormControlLabel key={c} control={<Checkbox checked={value.home_cards.includes(c)} onChange={(e) => toggleCard(c, e.target.checked)} />} label={l} />
-              ))}
-            </FormGroup>
+            <FormHeading hint="In dieser Reihenfolge von oben nach unten. Leer = jede Person stellt selbst ein">Karten auf der Startseite</FormHeading>
+            <DragColumns
+              options={APP_HOME_CARDS}
+              value={value.home_cards}
+              onChange={(v) => set('home_cards', v)}
+              icons={CARD_ICONS}
+              chosenTitle="Auf der Startseite"
+              restTitle="Weitere Karten"
+              emptyText="Keine Vorgabe – Karten hierher ziehen"
+            />
           </Full>
         )}
         <Full>

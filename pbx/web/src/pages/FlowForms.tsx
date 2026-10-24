@@ -24,7 +24,7 @@ import { useEffect, useRef, useState } from 'react'
 import { type Announcement, HANGUP, type InboundRoute, type Ivr, type TimeCondition } from '../../../server/model'
 import { api } from '../api'
 import { startRecording, toTelephoneWav } from '../components/audio'
-import { ChipsInput, DestinationPicker, FormGrid, Full, NumberField, Select } from '../components/common'
+import { ChipsInput, DestinationPicker, FormGrid, Full, NumberField, NumberPicker, Select, trunkNumberOptions } from '../components/common'
 import { usePbx } from '../state'
 
 export const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
@@ -32,15 +32,15 @@ export const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 export function InboundForm({ value, onChange }: { value: InboundRoute; onChange: (v: InboundRoute) => void }) {
   const { config } = usePbx()
   const set = <K extends keyof InboundRoute>(k: K, v: InboundRoute[K]): void => onChange({ ...value, [k]: v })
-  const numbers = config.trunks.flatMap((t) => t.numbers)
   return (
     <FormGrid>
       <TextField label="Name" value={value.name} onChange={(e) => set('name', e.target.value)} required autoFocus />
-      <TextField
+      <NumberPicker
         label="Angerufene Rufnummer"
         value={value.number}
-        onChange={(e) => set('number', e.target.value)}
-        helperText={numbers.length ? `Leer = alle. Eigene: ${numbers.join(', ')}` : 'Leer = alle Nummern'}
+        onChange={(v) => set('number', v)}
+        options={trunkNumberOptions(config).filter((o) => !value.trunk || config.trunks.find((t) => t.id === value.trunk)?.numbers.includes(o.value))}
+        helperText="Leer = alle Nummern"
       />
       <Select
         label="Über SIP-Konto"

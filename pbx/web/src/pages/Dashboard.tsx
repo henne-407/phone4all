@@ -14,7 +14,7 @@ import { useStatus } from '../useStatus'
 
 function Stat({ label, value, sub, color, icon, onClick }: { label: string; value: ReactNode; sub?: ReactNode; color: string; icon: ReactNode; onClick?: () => void }) {
   return (
-    <Card sx={{ flex: '1 1 220px', '&:hover': onClick ? { borderColor: 'primary.main' } : undefined }}>
+    <Card sx={{ flex: '1 1 220px' }}>
       <CardActionArea onClick={onClick} disabled={!onClick} sx={{ height: '100%' }}>
         <CardContent sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
           <Box sx={{ width: 48, height: 48, borderRadius: 3, bgcolor: color, color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{icon}</Box>
@@ -55,6 +55,12 @@ export default function Dashboard() {
   const regTrunks = config.trunks.filter((t) => t.enabled && t.register && !t.ip_auth)
   const registered = regTrunks.filter((t) => status?.registrations.find((r) => r.trunk === t.id)?.status === 'Registered').length
   const calls = status?.calls ?? []
+  /** „10 Anna“ für Nebenstellen, „Name (Nummer)“ für externe Anrufer */
+  const party = (num: string, name: string): string => {
+    const ext = config.extensions.find((e) => e.number === num)
+    if (ext) return `${ext.number} ${ext.name}`
+    return name && name !== num ? `${name} (${num})` : num
+  }
   const problems = status?.watchdog.checks.filter((c) => c.level !== 'ok') ?? []
   const worst = problems.some((c) => c.level === 'error') ? 'error' : problems.length ? 'warning' : 'ok'
   const steps: [boolean, string, string][] = [
@@ -143,12 +149,12 @@ export default function Dashboard() {
             {calls.length === 0 && <Typography sx={{ color: 'text.secondary' }}>Gerade wird nicht telefoniert.</Typography>}
             <List dense disablePadding>
               {calls.map((c) => {
-                const ch = c.channels[0]
+                const answered = c.channels.some((x) => x.state === 'Up') && c.channels.length > 1
                 return (
                   <ListItem key={c.id} disableGutters>
                     <ListItemText
-                      primary={`${ch.fromName || ch.from} → ${ch.toName || ch.to || '…'}`}
-                      secondary={`${ch.state} · ${formatDuration(Math.max(...c.channels.map((x) => x.duration)))}`}
+                      primary={`${party(c.from, c.fromName) || 'Anonym'} → ${party(c.to, c.toName) || '…'}`}
+                      secondary={`${answered ? 'Verbunden' : 'Klingelt / im Menü'} · ${formatDuration(Math.max(...c.channels.map((x) => x.duration)))}`}
                     />
                   </ListItem>
                 )
