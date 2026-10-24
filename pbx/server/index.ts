@@ -7,7 +7,9 @@ import { Asterisk } from './asterisk'
 import { CalendarStore } from './calendars'
 import { Auth, SESSION_COOKIE, SESSION_MAX_AGE } from './auth'
 import { readCalls, tailLog } from './cdr'
+import { describeAgent, gigasetFile, requestMac } from './dect'
 import { integrationReport, validToken } from './integration'
+import { LdapServer } from './ldap'
 import { HttpError, type Request, Router, makeRequest, sendFile, sendJson, sendText, serveStatic } from './http'
 import { sendMail } from './mail'
 import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, SECTIONS, type SectionName } from './model'
@@ -26,6 +28,7 @@ import {
 import { Guard } from './security'
 import { listSounds, saveSound, soundDir, soundFile, type SoundKind } from './sounds'
 import { ConfigStore, type ExportFile, ValidationError, fillSecrets, newPin, newSecret } from './store'
+import type { DectBase } from './model'
 import { Updater } from './updates'
 
 const store = new ConfigStore()
@@ -34,6 +37,7 @@ const asterisk = new Asterisk()
 const guard = new Guard(() => store.config.security)
 const updater = new Updater()
 const calendars = new CalendarStore(() => store.config)
+const ldap = new LdapServer(() => store.config)
 auth.init()
 
 // -- Konfiguration übernehmen (gebündelt, damit viele Änderungen nur ein Reload sind)
@@ -43,6 +47,7 @@ function applySoon(): void {
   if (applyTimer) clearTimeout(applyTimer)
   applyTimer = setTimeout(() => {
     applyTimer = null
+    ldap.apply()
     asterisk.apply(store.config, guard.banned()).catch((e) => console.error('Konfiguration:', e))
   }, 300)
 }
@@ -191,6 +196,41 @@ pub.get('/setup/:token', (r) => {
   sendText(r.res, 200, landingPage(store.config, ext, requestBase(r)), 'text/html; charset=utf-8')
 })
 
+// -- DECT-Basen holen ihre Einrichtung (Gigaset N610/N670/N870 IP PRO) ---------------
+
+/** Letzter Abruf je Basis (nur im Speicher) */
+const dectSeen = new Map<string, { time: number; ip: string; agent: string; mac: string }>()
+
+/** SIP-Server für die Basis: eingestellte Adresse, sonst die, unter der sie uns erreicht */
+function sipHostFor(base: string): string {
+  return store.config.system.sip_host.trim() || new URL(base).hostname.replace(/^\[|\]$/g, '')
+}
+
+/** Adresse, unter der Geräte im LAN die Anlage erreichen (für Einrichtungslinks) */
+function lanBase(r: Request): string {
+  const host = store.config.system.sip_host.trim()
+  return host ? `http://${host}:${SETTINGS.httpPort}` : requestBase(r)
+}
+
+function dectServer(base: string, b: DectBase): string {
+  return `${base}/dect/${b.token}/`
+}
+
+function dectFile(r: Request): void {
+  const b = store.config.dect.find((x) => x.token && x.token === r.params.token)
+  if (!b) throw new HttpError(404, 'Unbekannte Basis.')
+  const agent = String(r.raw.headers['user-agent'] ?? '')
+  const mac = requestMac(r.params.file ?? '', agent)
+  if (b.mac && mac && mac !== b.mac) throw new HttpError(404, 'Diese Einrichtung gehört zu einer anderen Basis.')
+  dectSeen.set(b.id, { time: Date.now(), ip: r.ip, agent: describeAgent(agent), mac })
+  const base = requestBase(r)
+  const xml = gigasetFile(store.config, b, { server: dectServer(base, b), sipHost: sipHostFor(base), now: Math.floor(Date.now() / 1000) })
+  sendText(r.res, 200, xml, 'application/xml; charset=utf-8')
+}
+
+pub.get('/dect/:token', dectFile)
+pub.get('/dect/:token/:file', dectFile)
+
 /** Zustandsbericht für Home Assistant u. a. (Bearer-Token statt Anmeldung) */
 pub.get('/api/integration/status', async (r) => {
   if (!validToken(store.config, r.raw.headers.authorization)) {
@@ -289,6 +329,40 @@ api.post('/api/extensions/:id/invite', async (r) => {
     ].join('\n'),
   )
   return { ok: true }
+})
+
+// DECT-Basen und LDAP-Telefonbuch
+
+api.get('/api/dect', (r) => {
+  const base = lanBase(r)
+  return {
+    ldap: ldap.status,
+    host: new URL(base).hostname,
+    bases: store.config.dect.map((b) => ({ id: b.id, url: dectServer(base, b), seen: dectSeen.get(b.id) ?? null })),
+  }
+})
+
+api.get('/api/dect/:id/file', (r) => {
+  const b = store.config.dect.find((x) => x.id === r.params.id)
+  if (!b) throw new HttpError(404, 'DECT-Basis nicht gefunden.')
+  const base = lanBase(r)
+  const xml = gigasetFile(store.config, b, { server: dectServer(base, b), sipHost: sipHostFor(base), now: Math.floor(Date.now() / 1000) })
+  r.res.writeHead(200, {
+    'Content-Type': 'application/xml; charset=utf-8',
+    'Content-Disposition': `attachment; filename="${b.mac || 'gigaset'}.xml"`,
+  })
+  r.res.end(xml)
+})
+
+api.post('/api/dect/:id/renew', (r) => {
+  store.update((draft) => {
+    const b = draft.dect.find((x) => x.id === r.params.id)
+    if (!b) throw new HttpError(404, 'DECT-Basis nicht gefunden.')
+    b.token = newSecret(32)
+    b.pin = newPin(4)
+  })
+  dectSeen.delete(r.params.id)
+  return store.config.dect.find((x) => x.id === r.params.id)
 })
 
 // Zentrale Kalender
@@ -493,6 +567,7 @@ async function main(): Promise<void> {
   console.log(`Phone4all PBX ${SETTINGS.version}`)
   asterisk.prepareDirs()
   await asterisk.apply(store.config, guard.banned())
+  ldap.apply()
   const server = http.createServer((req, res) => void handle(req, res))
   server.listen(SETTINGS.httpPort, () => console.log(`Weboberfläche auf Port ${SETTINGS.httpPort}`))
   startDiscovery(() => store.config)
@@ -522,6 +597,7 @@ async function main(): Promise<void> {
 
   const shutdown = async (): Promise<void> => {
     server.close()
+    ldap.stop()
     await asterisk.stop()
     process.exit(0)
   }

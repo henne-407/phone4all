@@ -1,10 +1,12 @@
+import MenuBookIcon from '@mui/icons-material/MenuBook'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
-import { Box, Button, TextField } from '@mui/material'
-import { useRef } from 'react'
-import type { PhonebookEntry } from '../../../server/model'
+import { Alert, Box, Button, FormControlLabel, Stack, Switch, TextField } from '@mui/material'
+import { useEffect, useRef, useState } from 'react'
+import type { LdapSettings, PhonebookEntry } from '../../../server/model'
 import { api } from '../api'
-import { CollectionPage, FormGrid } from '../components/common'
+import { CollectionPage, FormGrid, NumberField, Section, StatusDot } from '../components/common'
 import { usePbx } from '../state'
+import { CopyField, LDAP_NAME_FILTER, LDAP_NUMBER_FILTER, useDectInfo } from './Dect'
 
 function EntryForm({ value, onChange }: { value: PhonebookEntry; onChange: (v: PhonebookEntry) => void }) {
   const set = <K extends keyof PhonebookEntry>(k: K, v: PhonebookEntry[K]): void => onChange({ ...value, [k]: v })
@@ -34,6 +36,65 @@ function parseCsv(text: string): Omit<PhonebookEntry, 'id'>[] {
     const c = split(l)
     return { name: c[iName] ?? '', company: iCompany >= 0 ? c[iCompany] : '', phone: iPhone >= 0 ? c[iPhone] : '', mobile: iMobile >= 0 ? c[iMobile] : '' }
   }).filter((e) => e.name && (e.phone || e.mobile))
+}
+
+/** Telefonbuch per LDAP für DECT-Basen und Tischtelefone */
+function Ldap() {
+  const { config, saveSection, toast } = usePbx()
+  const [draft, setDraft] = useState<LdapSettings>(config.ldap)
+  useEffect(() => setDraft(config.ldap), [config.ldap])
+  const info = useDectInfo([config.ldap])
+  const save = (values: Partial<LdapSettings>): void =>
+    void saveSection('ldap', values)
+      .then(() => toast('Gespeichert'))
+      .catch((e: Error) => toast(e.message, 'error'))
+  const running = info?.ldap.listening
+  return (
+    <Section
+      icon={<MenuBookIcon />}
+      title="Telefonbuch für DECT- und Tischtelefone (LDAP)"
+      description="Gigaset-Basen, Yealink, Snom und andere Telefone durchsuchen diese Kontakte und alle Nebenstellen über LDAP. Nur lesen, nur aus dem lokalen Netz (oder den erlaubten Netzen unter System → Sicherheit)."
+      action={
+        config.ldap.enabled && info ? (
+          <StatusDot color={running ? 'success' : 'error'} label={running ? `läuft auf Port ${info.ldap.port}` : info.ldap.error || 'startet nicht'} />
+        ) : undefined
+      }
+    >
+      <FormControlLabel control={<Switch checked={config.ldap.enabled} onChange={(e) => save({ enabled: e.target.checked })} />} label="LDAP-Telefonbuch einschalten" />
+      {config.ldap.enabled && (
+        <Stack sx={{ gap: 2, mt: 2 }}>
+          <FormGrid columns={3}>
+            <NumberField label="Port" value={draft.port} min={1} onChange={(port) => setDraft({ ...draft, port })} helperText="Standard 389" />
+            <TextField
+              label="Kennwort (optional)"
+              value={draft.password}
+              onChange={(e) => setDraft({ ...draft, password: e.target.value })}
+              helperText="Leer = Suche ohne Anmeldung"
+              autoComplete="off"
+            />
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', pt: 1 }}>
+              <Button variant="contained" onClick={() => save(draft)}>
+                Speichern
+              </Button>
+            </Box>
+          </FormGrid>
+          {info && (
+            <FormGrid>
+              <CopyField label="Server" value={info.host} />
+              <CopyField label="Suchbasis (BaseDN)" value="dc=phone4all" />
+              {config.ldap.password && <CopyField label="Benutzer (Bind-DN)" value="cn=telefonbuch,dc=phone4all" helperText="Telefone können sich auch mit Nebenstelle und SIP-Passwort anmelden" />}
+              <CopyField label="Namensfilter" value={LDAP_NAME_FILTER} />
+              <CopyField label="Nummernfilter" value={LDAP_NUMBER_FILTER} />
+            </FormGrid>
+          )}
+          <Alert severity="info" variant="outlined">
+            Attribute: Name <code>cn</code>, Vorname <code>givenName</code>, Nachname <code>sn</code>, Firma <code>o</code>, Telefon <code>telephoneNumber</code>, Mobil{' '}
+            <code>mobile</code>. Im Filter steht <code>%</code> für die Eingabe am Telefon.
+          </Alert>
+        </Stack>
+      )}
+    </Section>
+  )
 }
 
 export default function Phonebook() {
@@ -72,9 +133,10 @@ export default function Phonebook() {
           })
         }}
       />
-      <Button startIcon={<UploadFileIcon />} sx={{ mt: 2 }} onClick={() => ref.current?.click()}>
+      <Button startIcon={<UploadFileIcon />} sx={{ mt: 2, mb: 3 }} onClick={() => ref.current?.click()}>
         CSV importieren
       </Button>
+      <Ldap />
     </Box>
   )
 }
