@@ -1,6 +1,6 @@
 {
   "name": "phone4all-pbx",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "private": true,
   "description": "Telefonanlage (Asterisk) mit Weboberfläche und automatischer Einrichtung der SIP-Telefon-App",
   "license": "MIT",

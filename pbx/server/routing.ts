@@ -177,7 +177,31 @@ export function routeOutbound(cfg: PbxConfig, req: OutboundRequest): string {
 
   const dialed = cleanNumber(req.num)
   const special = SPECIAL_NUMBER.test(dialed)
-  const e164 = special ? dialed : toE164(dialed, cc, cfg.system.area_code)
+  let e164 = special ? dialed : toE164(dialed, cc, cfg.system.area_code)
+  // Kurze Ortsnummern (3–4 Stellen, gibt es in kleinen Ortsnetzen): toE164 ergänzt
+  // die Vorwahl erst ab 5 Stellen, weil kürzere Nummern sonst auch interne sein könnten.
+  // Hier ist klar, dass es keine interne Nummer ist – die stehen vorher im Wählplan.
+  const area = cfg.system.area_code.trim()
+  if (!special && area && /^[1-9]\d{2,3}$/.test(dialed)) e164 = `+${cc}${area}${dialed}`
+
+  // Eigene Rufnummer eines anderen (oder desselben) SIP-Kontos: direkt intern
+  // durchstellen, als käme der Anruf von außen. Über das Telefonnetz zurück klappt
+  // bei vielen Anbietern nicht (besetzt oder „Nummer nicht vergeben“). Ohne Vorwahl
+  // gewählt zählt auch der Teil hinter der Vorwahl – die Konten können in
+  // verschiedenen Ortsnetzen liegen, eingestellt ist aber nur eine Ortsvorwahl.
+  if (!special && !forwarding && actor && actor.permission !== 'internal') {
+    const local = /^[1-9]\d{4,}$/.test(dialed) ? dialed : ''
+    const isOwn = (n: string): boolean =>
+      (e164.startsWith('+') && sameNumber(n, e164, cfg)) || Boolean(local && significant(toE164(n, cc, cfg.system.area_code), cc).endsWith(local))
+    const own = cfg.trunks.find((t) => t.enabled && t.numbers.some(isOwn))
+    if (own) {
+      const did = own.numbers.find(isOwn) ?? dialed
+      const inbound = routeInbound(cfg, { trunk: own.id, did, to: '', cid: actor.number, name: actor.name })
+      const [target, , , called] = inbound.split('|')
+      return reply('local', target, actor.name, actor.number, called)
+    }
+  }
+
   if (!special && !e164.startsWith('+')) return reply('invalid')
 
   if (special && dialed.startsWith('118') && !actor?.allow_premium) return reply('deny')
@@ -186,18 +210,6 @@ export function routeOutbound(cfg: PbxConfig, req: OutboundRequest): string {
     if (permission === 'internal') return reply('deny')
     if (permission === 'national' && !e164.startsWith('+' + cc)) return reply('deny')
     if (PREMIUM.test(e164) && !actor?.allow_premium) return reply('deny')
-  }
-
-  // Eigene Rufnummer eines anderen (oder desselben) SIP-Kontos: direkt intern
-  // durchstellen, als käme der Anruf von außen. Über das Telefonnetz zurück klappt
-  // bei vielen Anbietern nicht (besetzt oder „Nummer nicht vergeben“).
-  if (!special && !forwarding) {
-    const own = cfg.trunks.find((t) => t.enabled && t.numbers.some((n) => sameNumber(n, e164, cfg)))
-    if (own) {
-      const inbound = routeInbound(cfg, { trunk: own.id, did: dialed, to: '', cid: actor!.number, name: actor!.name })
-      const [target, , , called] = inbound.split('|')
-      return reply('local', target, actor!.name, actor!.number, called)
-    }
   }
 
   const enabled = cfg.trunks.filter((t) => t.enabled && t.registrar.trim())
