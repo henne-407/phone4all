@@ -1,173 +1,94 @@
-# SIP-Telefon
+# Phone4all
 
-Schlanker SIP-Softphone-Client für **Linux, macOS und Windows** mit einer Oberfläche
-in Material UI. Verbindet sich mit einer SIP-Telefonanlage (z. B. FRITZ!Box, Asterisk,
-3CX, Starface, Sipgate), wählt Nummern, verwaltet Kontakte, meldet eingehende Anrufe
-per Pop-up und Benachrichtigung und zeigt deinen Kalender (CalDAV, unter Linux auch
-GNOME Online-Konten) inklusive Einwahlnummern zum direkten Anrufen.
+**Eine moderne Telefonanlage, die einfach bleibt.** Phone4all besteht aus einer
+Telefonanlage im Docker-Container, einer Desktop-App für Linux, macOS und Windows, einer
+Mobil-App für Android und iPhone und einer Integration für Home Assistant. Alles ist auf
+Deutsch, richtet sich weitgehend selbst ein und funktioniert auf Wunsch auch unterwegs
+über HTTPS.
 
-Die SIP- und Audio-Arbeit macht [baresip](https://github.com/baresip/baresip), das als
-Hintergrundprozess gestartet und über sein `ctrl_tcp`-Modul gesteuert wird. Die App
-selbst ist mit Electron, React und [Material UI](https://mui.com/) gebaut.
+[![Build](https://github.com/henne-407/phone4all/actions/workflows/build.yml/badge.svg)](https://github.com/henne-407/phone4all/actions/workflows/build.yml)
+[![Telefonanlage](https://github.com/henne-407/phone4all/actions/workflows/pbx.yml/badge.svg)](https://github.com/henne-407/phone4all/actions/workflows/pbx.yml)
+[![Home Assistant](https://github.com/henne-407/phone4all/actions/workflows/homeassistant.yml/badge.svg)](https://github.com/henne-407/phone4all/actions/workflows/homeassistant.yml)
+[![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-blue.svg)](LICENSE)
 
-## Installation
+<p align="center">
+  <img src="docs/bilder/anlage-uebersicht.png" width="49%" alt="Weboberfläche der Telefonanlage: Übersicht">
+  <img src="docs/bilder/app-hell.png" width="49%" alt="Desktop-App SIP-Telefon: Startseite">
+</p>
 
-Fertige Pakete baut GitHub Actions bei jedem Push (Artefakte) bzw. für jeden
-Versions-Tag `v*` (Release):
+## Was dazugehört
 
-| System | Paket | baresip |
+| Teil | Wofür | Läuft auf | Doku |
+| --- | --- | --- | --- |
+| **Telefonanlage** | Asterisk 20 mit deutscher Weboberfläche: Nebenstellen, Gruppen, Rufabfolgen, Sprachmenüs, Voicemail, SIP-Konten aller großen Anbieter | Docker auf Linux-Server, VM, NAS (z. B. TrueNAS), Raspberry Pi | [Bedienung](docs/telefonanlage.md) · [Referenz](pbx/README.md) |
+| **SIP-Telefon (Desktop)** | Softphone mit Anruf-Pop-up, Kontakten, Kalender und Anrufverlauf | Linux, macOS, Windows | [Desktop-App](docs/desktop-app.md) |
+| **SIP-Telefon (Mobil)** | Telefonieren mit der eigenen Nebenstelle im Büro und unterwegs | Android, iPhone | [Mobil-App](docs/mobil-app.md) |
+| **DECT-Telefone** | Gigaset N610/N670/N870 IP PRO richten sich selbst ein, Telefonbuch per LDAP | Gigaset-Basis | [DECT-Anleitung](docs/dect.md) |
+| **Home Assistant** | Verpasste Anrufe und Störungen als Sensoren, Ereignisse und Benachrichtigungen | Home Assistant (HACS) | [Home Assistant](docs/home-assistant.md) |
+
+Die Telefonanlage ist das Herz: Sie verteilt Konten, Telefonbuch, Kalender und
+App-Profile an alle Apps. Die Desktop-App funktioniert aber auch allein mit jeder anderen
+SIP-Anlage (FRITZ!Box, 3CX, Starface, sipgate …).
+
+## In fünf Minuten startklar
+
+1. **Anlage installieren** – auf einem Debian- oder Ubuntu-Server:
+
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/henne-407/phone4all/main/pbx/install.sh | sudo sh
+   ```
+
+   Das Skript zeigt am Ende Adresse und erstes Passwort der Weboberfläche
+   (`http://<server>:8080`, Benutzer `admin`). Andere Wege (Docker Compose, TrueNAS,
+   Proxmox, Raspberry Pi) stehen unter [Installation](docs/installation.md).
+2. **Einrichten** – die Übersicht führt mit *Erste Schritte* durch Nebenstellen,
+   SIP-Konto beim Anbieter (Vorlagen für Telekom, Vodafone, Deutsche Glasfaser, 1&1, o2,
+   sipgate, easybell, Placetel, FRITZ!Box) und die Rufabfolge für eingehende Anrufe.
+3. **Telefone verbinden** – die [Desktop-App](https://github.com/henne-407/phone4all/releases/latest)
+   findet die Anlage im Netz, Nebenstelle und PIN genügen. Handys scannen den QR-Code der
+   Nebenstelle, Gigaset-Basen holen sich ihre Einrichtung selbst.
+
+Die ausführliche Anleitung mit allen Schritten steht unter
+[Erste Schritte](docs/erste-schritte.md).
+
+## Dokumentation
+
+- [Erste Schritte](docs/erste-schritte.md) – vom leeren Server zum ersten Anruf
+- [Installation der Telefonanlage](docs/installation.md) – Docker, TrueNAS, VM, Raspberry Pi, Updates, Umzug
+- [Telefonanlage bedienen](docs/telefonanlage.md) – die Weboberfläche Seite für Seite
+- [Desktop-App](docs/desktop-app.md) – Installation, Einrichtung, Funktionen, Kalender, Adressbücher
+- [Mobil-App](docs/mobil-app.md) – Android und iPhone
+- [Zugriff von unterwegs](docs/fernzugriff.md) – HTTPS über einen Reverse-Proxy wie Pangolin
+- [DECT-Telefone](docs/dect.md) – Gigaset N610 IP PRO Schritt für Schritt
+- [Home Assistant](docs/home-assistant.md) – Integration, Blueprint, Beispiele
+- [Fehlersuche](docs/fehlersuche.md) – häufige Probleme und ihre Lösung
+- [Entwicklung](docs/entwicklung.md) – Aufbau des Repositorys, Tests, Releases
+- [Referenz der Telefonanlage](pbx/README.md) – Ports, Schnittstellen, Datenablage
+
+## Downloads und Versionen
+
+Alle Pakete stehen unter [Releases](https://github.com/henne-407/phone4all/releases).
+Jeder Teil hat eigene Versionen und Tags:
+
+| Teil | Tag | Ergebnis |
 | --- | --- | --- |
-| Linux | `.rpm`, `.deb`, `.AppImage` | aus der Distribution (siehe unten) |
-| macOS | `.dmg` (Apple Silicon und Intel) | mitgeliefert |
-| Windows | `.exe`-Installer (x64) | mitgeliefert |
+| Desktop-App | `v…` | `.rpm`, `.deb`, `.AppImage`, `.dmg`, `.exe` |
+| Telefonanlage | `pbx-v…` | Docker-Image `ghcr.io/henne-407/phone4all-pbx` (amd64, arm64) |
+| Mobil-App | `mobile-v…` | `.apk` für Android, unsignierte `.ipa` für iPhone |
+| Home Assistant | – | über HACS direkt aus diesem Repository |
 
-**Linux** – baresip installieren:
+Die Telefonanlage meldet neue Versionen selbst und installiert sie per Klick
+(*System → Aktualisierung*).
 
-```sh
-sudo dnf install baresip baresip-pipewire baresip-opus baresip-g722   # Fedora
-sudo apt install baresip                                               # Debian/Ubuntu
-```
+## Fehler melden und mitmachen
 
-Ohne Paket direkt aus dem Quellcode für den eigenen Benutzer installieren
-(ersetzt auch den Startmenü-Eintrag der früheren GTK-Version):
+Fehler und Wünsche bitte als [Issue](https://github.com/henne-407/phone4all/issues/new/choose)
+melden. Hinweise zum Aufbau, zu Tests und zum Code-Stil stehen unter
+[Entwicklung](docs/entwicklung.md).
 
-```sh
-scripts/install-linux.sh
-```
+## Lizenz
 
-**macOS** – die App ist nur ad-hoc signiert, nicht von Apple notarisiert. Beim ersten
-Start meldet macOS, dass der Entwickler nicht überprüft werden kann. Dann unter
-*Systemeinstellungen → Datenschutz & Sicherheit* ganz unten *Dennoch öffnen* wählen
-(bis macOS 14 genügt im Finder Rechtsklick → *Öffnen*). Alternativ im Terminal:
-`xattr -dr com.apple.quarantine /Applications/SIP-Telefon.app`.
-Beim ersten Anruf fragt macOS nach dem Mikrofon.
-
-**Windows** – Installer starten; Windows SmartScreen warnt, weil der Installer
-nicht signiert ist (*Weitere Informationen* → *Trotzdem ausführen*).
-
-## Einrichtung
-
-Menü (⋮) → **Einstellungen** → **Konto**: Server/Domain, Benutzername und Passwort
-eintragen. Beim Schließen des Dialogs verbindet sich das Programm neu. Der Punkt
-links in der Titelleiste zeigt den Status (grün = angemeldet).
-
-FRITZ!Box: unter *Telefonie → Telefoniegeräte → Neues Gerät → Telefon (LAN/WLAN)*
-ein IP-Telefon anlegen. Server ist `fritz.box`, Benutzername der dort vergebene
-Name (z. B. `620`).
-
-Mit der [Phone4all-Telefonanlage](pbx/README.md) geht es ohne Abtippen: unter
-**Konto** → **Einrichten** findet die App die Anlage im Netzwerk; Nebenstelle und
-Einrichtungs-PIN genügen. Alternativ den Link aus der Einladungs-E-Mail öffnen
-(`sip-telefon://…`). Änderungen an der Anlage und ihr Telefonbuch übernimmt die App
-danach automatisch.
-
-## Funktionen
-
-- Anrufe komplett im kleinen Pop-up-Fenster führen, ohne das Hauptfenster zu öffnen:
-  annehmen/ablehnen, „Stumm klingeln“, stummschalten, halten, Tastentöne, weiterleiten,
-  auflegen (abschaltbar unter Einstellungen → Allgemein)
-- Weiterleiten (Blind Transfer) auch direkt beim Klingeln, mit Kontaktvorschlägen
-- Material-Design mit Farbthemen (Violett, Blau, Türkis, Grün, Senf, Orange, Koralle,
-  Pink, Graphit oder die Akzentfarbe des Systems) und Hell/Dunkel/System,
-  Kontrast nach WCAG AA geprüft
-- Navigation unten im schmalen Fenster, als Navigationsleiste links im breiten Fenster;
-  Seiten nutzen breite Fenster mit Detailansichten und Seitenleisten
-- Klingeltöne: Marimba (Standard), Glocken, Klassisch, Dezent, baresip-Original oder eine
-  eigene Audiodatei (WAV/MP3/OGG …), mit Probehören; ausgehend deutsches Freizeichen
-- Titelleiste mit Anmeldestatus (neu anmelden, ab-/anmelden, Konto), „Nicht stören“,
-  Mikrofon mit Pegelanzeige, Lautsprecher mit Testton und separates Gerät zum Klingeln –
-  Umschalten wirkt sofort, auch im laufenden Gespräch
-- Anpassbare Startseite (Karten in bis zu drei Spalten): Status mit „Nicht stören“ und
-  Schnellwahl, Favoriten, letzte Anrufe, nächste Termine – ein-/ausblenden, sortieren,
-  Startansicht wählbar
-- Wähltastatur mit Tastatureingabe, Kontaktvorschlägen und Wahlwiederholung
-  (Anruftaste bei leerem Feld holt die letzte Nummer)
-- Kontakte (Name, Telefon, Mobil, weitere Nummern, Firma) mit Suche; Anrufer werden erkannt
-- Kontakt-Import aus vCard (.vcf) und CSV (Google, iCloud, Outlook, Thunderbird, Android),
-  auch per Drag & Drop auf die Kontaktliste; Dubletten werden ergänzt statt doppelt angelegt
-- Adressbücher per CardDAV, aus Microsoft-SQL-Server-Datenbanken (z. B. CRM/Warenwirtschaft)
-  und unter Linux aus GNOME Online-Konten – alle 30 Minuten abgeglichen (nur lesend)
-- Pop-up-Fenster und Benachrichtigung bei Anrufen, Benachrichtigung bei verpassten Anrufen
-- Anrufverlauf (ein-/ausgehend/verpasst) mit Statistik, Nummern direkt als Kontakt speichern
-- Kalender: Monatsansicht mit Terminpunkten, Termine anlegen/ändern/löschen,
-  Telefonnummern in Terminen (z. B. Einwahlnummern) per Klick anrufen
-- „Rückruf planen“ aus dem Verlauf und während des Gesprächs
-- Erinnerung vor Terminen als Benachrichtigung
-- Läuft beim Schließen im Hintergrund weiter (Symbol im Infobereich), optionaler Autostart
-- Watchdog im Hintergrund: meldet bei Abbruch neu an, startet eine abgestürzte oder hängende
-  SIP-Engine neu und verbindet nach Netzwechsel oder Ruhezustand neu (nie während eines
-  Gesprächs); Zustand und Ereignisse unter Einstellungen → **Diagnose**
-- Passwörter verschlüsselt mit dem Schlüsselbund des Systems (macOS-Schlüsselbund,
-  Windows DPAPI, GNOME-Schlüsselbund/KWallet); Passwörter der GTK-Version werden übernommen
-
-## Kalender
-
-Einstellungen → **Kalender**:
-
-- **CalDAV**: „+“ bei *CalDAV-Konten*, Server-URL, Benutzer und Passwort eintragen.
-  Die Kalender werden automatisch gefunden. Beispiele: Nextcloud
-  `https://cloud.example.de/remote.php/dav`, iCloud `https://caldav.icloud.com`
-  (app-spezifisches Passwort), mailbox.org `https://dav.mailbox.org`.
-- **GNOME Online-Konten** (nur Linux; Google, Microsoft 365, …): Konto in den
-  GNOME-Einstellungen unter *Online-Konten* einrichten; die Kalender erscheinen
-  dann automatisch (über den Evolution Data Server, angebunden mit dem System-Python).
-
-Serientermine werden angezeigt, lassen sich aber nur in der Kalender-App des
-Anbieters bearbeiten.
-
-## SQL-Server-Datenbank anbinden
-
-Einstellungen → **Kontakte** → *SQL-Server-Datenbanken* → „+“. Server, Port,
-Datenbank und Zugangsdaten eintragen (SQL-Login oder `DOMÄNE\benutzer`),
-**Verbinden**, Tabelle oder Sicht wählen – Name-, Firma- und Telefonspalten werden
-anhand der Spaltennamen vorgeschlagen. Alternativ eine eigene `SELECT`-Abfrage mit
-Spalten wie `name`, `company`, `phone`, `mobile`. Es wird nur gelesen; am besten einen
-Datenbankbenutzer mit reinen Leserechten (`db_datareader`) verwenden. Höchstens
-50 000 Zeilen pro Quelle. Kein Treiber nötig (reines JavaScript, `tedious`).
-
-## Dateien
-
-| Linux | macOS / Windows | Inhalt |
-| --- | --- | --- |
-| `~/.config/sip-telefon/settings.json` | App-Datenordner¹ `settings.json` | Einstellungen |
-| `~/.config/sip-telefon/secrets.json` | `secrets.json` | Passwörter (verschlüsselt) |
-| `~/.local/share/sip-telefon/` | `data/` | Kontakte, Verlauf, Adressbuch-Cache, Klingeltöne |
-| `~/.local/state/sip-telefon/baresip.log` | `logs/baresip.log` | Log der SIP-Engine |
-| `~/.local/state/sip-telefon/watchdog.json` | `logs/watchdog.json` | Ereignisse des Watchdogs |
-
-¹ macOS `~/Library/Application Support/SIP-Telefon`, Windows `%APPDATA%\SIP-Telefon`.
-Unter Linux sind es dieselben Ordner wie bei der früheren GTK-Version, Kontakte,
-Verlauf und Einstellungen werden also übernommen.
-
-## Entwicklung
-
-```sh
-npm install
-npm run dev          # App mit Hot-Reload starten
-npm run typecheck
-npm test
-npm run dist:linux   # Pakete nach dist/
-```
-
-Aufbau:
-
-- `src/main/` – Hauptprozess (Node): baresip-Steuerung, Anruflogik, Kontakte,
-  CalDAV/CardDAV, SQL Server, Fenster, Tray, Benachrichtigungen
-- `src/renderer/` – Oberfläche (React + Material UI)
-- `src/shared/` – gemeinsamer Code (Rufnummern, Formate, Statistik, Farbthemen)
-- `resources/linux/eds_helper.py` – Zugriff auf GNOME Online-Konten (Linux)
-- `scripts/build-engine.sh` – baut baresip + PortAudio-Geräteliste für macOS/Windows
-- `native/pa-devices.c` – listet PortAudio-Geräte für die Geräteauswahl
-
-Bildschirmfotos ohne sichtbares Fenster (z. B. für Tests):
-`SIP_TELEFON_SCREENSHOT=/tmp/shots npm start`.
-
-## Hinweise
-
-- Audio: Mikrofon, Lautsprecher und Klingel-Gerät in der Titelleiste wählen
-  (Standard = Systemstandard). Ein neues Klingel-Gerät wird nach dem aktuellen
-  Gespräch übernommen (dafür meldet sich die App kurz neu an).
-- Unter macOS/Windows nutzt baresip PortAudio (Opus, G.722, G.711).
-- Passwörter mit `;` werden von baresip nicht unterstützt.
-- Ist die Anlage nur über NAT erreichbar, in den erweiterten Einstellungen einen
-  STUN-Server und ggf. einen festen lokalen SIP-Port eintragen.
+[MIT](LICENSE). Phone4all nutzt unter anderem [Asterisk](https://www.asterisk.org)
+(GPLv2, im Docker-Image), [baresip](https://github.com/baresip/baresip),
+[JsSIP](https://jssip.net), [Electron](https://www.electronjs.org),
+[React](https://react.dev) und [Material UI](https://mui.com).
