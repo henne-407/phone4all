@@ -81,6 +81,14 @@ describe('Ausgehende Anrufe', () => {
     expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '5551234', cid: '10' }).startsWith('ok|')).toBe(true)
   })
 
+  it('ergänzt die Ortsvorwahl auch bei kurzen Ortsnummern', () => {
+    const cfg = sampleConfig()
+    cfg.trunks.push({ ...cfg.trunks[0], id: 't2', name: 'sipgate', numbers: ['030 456'], inbound_default: to('extension', 'e12') })
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '456', cid: '10' })).toBe('local|p4a-local^12|Person 10|10|030456')
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '789', cid: '10' }).startsWith('ok|trunk-t1|+4930789|')).toBe(true)
+    expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '112', cid: '10' }).startsWith('ok|trunk-t1|112|')).toBe(true)
+  })
+
   it('stellt eigene Nummern ohne Vorwahl auch ohne eingestellte Ortsvorwahl intern durch', () => {
     const cfg = sampleConfig()
     cfg.system.area_code = ''

@@ -177,7 +177,12 @@ export function routeOutbound(cfg: PbxConfig, req: OutboundRequest): string {
 
   const dialed = cleanNumber(req.num)
   const special = SPECIAL_NUMBER.test(dialed)
-  const e164 = special ? dialed : toE164(dialed, cc, cfg.system.area_code)
+  let e164 = special ? dialed : toE164(dialed, cc, cfg.system.area_code)
+  // Kurze Ortsnummern (3–4 Stellen, gibt es in kleinen Ortsnetzen): toE164 ergänzt
+  // die Vorwahl erst ab 5 Stellen, weil kürzere Nummern sonst auch interne sein könnten.
+  // Hier ist klar, dass es keine interne Nummer ist – die stehen vorher im Wählplan.
+  const area = cfg.system.area_code.trim()
+  if (!special && area && /^[1-9]\d{2,3}$/.test(dialed)) e164 = `+${cc}${area}${dialed}`
 
   // Eigene Rufnummer eines anderen (oder desselben) SIP-Kontos: direkt intern
   // durchstellen, als käme der Anruf von außen. Über das Telefonnetz zurück klappt
