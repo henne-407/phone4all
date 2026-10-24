@@ -5,7 +5,7 @@ import { integrationReport, validToken } from '../server/integration'
 import type { UpdateInfo } from '../server/updates'
 import { sampleConfig } from './helpers'
 
-const update: UpdateInfo = { current: '0.3.0', latest: null, available: false, canApply: false, reason: '', checked: 0, error: '' }
+const update: UpdateInfo = { current: '0.3.0', latest: null, available: false, canApply: false, reason: '', project: '', checked: 0, error: '' }
 
 function status(extra: Partial<PbxStatus> = {}): PbxStatus {
   return { asterisk: 'running', message: '', uptime: '120', endpoints: [], registrations: [], calls: [], ...extra }

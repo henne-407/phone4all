@@ -243,7 +243,29 @@ Neue Versionen erscheinen als GitHub-Release `pbx-v…` und als Image
 docker compose pull && docker compose up -d
 ```
 
-Vor jedem Update wird automatisch gesichert.
+Vor jedem Update wird automatisch gesichert. Gibt es eine neue Version, erscheint
+zusätzlich unten im Menü ein Hinweis „Update auf …“.
+
+### TrueNAS
+
+Als Custom App (*Apps → Discover Apps → ⋮ → Install via YAML*):
+
+```yaml
+services:
+  pbx:
+    image: ghcr.io/henne-407/phone4all-pbx:latest   # fester Tag, TrueNAS liest keine .env
+    container_name: phone4all-pbx
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - /mnt/POOL/apps/phone4all/data:/data         # absoluter Pfad auf einem Dataset
+      - /var/run/docker.sock:/var/run/docker.sock   # für Updates aus der Weboberfläche
+    environment:
+      TZ: Europe/Berlin
+```
+
+Dann funktionieren beide Wege: der Knopf in der Weboberfläche und „Update“ in
+der TrueNAS-App-Übersicht.
 
 ## Entwicklung
 

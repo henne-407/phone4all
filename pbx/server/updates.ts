@@ -28,6 +28,8 @@ export interface UpdateInfo {
   available: boolean
   canApply: boolean
   reason: string
+  /** Compose-Projekt, über das aktualisiert wird (TrueNAS: „ix-<App-Name>“) */
+  project: string
   checked: number
   error: string
 }
@@ -99,6 +101,7 @@ export class Updater {
     available: false,
     canApply: false,
     reason: '',
+    project: '',
     checked: 0,
     error: '',
   }
@@ -140,11 +143,12 @@ export class Updater {
       info.error = (e as Error).message
     }
     try {
-      await composeInfo()
+      info.project = (await composeInfo()).project
       info.canApply = true
       info.reason = ''
     } catch (e) {
       info.canApply = false
+      info.project = ''
       info.reason = (e as Error).message
     }
     this.info = info

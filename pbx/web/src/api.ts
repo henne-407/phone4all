@@ -85,6 +85,7 @@ export interface UpdateInfo {
   available: boolean
   canApply: boolean
   reason: string
+  project: string
   checked: number
   error: string
 }
