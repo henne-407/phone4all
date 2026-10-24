@@ -1,0 +1,39 @@
+name: Fehler melden
+description: Etwas funktioniert nicht wie erwartet
+labels: [bug]
+body:
+  - type: dropdown
+    id: teil
+    attributes:
+      label: Betroffener Teil
+      options:
+        - Telefonanlage
+        - Desktop-App
+        - Mobil-App (Android)
+        - Mobil-App (iPhone)
+        - DECT-Telefone
+        - Home Assistant
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Steht in der Übersicht der Anlage bzw. im Info-Dialog der App (Menü ⋮)
+      placeholder: z. B. pbx 0.6.0, App 0.6.1
+  - type: textarea
+    id: was
+    attributes:
+      label: Was ist passiert, was hätte passieren sollen?
+    validations:
+      required: true
+  - type: textarea
+    id: schritte
+    attributes:
+      label: Schritte zum Nachstellen
+  - type: textarea
+    id: protokoll
+    attributes:
+      label: Protokoll
+      description: Auszug aus System → Protokoll bzw. System → Diagnose (Passwörter und Rufnummern bitte unkenntlich machen)
+      render: text

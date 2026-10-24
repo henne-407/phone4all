@@ -1,0 +1,21 @@
+name: Funktion wünschen
+description: Idee für eine neue Funktion oder Verbesserung
+labels: [enhancement]
+body:
+  - type: dropdown
+    id: teil
+    attributes:
+      label: Betroffener Teil
+      options:
+        - Telefonanlage
+        - Desktop-App
+        - Mobil-App
+        - DECT-Telefone
+        - Home Assistant
+        - Dokumentation
+  - type: textarea
+    id: wunsch
+    attributes:
+      label: Was soll möglich sein, und wofür?
+    validations:
+      required: true
