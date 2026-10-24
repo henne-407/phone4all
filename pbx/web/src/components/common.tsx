@@ -231,6 +231,57 @@ export function NumberField({ label, value, onChange, helperText, min = 0 }: { l
   )
 }
 
+export interface NumberOption {
+  value: string
+  label: string
+  group: string
+}
+
+/** Eigene Rufnummern aller SIP-Konten */
+export function trunkNumberOptions(config: ReturnType<typeof usePbx>['config']): NumberOption[] {
+  return config.trunks.flatMap((t) => t.numbers.map((n) => ({ value: n, label: n, group: t.name })))
+}
+
+/** Interne Ziele zum Weiterleiten: Nebenstellen, Gruppen, Konferenzen */
+export function internalNumberOptions(config: ReturnType<typeof usePbx>['config']): NumberOption[] {
+  return [
+    ...config.extensions.map((e) => ({ value: e.number, label: `${e.number} – ${e.name}`, group: 'Nebenstellen' })),
+    ...config.groups.filter((g) => g.number).map((g) => ({ value: g.number, label: `${g.number} – ${g.name}`, group: 'Gruppen' })),
+    ...config.conferences.map((c) => ({ value: c.number, label: `${c.number} – ${c.name || 'Konferenz'}`, group: 'Konferenzräume' })),
+  ]
+}
+
+/** Rufnummer aus einer Liste wählen oder frei eintippen (z. B. externe Nummer). */
+export function NumberPicker({
+  label,
+  value,
+  onChange,
+  options,
+  helperText,
+  placeholder,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  options: NumberOption[]
+  helperText?: string
+  placeholder?: string
+}) {
+  return (
+    <Autocomplete
+      freeSolo
+      autoSelect
+      options={options}
+      groupBy={(o) => (typeof o === 'string' ? '' : o.group)}
+      getOptionLabel={(o) => (typeof o === 'string' ? o : o.label)}
+      isOptionEqualToValue={(o, v) => o.value === (typeof v === 'string' ? v : v.value)}
+      value={options.find((o) => o.value === value) ?? value}
+      onChange={(_e, v) => onChange(v == null ? '' : typeof v === 'string' ? v.trim() : v.value)}
+      renderInput={(p) => <TextField {...p} label={label} helperText={helperText} placeholder={placeholder} />}
+    />
+  )
+}
+
 /** Auswahl eines Ziels (Nebenstelle, Gruppe, Sprachmenü …) */
 export function DestinationPicker({ label, value, onChange, exclude }: { label: string; value: Destination; onChange: (d: Destination) => void; exclude?: DestinationType[] }) {
   const { config } = usePbx()
@@ -468,15 +519,18 @@ export function CollectionPage<T extends { id: string }>({
     list = (
       <CardGrid>
         {items.map((item) => (
-          <Card key={item.id} sx={{ display: 'flex', flexDirection: 'column', '&:hover': { borderColor: 'primary.main' } }}>
+          <Card key={item.id} sx={{ display: 'flex', flexDirection: 'column' }}>
             <CardActionArea onClick={() => editor.openItem(item.id)} sx={{ flex: 1, alignItems: 'stretch', display: 'flex', flexDirection: 'column' }}>
               <CardContent sx={{ flex: 1, width: '100%' }}>{card(item)}</CardContent>
             </CardActionArea>
-            {extraActions && (
-              <Box sx={{ px: 1.5, pb: 1.5 }} onClick={(e) => e.stopPropagation()}>
-                {extraActions(item)}
-              </Box>
-            )}
+            {(() => {
+              const actions = extraActions?.(item)
+              return actions ? (
+                <Box sx={{ px: 1.5, pb: 1.5 }} onClick={(e) => e.stopPropagation()}>
+                  {actions}
+                </Box>
+              ) : null
+            })()}
           </Card>
         ))}
       </CardGrid>

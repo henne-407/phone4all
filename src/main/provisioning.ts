@@ -40,7 +40,8 @@ export interface PbxProfile {
 export function parsePolicy(data: unknown): AppPolicy | null {
   const a = data as Partial<AppPolicy> | null
   if (!a || typeof a !== 'object' || !Array.isArray(a.pages)) return null
-  const pages = PAGES.filter((p) => a.pages!.includes(p))
+  // Reihenfolge der Anlage übernehmen (= Reihenfolge der Navigation)
+  const pages = a.pages.filter((p, i, l): p is PageName => PAGES.includes(p) && l.indexOf(p) === i)
   if (!pages.length) return null
   return {
     pages,

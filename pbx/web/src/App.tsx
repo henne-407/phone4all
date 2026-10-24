@@ -16,6 +16,7 @@ import RouteIcon from '@mui/icons-material/Route'
 import ScheduleIcon from '@mui/icons-material/Schedule'
 import SettingsIcon from '@mui/icons-material/Settings'
 import SettingsPhoneIcon from '@mui/icons-material/SettingsPhone'
+import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt'
 import {
   Box,
   Button,
@@ -37,7 +38,7 @@ import {
   useTheme,
 } from '@mui/material'
 import { type ReactNode, useEffect, useState } from 'react'
-import { api } from './api'
+import { type UpdateInfo, api } from './api'
 import Announcements from './pages/Announcements'
 import AppProfiles from './pages/AppProfiles'
 import Calendars from './pages/Calendars'
@@ -168,6 +169,14 @@ function Shell({ onLogout }: { onLogout: () => void }) {
   const theme = useTheme()
   const wide = useMediaQuery(theme.breakpoints.up('md'))
   const [open, setOpen] = useState(false)
+  // Neue Version im Menü anzeigen; die Anlage prüft selbst stündlich bei GitHub
+  const [update, setUpdate] = useState<UpdateInfo | null>(null)
+  useEffect(() => {
+    const load = (): void => void api.get<UpdateInfo>('/api/updates').then(setUpdate).catch(() => undefined)
+    load()
+    const t = setInterval(load, 600000)
+    return () => clearInterval(t)
+  }, [])
   const nav = (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5, px: 2.5, py: 1.5 }}>
@@ -217,6 +226,20 @@ function Shell({ onLogout }: { onLogout: () => void }) {
         ))}
       </Box>
       <Box sx={{ p: 1.5, borderTop: 1, borderColor: theme.m3.outlineVariant }}>
+        {update?.available && update.latest && (
+          <ListItemButton
+            onClick={() => {
+              go('system', 'aktualisierung')
+              setOpen(false)
+            }}
+            sx={{ mb: 0.5, borderRadius: 2, bgcolor: theme.m3.primaryContainer, color: theme.m3.onPrimaryContainer, '&:hover': { bgcolor: theme.m3.primaryContainer, filter: 'brightness(0.96)' } }}
+          >
+            <ListItemIcon sx={{ minWidth: 36, color: 'inherit' }}>
+              <SystemUpdateAltIcon />
+            </ListItemIcon>
+            <ListItemText primary={`Update auf ${update.latest.version}`} secondary={`Installiert: ${update.current}`} slotProps={{ primary: { sx: { fontSize: 14, fontWeight: 700 } }, secondary: { sx: { fontSize: 12, color: 'inherit', opacity: 0.8 } } }} />
+          </ListItemButton>
+        )}
         <ListItemButton
           sx={{ borderRadius: 2 }}
           onClick={() => {

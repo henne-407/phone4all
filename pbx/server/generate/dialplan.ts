@@ -113,6 +113,7 @@ function genericContexts(): string[] {
         'Set(R=${CURL(${P4A_API}/out?ext=${P4A_EXT}&fwd=${P4A_FWDBY}&num=${URIENCODE(${P4A_NUM})}&cid=${URIENCODE(${CALLERID(num)})})})',
         'Set(ST=${CUT(R,|,1)})',
         'GotoIf($["${ST}" = "ok"]?dial)',
+        'GotoIf($["${ST}" = "local"]?local)',
         'Answer()',
         'Wait(0.5)',
         'Playback(ss-noservice)',
@@ -133,6 +134,13 @@ function genericContexts(): string[] {
         'Goto(next)',
         '(fail)Congestion(5)',
         'Hangup()',
+        // Eigene Nummer eines SIP-Kontos: wie ein Anruf von außen weiterleiten
+        '(local)Set(T=${CUT(R,|,2)})',
+        'Set(CALLERID(name)=${CUT(R,|,3)})',
+        'Set(CALLERID(num)=${CUT(R,|,4)})',
+        'Set(CDR(p4a_to)=${CUT(R,|,5)})',
+        'Set(CDR(userfield)=local)',
+        goTo('T'),
       ]),
     ),
     ctx(

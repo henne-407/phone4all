@@ -303,7 +303,7 @@ describe('Einrichtung durch die Telefonanlage', () => {
       calendars: [{ id: 'betrieb', name: 'Betrieb', color: '#0b8043', writable: true }, { id: '../x', name: 'böse' }],
       revision: 'abc',
     })
-    expect(p.app).toEqual({ pages: ['home', 'dial'], start_tab: 'home', home_cards: ['status'], lock_layout: true, lock_account: true })
+    expect(p.app).toEqual({ pages: ['dial', 'home'], start_tab: 'dial', home_cards: ['status'], lock_layout: true, lock_account: true })
     expect(p.calendars).toEqual([{ id: 'betrieb', name: 'Betrieb', color: '#0b8043', writable: true }])
     expect(p.revision).toBe('abc')
     expect(parseProfile(profile).app).toBeNull()

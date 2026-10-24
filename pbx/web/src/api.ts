@@ -65,6 +65,10 @@ export interface StatusResponse {
   registrations: { trunk: string; status: string }[]
   calls: {
     id: string
+    from: string
+    fromName: string
+    to: string
+    toName: string
     channels: { channel: string; from: string; fromName: string; to: string; toName: string; state: string; duration: number }[]
   }[]
   dnd: Record<string, boolean>
@@ -81,6 +85,7 @@ export interface UpdateInfo {
   available: boolean
   canApply: boolean
   reason: string
+  project: string
   checked: number
   error: string
 }
