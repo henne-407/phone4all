@@ -1,4 +1,8 @@
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import DownloadIcon from '@mui/icons-material/Download'
+import ErrorIcon from '@mui/icons-material/Error'
+import InfoIcon from '@mui/icons-material/Info'
+import WarningIcon from '@mui/icons-material/Warning'
 import RestoreIcon from '@mui/icons-material/Restore'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
 import {
@@ -11,6 +15,7 @@ import {
   IconButton,
   List,
   ListItem,
+  ListItemIcon,
   ListItemText,
   MenuItem,
   Stack,
@@ -22,9 +27,10 @@ import {
   Typography,
 } from '@mui/material'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { MailSettings, SecuritySettings, SystemSettings, UpdateSettings } from '../../../server/model'
-import { type UpdateInfo, api } from '../api'
+import type { MailSettings, SecuritySettings, SystemSettings, UpdateSettings, WatchdogSettings } from '../../../server/model'
+import { type UpdateInfo, type WatchEvent, type WatchdogResponse, api } from '../api'
 import { ChipsInput, ConfirmDialog, FormGrid, Full, NumberField, PageHeader, Section, Select } from '../components/common'
+import { takeEditRequest } from '../router'
 import { usePbx } from '../state'
 import { useStatus } from '../useStatus'
 
@@ -528,6 +534,112 @@ function Log() {
   )
 }
 
+/** Symbol für Zustand und Ereignisse des Watchdogs */
+export function LevelIcon({ level }: { level: WatchEvent['level'] }) {
+  if (level === 'ok') return <CheckCircleIcon color="success" />
+  if (level === 'warning') return <WarningIcon color="warning" />
+  if (level === 'error') return <ErrorIcon color="error" />
+  return <InfoIcon color="info" />
+}
+
+function since(ms: number): string {
+  if (!ms) return ''
+  return `seit ${new Date(ms).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}`
+}
+
+function Diagnose() {
+  const { config, saveSection, toast } = usePbx()
+  const [w, set] = useDraft<WatchdogSettings>(config.watchdog)
+  const [data, setData] = useState<WatchdogResponse | null>(null)
+  const [busy, setBusy] = useState(false)
+  const load = (): void => void api.get<WatchdogResponse>('/api/watchdog').then(setData).catch(() => undefined)
+  useEffect(() => {
+    load()
+    const t = setInterval(load, 10000)
+    return () => clearInterval(t)
+  }, [])
+  const checkNow = (): void => {
+    setBusy(true)
+    void api
+      .post<WatchdogResponse>('/api/watchdog/check')
+      .then(setData)
+      .catch((e: Error) => toast(e.message, 'error'))
+      .finally(() => setBusy(false))
+  }
+  return (
+    <>
+      <Section
+        title="Zustand"
+        description={
+          data?.checked
+            ? `Der Watchdog prüft alle 30 Sekunden. Zuletzt: ${new Date(data.checked).toLocaleTimeString('de-DE')} · ${data.repairs} Störungen seit dem Start selbst behoben.`
+            : 'Der Watchdog prüft alle 30 Sekunden.'
+        }
+        action={
+          <Button onClick={checkNow} disabled={busy}>
+            Jetzt prüfen
+          </Button>
+        }
+      >
+        <List dense disablePadding>
+          {data?.checks.map((c) => (
+            <ListItem key={c.id} disableGutters>
+              <ListItemIcon>
+                <LevelIcon level={c.level} />
+              </ListItemIcon>
+              <ListItemText primary={c.name} secondary={[c.text, c.level !== 'ok' ? since(c.since) : ''].filter(Boolean).join(' · ')} />
+            </ListItem>
+          ))}
+        </List>
+        {data && !data.auto_repair && (
+          <Alert severity="warning" sx={{ mt: 1 }}>
+            Die Selbstheilung ist ausgeschaltet – Störungen werden nur gemeldet.
+          </Alert>
+        )}
+      </Section>
+      <Section title="Watchdog" description="Überwacht Asterisk, die Anmeldung der SIP-Konten und den Speicherplatz. Hängt Asterisk, wird es neu gestartet; abgemeldete SIP-Konten werden mit wachsendem Abstand neu angemeldet.">
+        <FormGrid>
+          <Full>
+            <FormControlLabel control={<Switch checked={w.auto_repair} onChange={(e) => set({ auto_repair: e.target.checked })} />} label="Störungen automatisch beheben" />
+          </Full>
+          <NumberField label="SIP-Konto neu anmelden nach (Minuten)" value={w.trunk_grace} onChange={(v) => set({ trunk_grace: v })} min={1} helperText="So lange darf ein Konto abgemeldet sein" />
+          <TextField
+            label="Störungen per E-Mail an"
+            value={w.notify_email}
+            onChange={(e) => set({ notify_email: e.target.value.trim() })}
+            helperText={config.mail.host ? 'Leer = keine E-Mails' : 'Dafür zuerst den E-Mail-Versand einrichten'}
+          />
+        </FormGrid>
+        <SaveBar onSave={() => saveSection('watchdog', w)} />
+      </Section>
+      <Section
+        title="Ereignisse"
+        description="Störungen und was der Watchdog dagegen getan hat, neueste zuerst."
+        action={
+          <Button color="error" disabled={!data?.events.length} onClick={() => void api.del('/api/watchdog/events').then(load)}>
+            Leeren
+          </Button>
+        }
+      >
+        {data?.events.length ? (
+          <List dense disablePadding sx={{ maxHeight: 520, overflow: 'auto' }}>
+            {data.events.map((e, i) => (
+              <ListItem key={i} disableGutters>
+                <ListItemIcon>
+                  <LevelIcon level={e.level} />
+                </ListItemIcon>
+                <ListItemText primary={e.text} secondary={new Date(e.time).toLocaleString('de-DE')} />
+              </ListItem>
+            ))}
+          </List>
+        ) : (
+          <Typography sx={{ color: 'text.secondary' }}>Keine Ereignisse.</Typography>
+        )}
+      </Section>
+    </>
+  )
+}
+
 const TABS: [string, () => React.JSX.Element][] = [
   ['Allgemein', General],
   ['E-Mail', Mail],
@@ -535,16 +647,21 @@ const TABS: [string, () => React.JSX.Element][] = [
   ['Sicherung', Backup],
   ['Aktualisierung', Updates],
   ['Zugang', Access],
+  ['Diagnose', Diagnose],
   ['Home Assistant', HomeAssistant],
   ['Protokoll', Log],
 ]
 
 export default function System() {
-  const [tab, setTab] = useState(0)
+  // #/system?edit=diagnose öffnet direkt den Tab (z. B. von der Übersicht)
+  const [tab, setTab] = useState(() => {
+    const wanted = takeEditRequest('system')
+    return Math.max(0, TABS.findIndex(([label]) => label.toLowerCase() === wanted))
+  })
   const Page = TABS[tab][1]
   return (
     <Box>
-      <PageHeader overline="System" title="Einstellungen und Wartung" description="Name, E-Mail, Sicherheit, Sicherungen, Updates und Home Assistant." />
+      <PageHeader overline="System" title="Einstellungen und Wartung" description="Name, E-Mail, Sicherheit, Sicherungen, Updates, Diagnose und Home Assistant." />
       <Tabs value={tab} onChange={(_e, v: number) => setTab(v)} variant="scrollable" sx={{ mb: 2 }}>
         {TABS.map(([label]) => (
           <Tab key={label} label={label} />

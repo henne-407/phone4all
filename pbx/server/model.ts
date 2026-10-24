@@ -233,6 +233,48 @@ export interface UpdateSettings {
   hour: number // Stunde für automatische Updates (0–23)
 }
 
+/** Watchdog: Überwachung und Selbstheilung (Diagnose) */
+export interface WatchdogSettings {
+  /** Störungen selbst beheben (sonst nur melden) */
+  auto_repair: boolean
+  /** Minuten, die ein SIP-Konto abgemeldet sein darf, bevor neu angemeldet wird */
+  trunk_grace: number
+  /** Störungen per E-Mail melden (leer = aus) */
+  notify_email: string
+}
+
+// Zustand und Ereignisse des Watchdogs (server/watchdog.ts), auch für die Weboberfläche
+
+/** ok: wieder in Ordnung, info: Maßnahme, warning/error: Störung */
+export type WatchLevel = 'ok' | 'info' | 'warning' | 'error'
+export type CheckId = 'asterisk' | 'trunks' | 'disk'
+export type CheckLevel = 'ok' | 'warning' | 'error'
+
+export interface WatchEvent {
+  time: number
+  level: WatchLevel
+  check: CheckId
+  text: string
+}
+
+export interface WatchCheck {
+  id: CheckId
+  name: string
+  level: CheckLevel
+  text: string
+  /** Seit wann dieser Zustand besteht (ms) */
+  since: number
+}
+
+export interface WatchdogStatus {
+  auto_repair: boolean
+  /** Letzte Prüfung (ms, 0 = noch nie) */
+  checked: number
+  /** Selbst behobene Störungen seit dem Start */
+  repairs: number
+  checks: WatchCheck[]
+}
+
 /** Schnittstelle für Hausautomation (Home Assistant u. a.) */
 export interface IntegrationSettings {
   enabled: boolean
@@ -306,6 +348,7 @@ export interface PbxConfig {
   security: SecuritySettings
   updates: UpdateSettings
   provisioning: { discovery: boolean }
+  watchdog: WatchdogSettings
   integration: IntegrationSettings
 }
 
@@ -352,6 +395,7 @@ export const DEFAULT_CONFIG: PbxConfig = {
   },
   updates: { channel: 'stable', auto: false, hour: 3 },
   provisioning: { discovery: true },
+  watchdog: { auto_repair: true, trunk_grace: 3, notify_email: '' },
   integration: { enabled: false, token: '' },
 }
 
@@ -372,7 +416,7 @@ export const COLLECTIONS = [
 ] as const
 export type CollectionName = (typeof COLLECTIONS)[number]
 
-export const SECTIONS = ['system', 'mail', 'security', 'updates', 'provisioning', 'integration'] as const
+export const SECTIONS = ['system', 'mail', 'security', 'updates', 'provisioning', 'watchdog', 'integration'] as const
 export type SectionName = (typeof SECTIONS)[number]
 
 export const DESTINATION_LABELS: Record<DestinationType, string> = {

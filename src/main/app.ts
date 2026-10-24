@@ -8,6 +8,7 @@ import {
   app as electronApp,
   dialog,
   ipcMain,
+  powerMonitor,
   nativeImage,
   nativeTheme,
   screen,
@@ -30,6 +31,7 @@ import { type Call, type NotifyOptions, Phone, type PhoneUi } from './phone'
 import { Provisioning } from './provisioning'
 import { RINGTONES, ringtonePath } from './ringtones'
 import { Store } from './store'
+import { Watchdog, networkKey } from './watchdog'
 
 const APP_ID = 'de.hpieper.SipTelefon'
 const DEFAULT_CARDS: [HomeCard, boolean][] = [
@@ -83,6 +85,7 @@ export class App {
   readonly sync = new ContactSync(this.store)
   readonly phone: Phone
   readonly provisioning: Provisioning
+  readonly watchdog: Watchdog
   readonly api: Api
   /** Einrichtungslink, den die Oberfläche noch nicht abgeholt hat */
   private pendingLink: string | null = null
@@ -100,6 +103,8 @@ export class App {
   private pendingState = false
   private titleBar = { color: '#fef7ff', symbolColor: '#1d1b20' }
   private boundsPath = path.join(DIRS.state, 'window.json')
+  private watchdogPath = path.join(DIRS.state, 'watchdog.json')
+  private saveWatchdogTimer: NodeJS.Timeout | null = null
 
   constructor() {
     const ui: PhoneUi = {
@@ -148,6 +153,27 @@ export class App {
           }
         : null,
     )
+    this.watchdog = new Watchdog(
+      {
+        wanted: () => this.phone.connectionWanted(),
+        engineState: () => this.phone.engineState,
+        regKind: () => this.phone.reg.kind,
+        busy: () => this.phone.calls.size > 0,
+        ping: () => this.phone.ping(),
+        reregister: () => this.phone.reregister(),
+        restart: () => this.phone.restartEngine(),
+        networkKey,
+      },
+      () => this.store.settings.watchdog,
+    )
+    this.watchdog.events = loadJson(this.watchdogPath, [])
+    this.watchdog.on('changed', () => this.stateChanged())
+    this.watchdog.on('event', () => {
+      this.saveWatchdogTimer ??= setTimeout(() => {
+        this.saveWatchdogTimer = null
+        saveJson(this.watchdogPath, this.watchdog.events)
+      }, 2000)
+    })
     this.api = createApi(this)
     if (!this.store.settings.home.cards.length) this.store.settings.home.cards = DEFAULT_CARDS
     nativeTheme.themeSource = this.store.settings.appearance.scheme
@@ -174,6 +200,9 @@ export class App {
     void this.refreshDevices()
     this.phone.restartEngine()
     this.provisioning.start()
+    this.watchdog.start()
+    // Nach dem Ruhezustand sind SIP-Verbindungen und NAT-Zuordnungen meist verloren
+    powerMonitor.on('resume', () => setTimeout(() => this.watchdog.onResume(), 5000))
   }
 
   /** sip-telefon://-Link (Einrichtung durch die Telefonanlage); bestätigt wird in der Oberfläche. */
@@ -243,6 +272,7 @@ export class App {
         available: r.key !== 'custom' || ringtonePath('custom', RINGTONE_DIR, null) !== null,
       })),
       missedUnseen: this.missedUnseen,
+      watchdog: this.watchdog.summary(),
     }
   }
 
@@ -575,9 +605,16 @@ export class App {
     }
   }
 
+  clearDiagnose(): void {
+    this.watchdog.events = []
+    saveJson(this.watchdogPath, [])
+  }
+
   quit(): void {
     if (this.quitting) return
     this.quitting = true
+    this.watchdog.stop()
+    saveJson(this.watchdogPath, this.watchdog.events)
     if (this.main && !this.main.isDestroyed()) saveJson(this.boundsPath, this.main.getNormalBounds())
     void this.phone.stop().finally(() => electronApp.exit(0))
   }

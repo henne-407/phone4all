@@ -94,6 +94,9 @@ danach automatisch.
 - „Rückruf planen“ aus dem Verlauf und während des Gesprächs
 - Erinnerung vor Terminen als Benachrichtigung
 - Läuft beim Schließen im Hintergrund weiter (Symbol im Infobereich), optionaler Autostart
+- Watchdog im Hintergrund: meldet bei Abbruch neu an, startet eine abgestürzte oder hängende
+  SIP-Engine neu und verbindet nach Netzwechsel oder Ruhezustand neu (nie während eines
+  Gesprächs); Zustand und Ereignisse unter Einstellungen → **Diagnose**
 - Passwörter verschlüsselt mit dem Schlüsselbund des Systems (macOS-Schlüsselbund,
   Windows DPAPI, GNOME-Schlüsselbund/KWallet); Passwörter der GTK-Version werden übernommen
 
@@ -130,6 +133,7 @@ Datenbankbenutzer mit reinen Leserechten (`db_datareader`) verwenden. Höchstens
 | `~/.config/sip-telefon/secrets.json` | `secrets.json` | Passwörter (verschlüsselt) |
 | `~/.local/share/sip-telefon/` | `data/` | Kontakte, Verlauf, Adressbuch-Cache, Klingeltöne |
 | `~/.local/state/sip-telefon/baresip.log` | `logs/baresip.log` | Log der SIP-Engine |
+| `~/.local/state/sip-telefon/watchdog.json` | `logs/watchdog.json` | Ereignisse des Watchdogs |
 
 ¹ macOS `~/Library/Application Support/SIP-Telefon`, Windows `%APPDATA%\SIP-Telefon`.
 Unter Linux sind es dieselben Ordner wie bei der früheren GTK-Version, Kontakte,

@@ -318,6 +318,7 @@ export function TopBar({ compact, showTitle }: { compact: boolean; showTitle: bo
           ...(state.settings.provisioning.policy?.lock_layout ? [] : [['Startseite anpassen', () => emit('customize-home')] as const]),
           ['Verlauf löschen', () => void api.clearHistory()],
           ['Neu verbinden', () => void api.restartEngine()],
+          ['Diagnose', () => emit('open-preferences', 'diagnose')],
           null,
           ['Über SIP-Telefon', () => emit('about')],
           ['Beenden', () => void api.quit()],

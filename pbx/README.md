@@ -104,6 +104,22 @@ Termine haben Datumsangaben (`2026-12-24`, Ende exklusiv), alle anderen ISO-Zeit
 Andere Telefone (Tischtelefone, Softphones) werden mit Nebenstelle als Benutzer,
 SIP-Passwort und der Adresse der Anlage als Server angemeldet.
 
+## Diagnose und Watchdog
+
+Der Verwaltungsdienst prüft alle 30 Sekunden Asterisk, die Anmeldung der SIP-Konten
+und den Speicherplatz und behebt Störungen selbst:
+
+- Asterisk abgestürzt → sofortiger Neustart (mit wachsender Wartezeit bei Dauerabsturz)
+- Steuerverbindung (AMI) weg → neu verbinden; Asterisk antwortet dreimal nicht → Neustart
+  (höchstens alle 5 Minuten)
+- SIP-Konto länger als die Wartezeit (Standard 3 Minuten) abgemeldet → neu anmelden,
+  danach mit wachsendem Abstand bis 30 Minuten
+
+Zustand, Einstellungen und Ereignisprotokoll unter *System → Diagnose*, auf Wunsch
+Störungsmeldungen per E-Mail. `GET /health` liefert ohne Anmeldung eine Kurzfassung
+(`{"status":"ok|warning|error","checks":{…}}`, HTTP 503 wenn Asterisk ausgefallen ist) –
+für den Docker-Healthcheck und Überwachung von außen (z. B. Home Assistant).
+
 ## Home Assistant
 
 Die Integration *Phone4all-Telefonanlage* zeigt verpasste Anrufe und Störungen der
@@ -167,6 +183,7 @@ Alles liegt im Ordner `data/` neben der `docker-compose.yml`:
 | `sounds/` | eigene Ansagen und Wartemusik |
 | `calendars/` | Termine der zentralen Kalender |
 | `log/` | Anrufliste (CDR) und Protokoll |
+| `watchdog.json` | Ereignisse des Watchdogs |
 
 Umziehen: `data/` kopieren und auf dem neuen Rechner `docker compose up -d` – oder
 die Konfiguration unter *System → Sicherung* exportieren und dort importieren.

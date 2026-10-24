@@ -28,7 +28,7 @@ ENV PBX_DATA=/data \
 VOLUME /data
 # Weboberfläche, SIP, SIP-TLS, Suche der App im LAN, Sprache (RTP)
 EXPOSE 8080/tcp 5060/udp 5060/tcp 5061/tcp 15060/udp 10000-10999/udp
-HEALTHCHECK --interval=60s --timeout=5s CMD node -e "fetch('http://127.0.0.1:'+(process.env.PBX_HTTP_PORT||8080)+'/api/session').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+HEALTHCHECK --interval=60s --timeout=5s --start-period=60s CMD node -e "fetch('http://127.0.0.1:'+(process.env.PBX_HTTP_PORT||8080)+'/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 LABEL org.opencontainers.image.title="Phone4all PBX" \
       org.opencontainers.image.description="Telefonanlage mit Weboberfläche und automatischer Einrichtung der SIP-Telefon-App" \
       org.opencontainers.image.source="https://github.com/henne-407/phone4all" \
