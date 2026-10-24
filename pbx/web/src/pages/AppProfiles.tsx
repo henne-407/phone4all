@@ -161,6 +161,28 @@ export default function AppProfiles() {
       description="Legt fest, was die SIP-Telefon-App zeigt: Bereiche, Startansicht, Karten der Startseite und zentrale Kalender. Ein Profil wird der Nebenstelle zugewiesen; die App übernimmt Änderungen innerhalb von zwei Minuten."
       emptyText="Ohne Profil zeigt die App alles und jede Person richtet sie selbst ein."
       emptyIcon={<PhoneAndroidIcon />}
+      columns={[
+        { label: 'Name', render: (p) => <b>{p.name}</b> },
+        {
+          label: 'Nebenstellen',
+          render: (p) =>
+            config.extensions
+              .filter((e) => e.app_profile === p.id)
+              .map((e) => e.number)
+              .join(', ') || '–',
+        },
+        {
+          label: 'Gesperrt',
+          render: (p) => (
+            <Stack direction="row" sx={{ gap: 0.75 }}>
+              {p.lock_layout && <Chip size="small" icon={<LockIcon />} label="Startseite" />}
+              {p.lock_account && <Chip size="small" icon={<LockIcon />} label="Konto" />}
+              {!p.lock_layout && !p.lock_account && '–'}
+            </Stack>
+          ),
+          hideOnMobile: true,
+        },
+      ]}
       card={(p) => {
         const users = config.extensions.filter((e) => e.app_profile === p.id)
         return (

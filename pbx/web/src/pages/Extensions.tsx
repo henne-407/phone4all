@@ -210,6 +210,44 @@ export default function Extensions() {
       emptyText="Noch keine Nebenstellen. Lege die erste an, z. B. 10 für dich selbst."
       emptyIcon={<PersonIcon />}
       newItem={() => ({ number: nextNumber(config.extensions) })}
+      columns={[
+        { label: 'Nr.', render: (e) => <b>{e.number}</b> },
+        {
+          label: 'Name',
+          render: (e) => (
+            <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5 }}>
+              <Initials name={e.name || e.number} size={30} />
+              {e.name}
+            </Stack>
+          ),
+        },
+        { label: 'E-Mail', render: (e) => e.email || '–', hideOnMobile: true },
+        {
+          label: 'Geräte',
+          render: (e) => {
+            const n = online(e.number)
+            return (
+              <Stack direction="row" sx={{ gap: 0.75, alignItems: 'center', flexWrap: 'wrap' }}>
+                <StatusDot color={n ? 'success' : 'default'} label={n ? `${n} angemeldet` : 'keins'} />
+                {status?.dnd[e.number] && <Chip size="small" color="warning" label="Nicht stören" />}
+                {status?.cfu[e.number] && <Chip size="small" color="info" label={`→ ${status.cfu[e.number]}`} />}
+              </Stack>
+            )
+          },
+        },
+        { label: 'Darf anrufen', render: (e) => PERMISSIONS.find(([p]) => p === e.permission)?.[1], hideOnMobile: true },
+        { label: 'Voicemail', render: (e) => (e.voicemail.enabled ? 'an' : 'aus'), hideOnMobile: true },
+        {
+          label: 'Gruppen',
+          render: (e) =>
+            config.groups
+              .filter((g) => g.members.includes(e.number))
+              .map((g) => g.name)
+              .join(', ') || '–',
+          hideOnMobile: true,
+        },
+        { label: 'App-Profil', render: (e) => config.appprofiles.find((p) => p.id === e.app_profile)?.name ?? '–', hideOnMobile: true },
+      ]}
       card={(e) => {
         const n = online(e.number)
         const groups = config.groups.filter((g) => g.members.includes(e.number))

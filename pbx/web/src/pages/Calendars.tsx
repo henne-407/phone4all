@@ -280,6 +280,26 @@ export default function Calendars() {
       description="Gemeinsame Kalender für alle Apps, z. B. Betriebsferien, Schichtplan oder Feiertage. Welche Kalender eine App zeigt, legt das App-Profil fest."
       emptyText="Lege z. B. einen Kalender „Betrieb“ für Betriebsferien und Termine an, die alle sehen sollen."
       emptyIcon={<CalendarMonthIcon />}
+      columns={[
+        {
+          label: 'Name',
+          render: (c) => (
+            <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{ width: 14, height: 14, borderRadius: '50%', bgcolor: c.color, flexShrink: 0 }} />
+              <b>{c.name}</b>
+            </Stack>
+          ),
+        },
+        { label: 'Art', render: (c) => (c.kind === 'holidays' ? 'Feiertage, automatisch' : c.writable ? 'Alle können eintragen' : 'Nur hier änderbar') },
+        {
+          label: 'App-Profile',
+          render: (c) => {
+            const profiles = config.appprofiles.filter((p) => !p.calendars.length || p.calendars.includes(c.id))
+            return config.appprofiles.length ? `${profiles.length} von ${config.appprofiles.length}` : '–'
+          },
+          hideOnMobile: true,
+        },
+      ]}
       card={(c) => {
         const profiles = config.appprofiles.filter((p) => !p.calendars.length || p.calendars.includes(c.id))
         return (

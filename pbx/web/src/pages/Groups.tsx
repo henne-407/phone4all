@@ -84,6 +84,24 @@ export default function Groups() {
       description="Mehrere Nebenstellen unter einer Nummer: Sammelruf, Reihum oder Warteschlange mit Wartemusik. Gruppen sind Ziele in den Rufabfolgen."
       emptyText="Noch keine Gruppen, z. B. „Zentrale“ mit allen Nebenstellen."
       emptyIcon={<GroupsIcon />}
+      columns={[
+        {
+          label: 'Name',
+          render: (g) => (
+            <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5 }}>
+              <Initials name={g.name} size={30} />
+              {g.name}
+            </Stack>
+          ),
+        },
+        { label: 'Nr.', render: (g) => g.number || '–' },
+        { label: 'Art', render: (g) => MODES.find(([m]) => m === g.mode)?.[1], hideOnMobile: true },
+        {
+          label: 'Mitglieder',
+          render: (g) => g.members.map((n) => [n, config.extensions.find((x) => x.number === n)?.name].filter(Boolean).join(' ')).join(', ') || '–',
+        },
+        { label: 'Niemand nimmt ab', render: (g) => describeDestination(g.fallback, config), hideOnMobile: true },
+      ]}
       card={(g) => (
         <Box>
           <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5, mb: 1.5 }}>
