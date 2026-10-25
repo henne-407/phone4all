@@ -1,5 +1,5 @@
 /**
- * Automatische Einrichtung der SIP-Telefon-App: Die App holt über einen
+ * Automatische Einrichtung der Phone4All-App: Die App holt über einen
  * Einrichtungslink (oder Nebenstelle + PIN) ihr Konto und das Telefonbuch.
  * Im LAN findet sie die Anlage per UDP-Broadcast (Port 15060).
  */
@@ -8,8 +8,9 @@ import { createHash } from 'node:crypto'
 import dgram from 'node:dgram'
 import { directory } from './directory'
 import { messengerUsers } from './messenger'
-import type { AppHomeCard, AppPage, CentralCalendar, Extension, PbxConfig } from './model'
+import type { AppHomeCard, AppPage, AppPermission, CentralCalendar, Extension, PbxConfig } from './model'
 import { SETTINGS } from './paths'
+import { appPermissions } from './routing'
 
 export const DISCOVERY_PORT = 15060
 export const PROVISIONING_FORMAT = 'phone4all-provisioning'
@@ -36,12 +37,15 @@ export interface ProvisioningProfile {
   password: string
   /** Adresse, unter der die App das Profil später erneut abruft */
   url: string
-  phonebook: { name: string; company: string; phone: string; mobile: string }[]
+  /** id nur bei Einträgen, die diese Nebenstelle bearbeiten darf (Recht phonebook_edit) */
+  phonebook: { name: string; company: string; phone: string; mobile: string; id?: string }[]
   features: Record<string, string>
   /** Vorgaben für die Ansichten der App (null = keine) */
   app: AppPolicy | null
   /** Zentrale Kalender, Termine unter <url>/events */
   calendars: { id: string; name: string; color: string; writable: boolean }[]
+  /** Was die App einstellen darf; Umleitungen unter <url>/forward */
+  permissions: AppPermission[]
   /** Messenger freigegeben; die App verbindet sich mit <url>/chat (WebSocket) */
   messenger: boolean
   /** Ändert sich mit jeder Änderung am Profil; die App fragt <url>/revision ab */
@@ -87,7 +91,15 @@ export function appLink(base: string, ext: Extension): string {
 
 export function profile(cfg: PbxConfig, ext: Extension, base: string): ProvisioningProfile {
   const domain = cfg.system.sip_host.trim() || new URL(base).hostname.replace(/^\[|\]$/g, '')
-  const phonebook = directory(cfg, ext.id).map(({ name, company, phone, mobile }) => ({ name, company, phone, mobile }))
+  const permissions = appPermissions(cfg, ext.number)
+  const editable = permissions.includes('phonebook_edit')
+  const phonebook = directory(cfg, ext.id).map(({ id, name, company, phone, mobile }) => ({
+    name,
+    company,
+    phone,
+    mobile,
+    ...(editable && id.startsWith('pb-') ? { id: id.slice(3) } : {}),
+  }))
   const result: Omit<ProvisioningProfile, 'revision'> = {
     format: PROVISIONING_FORMAT,
     version: 1,
@@ -117,7 +129,13 @@ export function profile(cfg: PbxConfig, ext: Extension, base: string): Provision
       echo: '*43',
     },
     app: policy(cfg, ext),
-    calendars: visibleCalendars(cfg, ext).map((c) => ({ id: c.id, name: c.name, color: c.color, writable: c.writable && c.kind === 'events' })),
+    calendars: visibleCalendars(cfg, ext).map((c) => ({
+      id: c.id,
+      name: c.name,
+      color: c.color,
+      writable: c.writable && c.kind === 'events' && permissions.includes('calendar_edit'),
+    })),
+    permissions,
     messenger: messengerUsers(cfg).some((e) => e.id === ext.id),
   }
   const revision = createHash('sha256').update(JSON.stringify(result)).digest('hex').slice(0, 16)
@@ -169,9 +187,9 @@ dt{opacity:.7;font-size:14px}dd{margin:0 0 12px;font-size:18px;font-family:ui-mo
 </style></head><body><main>
 <h1>Hallo ${esc(ext.name)}</h1>
 <p>Ihr Telefon an der Anlage <b>${esc(cfg.system.name)}</b> ist bereit.</p>
-<div class="card"><h2>Mit SIP-Telefon</h2>
-<p>SIP-Telefon installieren und dann auf diese Schaltfläche klicken – die App richtet sich selbst ein.</p>
-<p><a class="btn" href="${esc(link)}">In SIP-Telefon einrichten</a></p>
+<div class="card"><h2>Mit Phone4All</h2>
+<p>Phone4All installieren und dann auf diese Schaltfläche klicken – die App richtet sich selbst ein.</p>
+<p><a class="btn" href="${esc(link)}">In Phone4All einrichten</a></p>
 <p>Alternativ in der App unter Einstellungen → Konto → „Von Telefonanlage einrichten“ diese Angaben eintragen:</p>
 <dl><dt>Anlage</dt><dd>${esc(base)}</dd><dt>Nebenstelle</dt><dd>${esc(ext.number)}</dd><dt>Einrichtungs-PIN</dt><dd>${esc(ext.provision_pin)}</dd></dl>
 </div></main></body></html>`

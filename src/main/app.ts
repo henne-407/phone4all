@@ -205,6 +205,8 @@ export class App {
     this.api = createApi(this)
     if (!this.store.settings.home.cards.length) this.store.settings.home.cards = DEFAULT_CARDS
     nativeTheme.themeSource = this.store.settings.appearance.scheme
+    // Bis die Oberfläche ihre Farben meldet: dunkel, wenn das Fenster dunkel wird
+    if (nativeTheme.shouldUseDarkColors) this.titleBar = { color: '#141218', symbolColor: '#e6e0e9' }
   }
 
   start(background: boolean): void {
@@ -309,6 +311,7 @@ export class App {
       missedUnseen: this.missedUnseen,
       watchdog: this.watchdog.summary(),
       update: this.updater.state,
+      forward: this.provisioning.active ? this.provisioning.forward : null,
       messenger: {
         available: Boolean(s.provisioning.messenger),
         status: this.messenger.state.status,
@@ -376,9 +379,12 @@ export class App {
 
   setTitleBarColors(color: string, symbolColor: string): void {
     this.titleBar = { color, symbolColor }
-    if (process.platform === 'darwin') return
     for (const win of [this.main, ...this.popups.values()]) {
-      if (win && !win.isDestroyed()) win.setTitleBarOverlay({ ...this.titleBar, height: 48 })
+      if (!win || win.isDestroyed()) continue
+      // Hintergrund des Fensters = Seitenhintergrund, sonst blitzt beim Vergrößern
+      // (vor allem unter macOS) ein weißer Rand auf, bis die Seite nachgezeichnet ist
+      win.setBackgroundColor(color)
+      if (process.platform !== 'darwin') win.setTitleBarOverlay({ ...this.titleBar, height: 48 })
     }
   }
 
@@ -418,7 +424,7 @@ export class App {
       })
     const win = new BrowserWindow({
       ...this.windowOptions(),
-      title: 'SIP-Telefon',
+      title: 'Phone4All',
       width: bounds.width,
       height: bounds.height,
       ...(visible ? { x: bounds.x, y: bounds.y } : {}),
@@ -520,17 +526,17 @@ export class App {
     } catch {
       return // kein Infobereich vorhanden
     }
-    this.tray.setToolTip('SIP-Telefon')
+    this.tray.setToolTip('Phone4All')
     this.tray.on('click', () => this.present())
     this.updateTray()
   }
 
   private updateTray(): void {
     if (!this.tray) return
-    this.tray.setToolTip(`SIP-Telefon – ${this.phone.reg.text}`)
+    this.tray.setToolTip(`Phone4All – ${this.phone.reg.text}`)
     this.tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: 'SIP-Telefon öffnen', click: () => this.present() },
+        { label: 'Phone4All öffnen', click: () => this.present() },
         { label: this.phone.reg.text, enabled: false },
         { type: 'separator' },
         {
@@ -655,7 +661,7 @@ export class App {
         fs.mkdirSync(path.dirname(file), { recursive: true })
         fs.writeFileSync(
           file,
-          `[Desktop Entry]\nType=Application\nName=SIP-Telefon\nExec="${exe}"${args} --background\n` +
+          `[Desktop Entry]\nType=Application\nName=Phone4All\nExec="${exe}"${args} --background\n` +
             `Icon=sip-telefon\nX-GNOME-Autostart-enabled=true\n`,
         )
       } else {

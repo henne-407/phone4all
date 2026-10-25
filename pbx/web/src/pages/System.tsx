@@ -29,119 +29,101 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MailSettings, SecuritySettings, SystemSettings, UpdateSettings, WatchdogSettings } from '../../../server/model'
 import { type UpdateInfo, type WatchEvent, type WatchdogResponse, api } from '../api'
-import { ChipsInput, ConfirmDialog, FormGrid, Full, NumberField, PageHeader, Section, Select } from '../components/common'
+import { ChangesBar, ChipsInput, ConfirmDialog, confirmDiscard, FormGrid, Full, NumberField, PageHeader, PermissionChecks, Section, Select, useDraft } from '../components/common'
 import { takeEditRequest } from '../router'
 import { usePbx } from '../state'
 import { useStatus } from '../useStatus'
 
-function useDraft<T>(initial: T): [T, (patch: Partial<T>) => void, (v: T) => void] {
-  const [draft, setDraft] = useState(initial)
-  useEffect(() => setDraft(initial), [initial])
-  return [draft, (patch) => setDraft((d) => ({ ...d, ...patch })), setDraft]
-}
-
-function SaveBar({ onSave }: { onSave: () => Promise<void> }) {
-  const { toast } = usePbx()
-  return (
-    <Stack direction="row" sx={{ justifyContent: 'flex-end' }}>
-      <Button
-        variant="contained"
-        onClick={() =>
-          void onSave()
-            .then(() => toast('Gespeichert'))
-            .catch((e: Error) => toast(e.message, 'error'))
-        }
-      >
-        Speichern
-      </Button>
-    </Stack>
-  )
-}
-
 function General() {
   const { config, states, saveSection } = usePbx()
-  const [s, set] = useDraft<SystemSettings>(config.system)
+  const d = useDraft<SystemSettings>(config.system)
+  const { draft: s, set } = d
   return (
-    <Section title="Allgemein">
-      <FormGrid>
-        <TextField label="Name der Anlage" value={s.name} onChange={(e) => set({ name: e.target.value })} />
-        <TextField label="Adresse für Telefone" value={s.sip_host} onChange={(e) => set({ sip_host: e.target.value.trim() })} helperText="Leer = Adresse, unter der die Weboberfläche aufgerufen wird" />
-        <TextField label="Ländervorwahl" value={s.country_code} onChange={(e) => set({ country_code: e.target.value.replace(/\D/g, '') })} />
-        <TextField label="Ortsvorwahl ohne 0" value={s.area_code} onChange={(e) => set({ area_code: e.target.value.replace(/\D/g, '') })} helperText="Damit Ortsgespräche ohne Vorwahl gewählt werden können, z. B. 30" />
-        <TextField select label="Bundesland (Feiertage)" value={s.state} onChange={(e) => set({ state: e.target.value })}>
-          {Object.entries(states).map(([k, v]) => (
-            <MenuItem key={k} value={k}>
-              {v}
-            </MenuItem>
-          ))}
-        </TextField>
-        <TextField label="Zeitzone" value={s.timezone} onChange={(e) => set({ timezone: e.target.value })} />
-      </FormGrid>
-      <Typography variant="subtitle1" sx={{ mb: 1 }}>
-        Netzwerk
-      </Typography>
-      <FormGrid>
-        <NumberField label="SIP-Port" value={s.sip_port} onChange={(v) => set({ sip_port: v })} />
-        <NumberField label="SIP-TLS-Port" value={s.tls_port} onChange={(v) => set({ tls_port: v })} />
-        <NumberField label="RTP von" value={s.rtp_start} onChange={(v) => set({ rtp_start: v })} />
-        <NumberField label="RTP bis" value={s.rtp_end} onChange={(v) => set({ rtp_end: v })} />
-        <TextField label="Öffentliche Adresse (NAT)" value={s.external_address} onChange={(e) => set({ external_address: e.target.value.trim() })} helperText="Nur nötig, wenn Telefone von außen über den Router kommen" />
-        <ChipsInput label="Lokale Netze" value={s.local_nets} onChange={(v) => set({ local_nets: v })} />
-        <Full>
-          <ChipsInput label="Codecs für Nebenstellen" value={s.codecs} onChange={(v) => set({ codecs: v })} options={['opus', 'g722', 'alaw', 'ulaw', 'gsm']} helperText="Reihenfolge = Vorrang. Opus und G.722 klingen deutlich besser (HD-Telefonie)." />
-        </Full>
-      </FormGrid>
-      <SaveBar onSave={() => saveSection('system', s)} />
-    </Section>
+    <>
+      <Section title="Allgemein">
+        <FormGrid>
+          <TextField label="Name der Anlage" value={s.name} onChange={(e) => set({ name: e.target.value })} />
+          <TextField label="Adresse für Telefone" value={s.sip_host} onChange={(e) => set({ sip_host: e.target.value.trim() })} helperText="Leer = Adresse, unter der die Weboberfläche aufgerufen wird" />
+          <TextField label="Ländervorwahl" value={s.country_code} onChange={(e) => set({ country_code: e.target.value.replace(/\D/g, '') })} />
+          <TextField label="Ortsvorwahl ohne 0" value={s.area_code} onChange={(e) => set({ area_code: e.target.value.replace(/\D/g, '') })} helperText="Damit Ortsgespräche ohne Vorwahl gewählt werden können, z. B. 30" />
+          <TextField select label="Bundesland (Feiertage)" value={s.state} onChange={(e) => set({ state: e.target.value })}>
+            {Object.entries(states).map(([k, v]) => (
+              <MenuItem key={k} value={k}>
+                {v}
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField label="Zeitzone" value={s.timezone} onChange={(e) => set({ timezone: e.target.value })} />
+        </FormGrid>
+        <Typography variant="subtitle1" sx={{ mb: 1 }}>
+          Netzwerk
+        </Typography>
+        <FormGrid>
+          <NumberField label="SIP-Port" value={s.sip_port} onChange={(v) => set({ sip_port: v })} />
+          <NumberField label="SIP-TLS-Port" value={s.tls_port} onChange={(v) => set({ tls_port: v })} />
+          <NumberField label="RTP von" value={s.rtp_start} onChange={(v) => set({ rtp_start: v })} />
+          <NumberField label="RTP bis" value={s.rtp_end} onChange={(v) => set({ rtp_end: v })} />
+          <TextField label="Öffentliche Adresse (NAT)" value={s.external_address} onChange={(e) => set({ external_address: e.target.value.trim() })} helperText="Nur nötig, wenn Telefone von außen über den Router kommen" />
+          <ChipsInput label="Lokale Netze" value={s.local_nets} onChange={(v) => set({ local_nets: v })} />
+          <Full>
+            <ChipsInput label="Codecs für Nebenstellen" value={s.codecs} onChange={(v) => set({ codecs: v })} options={['opus', 'g722', 'alaw', 'ulaw', 'gsm']} helperText="Reihenfolge = Vorrang. Opus und G.722 klingen deutlich besser (HD-Telefonie)." />
+          </Full>
+        </FormGrid>
+      </Section>
+      <ChangesBar dirty={d.dirty} onApply={() => saveSection('system', s)} onDiscard={d.reset} />
+    </>
   )
 }
 
 function Mail() {
   const { config, saveSection, toast } = usePbx()
   const initial = useMemo(() => ({ ...config.mail, password: '' }), [config.mail])
-  const [m, set] = useDraft<MailSettings>(initial)
+  const d = useDraft<MailSettings>(initial)
+  const { draft: m, set } = d
   const [to, setTo] = useState('')
   return (
-    <Section title="E-Mail" description="Für Voicemail-Nachrichten und Einladungen an neue Nebenstellen.">
-      <FormGrid>
-        <TextField label="SMTP-Server" value={m.host} onChange={(e) => set({ host: e.target.value.trim() })} />
-        <NumberField label="Port" value={m.port} onChange={(v) => set({ port: v })} />
-        <Select
-          label="Verschlüsselung"
-          value={m.tls}
-          onChange={(v) => set({ tls: v })}
-          options={[
-            ['starttls', 'STARTTLS (Port 587)'],
-            ['tls', 'SSL/TLS (Port 465)'],
-            ['none', 'Keine'],
-          ]}
-        />
-        <TextField label="Absender" value={m.from} onChange={(e) => set({ from: e.target.value.trim() })} helperText="z. B. telefon@firma.de" />
-        <TextField label="Benutzer" value={m.user} onChange={(e) => set({ user: e.target.value.trim() })} />
-        <TextField label="Passwort" type="password" value={m.password} onChange={(e) => set({ password: e.target.value })} helperText={config.mail.password ? 'Leer lassen = unverändert' : undefined} />
-      </FormGrid>
-      <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 2, alignItems: { sm: 'center' } }}>
-        <TextField size="small" label="Test an" value={to} onChange={(e) => setTo(e.target.value)} sx={{ maxWidth: 320 }} />
-        <Button
-          onClick={() =>
-            void api
-              .post('/api/mail/test', { to })
-              .then(() => toast('Test-E-Mail gesendet'))
-              .catch((e: Error) => toast(e.message, 'error'))
-          }
-        >
-          Test senden
-        </Button>
-        <Box sx={{ flex: 1 }} />
-        <SaveBar onSave={() => saveSection('mail', m)} />
-      </Stack>
-    </Section>
+    <>
+      <Section title="E-Mail" description="Für Voicemail-Nachrichten und Einladungen an neue Nebenstellen.">
+        <FormGrid>
+          <TextField label="SMTP-Server" value={m.host} onChange={(e) => set({ host: e.target.value.trim() })} />
+          <NumberField label="Port" value={m.port} onChange={(v) => set({ port: v })} />
+          <Select
+            label="Verschlüsselung"
+            value={m.tls}
+            onChange={(v) => set({ tls: v })}
+            options={[
+              ['starttls', 'STARTTLS (Port 587)'],
+              ['tls', 'SSL/TLS (Port 465)'],
+              ['none', 'Keine'],
+            ]}
+          />
+          <TextField label="Absender" value={m.from} onChange={(e) => set({ from: e.target.value.trim() })} helperText="z. B. telefon@firma.de" />
+          <TextField label="Benutzer" value={m.user} onChange={(e) => set({ user: e.target.value.trim() })} />
+          <TextField label="Passwort" type="password" value={m.password} onChange={(e) => set({ password: e.target.value })} helperText={config.mail.password ? 'Leer lassen = unverändert' : undefined} />
+        </FormGrid>
+        <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 2, alignItems: { sm: 'center' } }}>
+          <TextField size="small" label="Test an" value={to} onChange={(e) => setTo(e.target.value)} sx={{ maxWidth: 320 }} />
+          <Button
+            onClick={() =>
+              void api
+                .post('/api/mail/test', { to })
+                .then(() => toast('Test-E-Mail gesendet'))
+                .catch((e: Error) => toast(e.message, 'error'))
+            }
+          >
+            Test senden
+          </Button>
+        </Stack>
+      </Section>
+      <ChangesBar dirty={d.dirty} onApply={() => saveSection('mail', m)} onDiscard={d.reset} />
+    </>
   )
 }
 
 function Security() {
   const { config, saveSection } = usePbx()
-  const [s, set] = useDraft<SecuritySettings>(config.security)
+  const d = useDraft<SecuritySettings>(config.security)
+  const { draft: s, set } = d
   const [status, refresh] = useStatus(10000)
   return (
     <>
@@ -160,7 +142,6 @@ function Security() {
             <ChipsInput label="Nebenstellen nur aus diesen Netzen" value={s.extension_nets} onChange={(v) => set({ extension_nets: v })} helperText="Leer = von überall (z. B. Homeoffice). Mit 192.168.0.0/16 nur aus dem Büro-LAN." />
           </Full>
         </FormGrid>
-        <SaveBar onSave={() => saveSection('security', s)} />
       </Section>
       <Section title="Gesperrte Adressen">
         {status?.bans.length ? (
@@ -180,6 +161,7 @@ function Security() {
           <Typography sx={{ color: 'text.secondary' }}>Keine.</Typography>
         )}
       </Section>
+      <ChangesBar dirty={d.dirty} onApply={() => saveSection('security', s)} onDiscard={d.reset} />
     </>
   )
 }
@@ -322,7 +304,8 @@ function waitForRestart(version: string): void {
 
 function Updates() {
   const { config, saveSection, toast } = usePbx()
-  const [u, set] = useDraft<UpdateSettings>(config.updates)
+  const d = useDraft<UpdateSettings>(config.updates)
+  const { draft: u, set } = d
   const [info, setInfo] = useState<UpdateInfo | null>(null)
   const [checking, setChecking] = useState(false)
   const [applying, setApplying] = useState(false)
@@ -399,14 +382,16 @@ function Updates() {
           <FormControlLabel control={<Switch checked={u.auto} onChange={(e) => set({ auto: e.target.checked })} />} label="Automatisch installieren" />
           <NumberField label="Um (Uhr)" value={u.hour} onChange={(v) => set({ hour: Math.min(23, v) })} />
         </FormGrid>
-        <SaveBar onSave={() => saveSection('updates', u)} />
       </Section>
+      <ChangesBar dirty={d.dirty} onApply={() => saveSection('updates', u)} onDiscard={d.reset} />
     </>
   )
 }
 
 function Access() {
   const { config, saveSection, toast } = usePbx()
+  const d = useDraft(config.provisioning)
+  const { draft: p, set } = d
   const [old, setOld] = useState('')
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
@@ -418,31 +403,37 @@ function Access() {
           <TextField type="password" label="Neues Passwort" value={pw} onChange={(e) => setPw(e.target.value)} helperText="Mindestens 10 Zeichen" />
           <TextField type="password" label="Wiederholen" value={pw2} onChange={(e) => setPw2(e.target.value)} error={Boolean(pw2) && pw !== pw2} />
         </FormGrid>
-        <SaveBar
-          onSave={async () => {
-            if (pw !== pw2) throw new Error('Die Passwörter stimmen nicht überein.')
-            await api.post('/api/password', { old, password: pw })
-            setOld('')
-            setPw('')
-            setPw2('')
-          }}
-        />
+        <Stack direction="row" sx={{ justifyContent: 'flex-end' }}>
+          <Button
+            variant="contained"
+            disabled={!old || !pw}
+            onClick={() => {
+              if (pw !== pw2) return toast('Die Passwörter stimmen nicht überein.', 'error')
+              void api
+                .post('/api/password', { old, password: pw })
+                .then(() => {
+                  setOld('')
+                  setPw('')
+                  setPw2('')
+                  toast('Passwort geändert')
+                })
+                .catch((e: Error) => toast(e.message, 'error'))
+            }}
+          >
+            Passwort ändern
+          </Button>
+        </Stack>
       </Section>
-      <Section title="Automatische Einrichtung der App" description="Die SIP-Telefon-App sucht im lokalen Netz nach der Anlage (UDP-Port 15060).">
-        <FormControlLabel
-          control={
-            <Switch
-              checked={config.provisioning.discovery}
-              onChange={(e) =>
-                void saveSection('provisioning', { discovery: e.target.checked })
-                  .then(() => toast('Gespeichert'))
-                  .catch((err: Error) => toast(err.message, 'error'))
-              }
-            />
-          }
-          label="Im lokalen Netz auffindbar"
-        />
+      <Section title="Automatische Einrichtung der App" description="Die Phone4All-App sucht im lokalen Netz nach der Anlage (UDP-Port 15060).">
+        <FormControlLabel control={<Switch checked={p.discovery} onChange={(e) => set({ discovery: e.target.checked })} />} label="Im lokalen Netz auffindbar" />
       </Section>
+      <Section
+        title="Rechte in der App"
+        description="Was jede Nebenstelle in der Phone4All-App selbst einstellen darf. Unter Gruppen lassen sich einzelnen Gruppen weitere Rechte geben."
+      >
+        <PermissionChecks value={p.permissions} onChange={(permissions) => set({ permissions })} />
+      </Section>
+      <ChangesBar dirty={d.dirty} onApply={() => saveSection('provisioning', p)} onDiscard={d.reset} />
     </>
   )
 }
@@ -575,7 +566,8 @@ function since(ms: number): string {
 
 function Diagnose() {
   const { config, saveSection, toast } = usePbx()
-  const [w, set] = useDraft<WatchdogSettings>(config.watchdog)
+  const d = useDraft<WatchdogSettings>(config.watchdog)
+  const { draft: w, set } = d
   const [data, setData] = useState<WatchdogResponse | null>(null)
   const [busy, setBusy] = useState(false)
   const load = (): void => void api.get<WatchdogResponse>('/api/watchdog').then(setData).catch(() => undefined)
@@ -636,7 +628,6 @@ function Diagnose() {
             helperText={config.mail.host ? 'Leer = keine E-Mails' : 'Dafür zuerst den E-Mail-Versand einrichten'}
           />
         </FormGrid>
-        <SaveBar onSave={() => saveSection('watchdog', w)} />
       </Section>
       <Section
         title="Ereignisse"
@@ -662,6 +653,7 @@ function Diagnose() {
           <Typography sx={{ color: 'text.secondary' }}>Keine Ereignisse.</Typography>
         )}
       </Section>
+      <ChangesBar dirty={d.dirty} onApply={() => saveSection('watchdog', w)} onDiscard={d.reset} />
     </>
   )
 }
@@ -698,7 +690,7 @@ export default function System() {
   return (
     <Box>
       <PageHeader overline="System" title="Einstellungen und Wartung" description="Name, E-Mail, Sicherheit, Sicherungen, Updates, Diagnose und Home Assistant." />
-      <Tabs value={tab} onChange={(_e, v: number) => setTab(v)} variant="scrollable" sx={{ mb: 2 }}>
+      <Tabs value={tab} onChange={(_e, v: number) => confirmDiscard() && setTab(v)} variant="scrollable" sx={{ mb: 2 }}>
         {TABS.map(([label]) => (
           <Tab key={label} label={label} />
         ))}

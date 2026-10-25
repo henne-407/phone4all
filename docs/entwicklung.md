@@ -6,7 +6,7 @@ Alle Teile von Phone4all liegen in diesem einen Repository.
 
 | Ordner | Inhalt | Technik |
 | --- | --- | --- |
-| `src/` | Desktop-App SIP-Telefon (Hauptprozess, Oberfläche, gemeinsamer Code) | Electron, React, Material UI, baresip |
+| `src/` | Desktop-App Phone4All (Hauptprozess, Oberfläche, gemeinsamer Code) | Electron, React, Material UI, baresip |
 | `pbx/` | Telefonanlage: Verwaltungsdienst (`server/`), Weboberfläche (`web/`), Docker-Image | Node, Asterisk 20, React, Material UI |
 | `mobile/` | Mobil-App für Android und iPhone | Expo / React Native, JsSIP, react-native-webrtc, Paper |
 | `custom_components/phone4all/` | Home-Assistant-Integration | Python |

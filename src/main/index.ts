@@ -10,6 +10,9 @@ const background = process.argv.includes('--background') || process.argv.include
 /** Einrichtungslink der Telefonanlage aus der Befehlszeile (Windows/Linux) */
 const linkArg = (argv: string[]): string | undefined => argv.find((a) => a.startsWith(`${LINK_SCHEME}://`))
 
+// Interner Name bleibt „SIP-Telefon“: davon hängen der Ordner der Einstellungen
+// (macOS/Windows), der Schlüssel im Schlüsselbund und die Fensterklasse ab.
+// Angezeigt wird überall „Phone4All“ (productName).
 electronApp.setName('SIP-Telefon')
 if (process.platform === 'win32') electronApp.setAppUserModelId('de.hpieper.SipTelefon')
 
@@ -46,16 +49,16 @@ if (!electronApp.requestSingleInstanceLock()) {
       Menu.setApplicationMenu(
         Menu.buildFromTemplate([
           {
-            label: 'SIP-Telefon',
+            label: 'Phone4All',
             submenu: [
-              { role: 'about', label: 'Über SIP-Telefon' },
+              { role: 'about', label: 'Über Phone4All' },
               { type: 'separator' },
               { label: 'Einstellungen …', accelerator: 'Cmd+,', click: () => instance?.send('open-preferences', 'account') },
               { type: 'separator' },
-              { role: 'hide', label: 'SIP-Telefon ausblenden' },
+              { role: 'hide', label: 'Phone4All ausblenden' },
               { role: 'hideOthers', label: 'Andere ausblenden' },
               { type: 'separator' },
-              { label: 'SIP-Telefon beenden', accelerator: 'Cmd+Q', click: () => instance?.quit() },
+              { label: 'Phone4All beenden', accelerator: 'Cmd+Q', click: () => instance?.quit() },
             ],
           },
           { role: 'editMenu', label: 'Bearbeiten' },

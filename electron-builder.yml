@@ -1,5 +1,5 @@
 appId: de.hpieper.SipTelefon
-productName: SIP-Telefon
+productName: Phone4All
 copyright: Copyright © 2026 Henning Pieper
 directories:
   output: dist
@@ -11,7 +11,7 @@ extraResources:
   - from: resources/icons
     to: icons
 asarUnpack: []
-artifactName: SIP-Telefon-${version}-${os}-${arch}.${ext}
+artifactName: Phone4All-${version}-${os}-${arch}.${ext}
 # Einrichtungslinks der Phone4all-Telefonanlage (sip-telefon://provision?url=…)
 protocols:
   - name: SIP-Telefon-Einrichtung
@@ -26,7 +26,7 @@ linux:
   synopsis: Softphone für SIP-Telefonanlagen
   desktop:
     entry:
-      Name: SIP-Telefon
+      Name: Phone4All
       GenericName: Softphone
       Comment: Telefonieren über deine SIP-Telefonanlage
       Keywords: SIP;VoIP;Telefon;Anruf;Softphone;
@@ -52,13 +52,13 @@ mac:
   identity: '-'
   hardenedRuntime: false
   extendInfo:
-    NSMicrophoneUsageDescription: SIP-Telefon braucht das Mikrofon für Telefongespräche.
+    NSMicrophoneUsageDescription: Phone4All braucht das Mikrofon für Telefongespräche.
     LSMultipleInstancesProhibited: true
   extraResources:
     - from: build/engine
       to: baresip
 dmg:
-  title: SIP-Telefon ${version}
+  title: Phone4All ${version}
 
 win:
   target: [nsis]
@@ -70,5 +70,5 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-  shortcutName: SIP-Telefon
-  uninstallDisplayName: SIP-Telefon
+  shortcutName: Phone4All
+  uninstallDisplayName: Phone4All

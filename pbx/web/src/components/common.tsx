@@ -17,7 +17,12 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Checkbox,
   Fab,
+  FormControlLabel,
+  FormGroup,
+  Paper,
+  Slide,
   IconButton,
   MenuItem,
   Stack,
@@ -35,8 +40,8 @@ import {
   useMediaQuery,
   useTheme,
 } from '@mui/material'
-import { type ReactNode, useEffect, useState } from 'react'
-import { type CollectionName, DESTINATION_LABELS, type Destination, type DestinationType, blankItem } from '../../../server/model'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { APP_PERMISSIONS, type AppPermission, type CollectionName, DESTINATION_LABELS, type Destination, type DestinationType, blankItem } from '../../../server/model'
 import { takeEditRequest } from '../router'
 import { usePbx } from '../state'
 
@@ -691,4 +696,118 @@ export function formatDuration(seconds: number): string {
   const m = Math.floor((s % 3600) / 60)
   const rest = s % 60
   return h ? `${h}:${String(m).padStart(2, '0')}:${String(rest).padStart(2, '0')}` : `${m}:${String(rest).padStart(2, '0')}`
+}
+
+/** Entwurf einer Einstellung: folgt der gespeicherten Fassung, solange nichts geändert ist. */
+export function useDraft<T>(initial: T): {
+  draft: T
+  set: (patch: Partial<T>) => void
+  replace: (v: T) => void
+  dirty: boolean
+  reset: () => void
+} {
+  const [draft, setDraft] = useState(initial)
+  useEffect(() => setDraft(initial), [initial])
+  const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(initial), [draft, initial])
+  return { draft, set: (patch) => setDraft((d) => ({ ...d, ...patch })), replace: setDraft, dirty, reset: () => setDraft(initial) }
+}
+
+let unsaved = 0
+
+/** Gibt es irgendwo ungespeicherte Änderungen? (z. B. vor dem Wechsel des Tabs) */
+export function confirmDiscard(): boolean {
+  return unsaved === 0 || window.confirm('Ungespeicherte Änderungen verwerfen?')
+}
+
+/**
+ * Leiste am unteren Rand, sobald etwas geändert ist: „Anwenden“ speichert,
+ * „Verwerfen“ stellt die gespeicherte Fassung wieder her.
+ */
+export function ChangesBar({ dirty, onApply, onDiscard, text = 'Ungespeicherte Änderungen' }: { dirty: boolean; onApply: () => Promise<unknown>; onDiscard: () => void; text?: string }) {
+  const { toast } = usePbx()
+  const [busy, setBusy] = useState(false)
+  // Beim Schließen oder Neuladen der Seite nachfragen
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (e: BeforeUnloadEvent): void => e.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    unsaved++
+    return () => {
+      unsaved--
+      window.removeEventListener('beforeunload', warn)
+    }
+  }, [dirty])
+  const apply = (): void => {
+    setBusy(true)
+    void onApply()
+      .then(() => toast('Übernommen'))
+      .catch((e: Error) => toast(e.message, 'error'))
+      .finally(() => setBusy(false))
+  }
+  return (
+    <Slide direction="up" in={dirty} mountOnEnter unmountOnExit>
+      <Paper
+        elevation={6}
+        role="region"
+        aria-label="Änderungen"
+        sx={{
+          position: 'sticky',
+          bottom: 16,
+          zIndex: (t) => t.zIndex.appBar - 1,
+          mt: 2,
+          px: 2,
+          py: 1.25,
+          borderRadius: 4,
+          bgcolor: 'background.paper',
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 1,
+        }}
+      >
+        <Typography variant="body2" sx={{ flex: 1, minWidth: 160, fontWeight: 500 }}>
+          {text}
+        </Typography>
+        <Button onClick={onDiscard} disabled={busy}>
+          Verwerfen
+        </Button>
+        <Button variant="contained" onClick={apply} disabled={busy}>
+          Anwenden
+        </Button>
+      </Paper>
+    </Slide>
+  )
+}
+
+/** Rechte in der App zum Ankreuzen (Grundrechte und Gruppen) */
+export function PermissionChecks({ value, onChange, inherited = [] }: { value: AppPermission[]; onChange: (v: AppPermission[]) => void; inherited?: AppPermission[] }) {
+  return (
+    <FormGroup>
+      {APP_PERMISSIONS.map(([key, label, hint]) => {
+        const base = inherited.includes(key)
+        return (
+          <FormControlLabel
+            key={key}
+            sx={{ alignItems: 'flex-start', mb: 1 }}
+            control={
+              <Checkbox
+                sx={{ mt: -0.75 }}
+                checked={base || value.includes(key)}
+                disabled={base}
+                onChange={(e) => onChange(e.target.checked ? [...value, key] : value.filter((x) => x !== key))}
+              />
+            }
+            label={
+              <Box>
+                <Typography variant="body1">{label}</Typography>
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                  {base ? `${hint} – haben ohnehin alle Nebenstellen` : hint}
+                </Typography>
+              </Box>
+            }
+          />
+        )
+      })}
+    </FormGroup>
+  )
 }

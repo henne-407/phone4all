@@ -5,20 +5,23 @@ import http from 'node:http'
 import path from 'node:path'
 import { Asterisk } from './asterisk'
 import { CalendarStore } from './calendars'
+import { external } from './directory'
 import { Auth, SESSION_COOKIE, SESSION_MAX_AGE } from './auth'
 import { readCalls, tailLog } from './cdr'
 import { describeAgent, gigasetFile, requestMac } from './dect'
 import { loadJson, saveJson } from './files'
+import { type ForwardChange, ForwardError, applyCfu, applyRules, check as checkForward, forwardInfo } from './forwarding'
 import { integrationReport, validToken } from './integration'
 import { LdapServer } from './ldap'
 import { HttpError, type Request, Router, makeRequest, sendFile, sendJson, sendText, serveStatic } from './http'
 import { sendMail } from './mail'
 import { ChatError, MessengerHub, MessengerStore, messengerUsers } from './messenger'
-import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, SECTIONS, type SectionName } from './model'
+import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, type PhonebookEntry, SECTIONS, type SectionName } from './model'
 import { PATHS, SETTINGS } from './paths'
 import { PROVIDERS } from './providers'
 import { appLink, baseUrl, landingPage, profile, startDiscovery, visibleCalendars } from './provisioning'
 import {
+  appPermissions,
   extensionPlan,
   feature,
   groupPlan,
@@ -28,6 +31,7 @@ import {
   timeConditionTarget,
 } from './routing'
 import { Guard } from './security'
+import { SourceSync } from './sources/sync'
 import { listSounds, saveSound, soundDir, soundFile, type SoundKind } from './sounds'
 import { ConfigStore, type ExportFile, ValidationError, fillSecrets, newPin, newSecret } from './store'
 import type { DectBase } from './model'
@@ -41,6 +45,11 @@ const asterisk = new Asterisk()
 const guard = new Guard(() => store.config.security)
 const updater = new Updater()
 const calendars = new CalendarStore(() => store.config)
+const sources = new SourceSync(
+  () => store.config,
+  (id, events) => calendars.replace(id, events),
+)
+external.entries = () => sources.entries()
 const ldap = new LdapServer(() => store.config)
 const messenger = new MessengerHub(new MessengerStore(PATHS.messenger), () => store.config)
 auth.init()
@@ -144,7 +153,7 @@ internal.get('/internal/group', (r) =>
   groupPlan(store.config, store.state, r.query.get('id') ?? '', r.query.get('name') ?? '', PATHS.sounds),
 )
 internal.get('/internal/tc', (r) => timeConditionTarget(store.config, r.query.get('id') ?? ''))
-internal.get('/internal/available', (r) => (isAvailable(store.state, r.query.get('num') ?? '') ? '1' : '0'))
+internal.get('/internal/available', (r) => (isAvailable(store.state, r.query.get('num') ?? '', store.config) ? '1' : '0'))
 internal.get('/internal/feature', (r) => {
   const result = feature(store.config, store.state, r.query.get('ext') ?? '', r.query.get('code') ?? '', r.query.get('arg') ?? '')
   if (result.stateChanged) store.saveState()
@@ -240,6 +249,9 @@ function writableFor(token: string, id: string): void {
   const cal = visibleCalendars(store.config, tokenExtension(token)).find((c) => c.id === id)
   if (!cal) throw new HttpError(404, 'Kalender nicht gefunden.')
   if (!cal.writable || cal.kind !== 'events') throw new HttpError(403, 'Dieser Kalender ist schreibgeschützt.')
+  if (!appPermissions(store.config, tokenExtension(token).number).includes('calendar_edit')) {
+    throw new HttpError(403, 'Termine bearbeiten ist für diese Nebenstelle nicht freigegeben.')
+  }
 }
 
 pub.put('/provision/:token/events/:calendar/:uid', async (r) => {
@@ -296,6 +308,63 @@ pub.get('/provision/:token/chat/files/:room/:id', (r) => {
     if (e instanceof ChatError) throw new HttpError(404, e.message)
     throw e
   }
+})
+
+/** Zentrales Telefonbuch aus der App bearbeiten (Recht phonebook_edit) */
+function phonebookEditor(token: string): Extension {
+  const ext = tokenExtension(token)
+  if (!appPermissions(store.config, ext.number).includes('phonebook_edit')) {
+    throw new HttpError(403, 'Das Telefonbuch der Anlage darf von dieser Nebenstelle nicht bearbeitet werden.')
+  }
+  return ext
+}
+
+function phonebookEntry(raw: Partial<PhonebookEntry>, id = ''): PhonebookEntry {
+  const text = (v: unknown, max = 200): string => String(v ?? '').trim().slice(0, max)
+  const entry = { id, name: text(raw.name), company: text(raw.company), phone: text(raw.phone, 40), mobile: text(raw.mobile, 40) }
+  if (!entry.name) throw new HttpError(400, 'Der Kontakt braucht einen Namen.')
+  if (!entry.phone && !entry.mobile) throw new HttpError(400, 'Der Kontakt braucht eine Telefonnummer.')
+  return entry
+}
+
+pub.post('/provision/:token/phonebook', async (r) => {
+  phonebookEditor(r.params.token)
+  return store.upsert('phonebook', { ...phonebookEntry(await r.json()) })
+})
+
+pub.put('/provision/:token/phonebook/:id', async (r) => {
+  phonebookEditor(r.params.token)
+  if (!store.config.phonebook.some((p) => p.id === r.params.id)) throw new HttpError(404, 'Kontakt nicht gefunden.')
+  return store.upsert('phonebook', { ...phonebookEntry(await r.json(), r.params.id) })
+})
+
+pub.delete('/provision/:token/phonebook/:id', (r) => {
+  phonebookEditor(r.params.token)
+  if (!store.config.phonebook.some((p) => p.id === r.params.id)) throw new HttpError(404, 'Kontakt nicht gefunden.')
+  store.remove('phonebook', r.params.id)
+  return { ok: true }
+})
+
+/** Umleitungen der Nebenstelle für die Statusleiste der App */
+pub.get('/provision/:token/forward', (r) => forwardInfo(store.config, store.state, tokenExtension(r.params.token)))
+
+pub.put('/provision/:token/forward', async (r) => {
+  const ext = tokenExtension(r.params.token)
+  const change = await r.json<ForwardChange>()
+  const rules = change.busy !== undefined || change.noanswer !== undefined || change.rules !== undefined
+  try {
+    // Erst die Sofort-Umleitung prüfen – sonst wären bei einem Fehler die Regeln schon gespeichert
+    if (change.cfu !== undefined) checkForward(store.config, ext.number, String(change.cfu))
+    if (rules) store.update((draft) => applyRules(draft, draft.extensions.find((e) => e.id === ext.id)!, change))
+    if (change.cfu !== undefined) {
+      applyCfu(store.config, store.state, ext.number, String(change.cfu))
+      store.saveState()
+    }
+  } catch (e) {
+    if (e instanceof ForwardError) throw new HttpError(403, e.message)
+    throw e
+  }
+  return forwardInfo(store.config, store.state, tokenExtension(r.params.token))
 })
 
 /** Einrichtung mit Nebenstelle und Einrichtungs-PIN */
@@ -390,11 +459,14 @@ for (const kind of COLLECTIONS) {
     const item = await r.json<Record<string, unknown>>()
     const saved = store.upsert(kind as CollectionName, item)
     applySoon()
+    // Geänderte Quelle gleich neu lesen
+    if (kind === 'contactsources' || kind === 'calendars') void sources.syncNow(String(saved.id))
     return saved
   })
   api.delete(`/api/${kind}/:id`, (r) => {
     store.remove(kind as CollectionName, r.params.id)
     if (kind === 'calendars') calendars.cleanup()
+    if (kind === 'contactsources' || kind === 'calendars') sources.cleanup()
     applySoon()
     return { ok: true }
   })
@@ -438,7 +510,7 @@ api.post('/api/extensions/:id/invite', async (r) => {
       '',
       `Ihre Nebenstelle ${ext.number} an der Telefonanlage ${store.config.system.name} ist eingerichtet.`,
       '',
-      'Mit der App SIP-Telefon öffnen Sie einfach diesen Link – die App richtet sich selbst ein:',
+      'Mit der App Phone4All öffnen Sie einfach diesen Link – die App richtet sich selbst ein:',
       `${base}/setup/${ext.provision_token}`,
       '',
       'Oder in der App unter Einstellungen → Konto → „Von Telefonanlage einrichten“:',
@@ -542,6 +614,10 @@ api.get('/api/status', async () => ({
   version: SETTINGS.version,
   watchdog: watchdog.status(),
 }))
+
+/** Stand der externen Kontakt- und Kalenderquellen */
+api.get('/api/sources', () => sources.status)
+api.post('/api/sources/:id/sync', (r) => sources.syncNow(r.params.id))
 
 api.get('/api/watchdog', () => ({ ...watchdog.status(), events: [...watchdog.events].reverse() }))
 api.post('/api/watchdog/check', async () => {
@@ -758,6 +834,7 @@ async function main(): Promise<void> {
   watchdog.log('info', 'asterisk', `Verwaltungsdienst gestartet (Version ${SETTINGS.version})`)
   watchdog.start()
   setTimeout(() => void watchdog.tick(), 15000).unref()
+  sources.start()
 
   // Tägliche Sicherung, stündliche Update-Prüfung, automatisches Update im Zeitfenster
   let lastBackup = ''

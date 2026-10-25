@@ -5,7 +5,7 @@
 | [Erste Schritte](erste-schritte.md) | vom leeren Server zum ersten Anruf |
 | [Installation](installation.md) | Docker, TrueNAS, VM, Raspberry Pi, Ports, Updates, Sicherung |
 | [Telefonanlage bedienen](telefonanlage.md) | die Weboberfläche Seite für Seite, Funktionscodes |
-| [Desktop-App](desktop-app.md) | SIP-Telefon für Linux, macOS und Windows |
+| [Desktop-App](desktop-app.md) | Phone4All für Linux, macOS und Windows |
 | [Mobil-App](mobil-app.md) | SIP-Telefon für Android und iPhone |
 | [Zugriff von unterwegs](fernzugriff.md) | HTTPS über Pangolin oder einen anderen Reverse-Proxy |
 | [DECT-Telefone](dect.md) | Gigaset N610/N670/N870 IP PRO, LDAP-Telefonbuch |

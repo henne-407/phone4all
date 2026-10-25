@@ -77,7 +77,7 @@ jobs:
           CSC_FOR_PULL_REQUEST: 'true'
       - name: Signatur prüfen
         run: |
-          app=$(find dist -maxdepth 2 -name 'SIP-Telefon.app' | head -1)
+          app=$(find dist -maxdepth 2 -name 'Phone4All.app' | head -1)
           codesign --verify --deep --strict --verbose=2 "$app"
           codesign -dv "$app" 2>&1 | grep -i signature
       - uses: actions/upload-artifact@v4

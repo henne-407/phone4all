@@ -24,6 +24,24 @@ export function titleBarColors(theme: Theme): [string, string] {
   return [p.background.default, p.mode === 'dark' ? p.common.white : p.common.black]
 }
 
+/**
+ * Klick-Rückmeldung ohne die große Welle (Ripple): eine Zustandsschicht wie in
+ * Material 3, die der Form des Elements folgt (auch Pillen und runde Symbole).
+ */
+function pressFeedback(onSurface: string, focus: string) {
+  const layer = (a: number): string => `linear-gradient(${alpha(onSurface, a)}, ${alpha(onSurface, a)})`
+  return {
+    defaultProps: { disableRipple: true },
+    styleOverrides: {
+      root: {
+        transition: 'background-color 150ms, background-image 150ms, box-shadow 150ms',
+        '&:active:not(.Mui-disabled)': { backgroundImage: layer(0.12) },
+        '&.Mui-focusVisible': { outline: `2px solid ${focus}`, outlineOffset: 2 },
+      },
+    },
+  }
+}
+
 function buildClassic(primary: string, dark: boolean): Theme {
   const base = createTheme({ palette: { mode: dark ? 'dark' : 'light' } })
   return createTheme(base, {
@@ -32,6 +50,7 @@ function buildClassic(primary: string, dark: boolean): Theme {
     },
     components: {
       MuiCssBaseline: { styleOverrides: BEHAVIOUR },
+      MuiButtonBase: pressFeedback(base.palette.text.primary, primary),
       MuiTextField: { defaultProps: { fullWidth: true } },
     },
   })
@@ -81,6 +100,7 @@ function buildMaterial3(md: Roles, dark: boolean): Theme {
           '*::-webkit-scrollbar-track': { background: 'transparent' },
         },
       },
+      MuiButtonBase: pressFeedback(md.onSurface, md.primary),
       // Voll abgerundete Knöpfe ohne Schatten
       MuiButton: {
         defaultProps: { disableElevation: true },

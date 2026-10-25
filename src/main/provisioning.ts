@@ -8,7 +8,19 @@
 
 import dgram from 'node:dgram'
 import os from 'node:os'
-import type { AccountSettings, AppPolicy, Contact, HomeCard, PageName, PbxCalendar, PbxFound, PbxPreview } from '../shared/types'
+import type {
+  AccountSettings,
+  AppPolicy,
+  Contact,
+  HomeCard,
+  PageName,
+  PbxCalendar,
+  PbxForward,
+  PbxForwardChange,
+  PbxFound,
+  PbxPermission,
+  PbxPreview,
+} from '../shared/types'
 import { loadJson, saveJson } from './files'
 import type { Store } from './store'
 
@@ -30,11 +42,36 @@ export interface PbxProfile {
   account: AccountSettings
   password: string
   url: string
-  phonebook: { name: string; company: string; phone: string; mobile: string }[]
+  phonebook: { name: string; company: string; phone: string; mobile: string; id?: string }[]
   app: AppPolicy | null
   calendars: PbxCalendar[]
+  permissions: PbxPermission[]
   messenger: boolean
   revision: string
+}
+
+const PERMISSIONS: PbxPermission[] = ['forward', 'forward_external', 'forward_rules', 'calendar_edit', 'phonebook_edit']
+
+/** Rechte aus dem Profil; ältere Anlagen kennen keine und erlauben alles wie bisher */
+export function parsePermissions(data: unknown): PbxPermission[] {
+  if (!Array.isArray(data)) return ['calendar_edit']
+  return PERMISSIONS.filter((p) => data.includes(p))
+}
+
+/** Antwort von …/forward prüfen */
+export function parseForward(data: unknown): PbxForward | null {
+  const f = data as Partial<PbxForward> | null
+  if (!f || typeof f !== 'object' || !Array.isArray(f.rules) || !Array.isArray(f.targets)) return null
+  return {
+    permissions: parsePermissions(f.permissions),
+    cfu: String(f.cfu ?? ''),
+    active: String(f.active ?? ''),
+    busy: String(f.busy ?? ''),
+    noanswer: String(f.noanswer ?? ''),
+    rules: f.rules,
+    targets: f.targets.filter((t) => t && typeof t.number === 'string'),
+    timeconditions: Array.isArray(f.timeconditions) ? f.timeconditions : [],
+  }
 }
 
 /** Vorgaben aus dem Profil prüfen; unbekannte Ansichten werden ignoriert. */
@@ -84,6 +121,7 @@ export function parseProfile(data: unknown): PbxProfile {
     phonebook: Array.isArray(p.phonebook) ? p.phonebook.filter((e) => e && typeof e.phone === 'string') : [],
     app: parsePolicy(p.app),
     calendars: parseCalendars(p.calendars),
+    permissions: parsePermissions(p.permissions),
     messenger: p.messenger === true,
     revision: String(p.revision ?? ''),
   }
@@ -215,6 +253,8 @@ export class Provisioning {
   private poller: NodeJS.Timeout | null = null
   private revision = { profile: '', events: '' }
   phonebook: Omit<Contact, 'id'>[]
+  /** Umleitungen der Nebenstelle (null = Anlage kennt sie nicht oder nicht erreichbar) */
+  forward: PbxForward | null = null
 
   constructor(
     private host: ProvisioningHost,
@@ -256,9 +296,80 @@ export class Provisioning {
       if (rev.profile && rev.profile !== this.revision.profile) await this.refresh()
       if (rev.events && this.revision.events && rev.events !== this.revision.events) this.host.eventsChanged()
       if (rev.events) this.revision.events = rev.events
+      await this.loadForward()
     } catch {
       // Anlage gerade nicht erreichbar
     }
+  }
+
+  /** Umleitungen von der Anlage holen (auch Regeln greifen je nach Uhrzeit) */
+  async loadForward(): Promise<void> {
+    const url = this.url
+    if (!url) return
+    try {
+      const r = await fetch(`${url}/forward`, { signal: AbortSignal.timeout(10000) })
+      const next = r.ok ? parseForward(await r.json()) : r.status === 404 ? null : this.forward
+      if (JSON.stringify(next) !== JSON.stringify(this.forward)) {
+        this.forward = next
+        this.host.stateChanged()
+      }
+    } catch {
+      // Anlage gerade nicht erreichbar: letzten Stand behalten
+    }
+  }
+
+  /** Umleitung in der Anlage ändern; die Anlage prüft die Rechte. */
+  async setForward(change: PbxForwardChange): Promise<PbxForward> {
+    const url = this.url
+    if (!url) throw new Error('Keine Telefonanlage verbunden.')
+    let r: Response
+    try {
+      r = await fetch(`${url}/forward`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(change),
+        signal: AbortSignal.timeout(10000),
+      })
+    } catch {
+      throw new Error('Die Telefonanlage ist nicht erreichbar.')
+    }
+    const data = (await r.json().catch(() => null)) as { error?: string } | null
+    if (!r.ok) throw new Error(data?.error || `Die Telefonanlage antwortet mit Fehler ${r.status}.`)
+    const next = parseForward(data)
+    if (!next) throw new Error('Die Telefonanlage kennt keine Umleitungen aus der App.')
+    this.forward = next
+    this.host.stateChanged()
+    return next
+  }
+
+  /** Kontakt im Telefonbuch der Anlage anlegen (ohne pbx) oder ändern (Recht phonebook_edit) */
+  async savePhonebookEntry(contact: Pick<Contact, 'name' | 'company' | 'phone' | 'mobile' | 'pbx'>): Promise<void> {
+    const { name, company, phone, mobile } = contact
+    await this.phonebookRequest(contact.pbx ? 'PUT' : 'POST', contact.pbx, { name, company, phone, mobile })
+  }
+
+  async deletePhonebookEntry(id: string): Promise<void> {
+    await this.phonebookRequest('DELETE', id)
+  }
+
+  private async phonebookRequest(method: string, id?: string, body?: object): Promise<void> {
+    const url = this.url
+    if (!url) throw new Error('Keine Telefonanlage verbunden.')
+    let r: Response
+    try {
+      r = await fetch(`${url}/phonebook${id ? `/${encodeURIComponent(id)}` : ''}`, {
+        method,
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(10000),
+      })
+    } catch {
+      throw new Error('Die Telefonanlage ist nicht erreichbar.')
+    }
+    const data = (await r.json().catch(() => null)) as { error?: string } | null
+    if (!r.ok) throw new Error(data?.error || `Die Telefonanlage antwortet mit Fehler ${r.status}.`)
+    // Neues Telefonbuch gleich holen, damit die Liste stimmt
+    await this.refresh()
   }
 
   /** Profil per Link abrufen (zur Bestätigung). */
@@ -283,6 +394,7 @@ export class Provisioning {
     if (!this.pending) throw new Error('Kein Profil zum Übernehmen.')
     const secure = this.applyProfile(this.pending, true)
     this.pending = null
+    void this.loadForward()
     return secure
   }
 
@@ -291,9 +403,10 @@ export class Provisioning {
     if (this.accountLocked) throw new Error('Die Telefonanlage verwaltet dieses Konto. Bitte in der Anlage das App-Profil ändern.')
     const { store } = this.host
     store.deleteSecret(URL_SECRET)
-    store.settings.provisioning = { pbx: '', extension: '', server: '', updated: 0, policy: null, calendars: [], messenger: false }
+    store.settings.provisioning = { pbx: '', extension: '', server: '', updated: 0, policy: null, calendars: [], permissions: [], messenger: false }
     store.saveSettings()
     this.revision = { profile: '', events: '' }
+    this.forward = null
     this.setPhonebook([])
     this.host.calendarsChanged()
     this.host.stateChanged()
@@ -306,6 +419,7 @@ export class Provisioning {
     try {
       const p = await request(url)
       this.applyProfile(p, false)
+      await this.loadForward()
     } catch {
       // Anlage gerade nicht erreichbar: beim nächsten Mal wieder versuchen
     }
@@ -326,6 +440,7 @@ export class Provisioning {
       updated: Date.now(),
       policy: p.app,
       calendars: p.calendars,
+      permissions: p.permissions,
       messenger: p.messenger,
     }
     this.revision.profile = p.revision
@@ -340,7 +455,14 @@ export class Provisioning {
   }
 
   private setPhonebook(entries: PbxProfile['phonebook']): void {
-    this.phonebook = entries.map((e) => ({ name: e.name, company: e.company, phone: e.phone, mobile: e.mobile, other: [] }))
+    this.phonebook = entries.map((e) => ({
+      name: e.name,
+      company: e.company,
+      phone: e.phone,
+      mobile: e.mobile,
+      other: [],
+      ...(typeof e.id === 'string' && e.id ? { pbx: e.id } : {}),
+    }))
     saveJson(this.phonebookPath, this.phonebook)
     this.host.phonebookChanged()
   }

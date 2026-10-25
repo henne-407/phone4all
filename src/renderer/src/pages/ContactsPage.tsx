@@ -122,7 +122,7 @@ function ContactDetail({ contact }: { contact: Contact | null }) {
               <Button variant="outlined" onClick={() => emit('edit-contact', contact)}>
                 {contact.readonly ? 'Als eigenen Kontakt übernehmen' : 'Bearbeiten'}
               </Button>
-              {!contact.readonly && (
+              {!contact.readonly && !contact.pbx && (
                 <Tooltip title="Favorit auf der Startseite">
                   <IconButton
                     aria-pressed={Boolean(contact.favorite)}
@@ -229,7 +229,7 @@ export function ContactsPage({ wide }: { wide: boolean }) {
               disablePadding
               secondaryAction={
                 <Stack direction="row" sx={{ alignItems: 'center' }}>
-                  {c.readonly && (
+                  {(c.readonly || c.pbx) && (
                     <Tooltip title={`Aus Adressbuch: ${c.source}`}>
                       <ContactsIcon fontSize="small" sx={{ color: 'text.disabled', mr: 1 }} />
                     </Tooltip>

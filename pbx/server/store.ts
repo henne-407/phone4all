@@ -11,10 +11,11 @@ import {
   DEFAULT_CONFIG,
   type DectBase,
   type Extension,
+  type ForwardRule,
   type PbxConfig,
   withDefaults,
 } from './model'
-import { isInternalNumber } from './numbers'
+import { cleanNumber, isInternalNumber } from './numbers'
 import { PATHS, SETTINGS } from './paths'
 import type { RuntimeState } from './routing'
 
@@ -71,12 +72,25 @@ function usedNumbers(cfg: PbxConfig): Map<string, string> {
   return used
 }
 
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
+
+function validateRule(num: string, r: ForwardRule): void {
+  if (!r.id) r.id = newId()
+  if (!['schedule', 'timecondition', 'dnd'].includes(r.when)) throw new ValidationError(`Nebenstelle ${num}: unbekannte Umleitungsregel.`)
+  if (!cleanNumber(r.target)) throw new ValidationError(`Nebenstelle ${num}: Bei einer Umleitungsregel fehlt das Ziel.`)
+  if (r.when === 'schedule') {
+    if (!TIME.test(r.from) || !TIME.test(r.to)) throw new ValidationError(`Nebenstelle ${num}: Uhrzeit der Umleitungsregel im Format 18:00 angeben.`)
+    if (!r.days.length || r.days.some((d) => d < 1 || d > 7)) throw new ValidationError(`Nebenstelle ${num}: Wochentage der Umleitungsregel fehlen.`)
+  }
+}
+
 export function validate(cfg: PbxConfig): void {
   for (const e of cfg.extensions) {
     if (!isInternalNumber(e.number)) throw new ValidationError(`Ungültige Nebenstelle „${e.number}“: 2–6 Ziffern, nicht mit 0 beginnend.`)
     if (!e.name.trim()) throw new ValidationError(`Nebenstelle ${e.number}: Name fehlt.`)
     if (e.secret && e.secret.length < 8) throw new ValidationError(`Nebenstelle ${e.number}: Das SIP-Passwort braucht mindestens 8 Zeichen.`)
     if (/[;\s]/.test(e.secret)) throw new ValidationError(`Nebenstelle ${e.number}: Das SIP-Passwort darf keine Leerzeichen oder „;“ enthalten.`)
+    for (const r of e.forward.rules) validateRule(e.number, r)
   }
   for (const g of cfg.groups) {
     if (g.number && !isInternalNumber(g.number)) throw new ValidationError(`Gruppe ${g.name}: ungültige Nummer „${g.number}“.`)
@@ -101,6 +115,25 @@ export function validate(cfg: PbxConfig): void {
   for (const c of cfg.calendars) {
     if (!c.name.trim()) throw new ValidationError('Kalender ohne Namen.')
     if (!/^#[0-9a-f]{6}$/i.test(c.color)) throw new ValidationError(`Kalender ${c.name}: ungültige Farbe.`)
+    if (c.kind === 'subscription') {
+      // Abonnierte Kalender sind nur zum Lesen
+      c.writable = false
+      c.source.url = c.source.url.trim().replace(/^webcal:\/\//i, 'https://')
+      if (!/^https?:\/\/\S+$/i.test(c.source.url)) throw new ValidationError(`Kalender ${c.name}: Adresse mit http:// oder https:// angeben.`)
+      c.source.refresh_minutes = Math.max(5, Math.round(c.source.refresh_minutes) || 60)
+    }
+  }
+  for (const s of cfg.contactsources) {
+    if (!s.name.trim()) throw new ValidationError('Kontaktquelle ohne Namen.')
+    s.refresh_minutes = Math.max(5, Math.round(s.refresh_minutes) || 60)
+    if (s.type === 'mssql') {
+      if (!s.host.trim() || !s.database.trim()) throw new ValidationError(`Kontaktquelle ${s.name}: Server und Datenbank angeben.`)
+      if (s.mode === 'table' && (!s.table.trim() || !s.phone_cols.trim())) throw new ValidationError(`Kontaktquelle ${s.name}: Tabelle und Telefonspalten angeben.`)
+      if (s.mode === 'query' && !/^\s*(select|with)\b/i.test(s.query)) throw new ValidationError(`Kontaktquelle ${s.name}: Die Abfrage muss mit SELECT beginnen.`)
+    } else {
+      s.url = s.url.trim()
+      if (!/^https?:\/\/\S+$/i.test(s.url)) throw new ValidationError(`Kontaktquelle ${s.name}: Adresse mit http:// oder https:// angeben.`)
+    }
   }
   const handsets = new Map<string, string>()
   for (const b of cfg.dect) {

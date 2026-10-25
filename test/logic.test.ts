@@ -8,7 +8,7 @@ import { guessColumns, mergeInto, parseCsv, parseFileData, parseVcards } from '.
 import { expandEvents, newCalendar, parseCalendar, updateCalendar } from '../src/main/ical'
 import { encodeWav } from '../src/main/ringtones'
 import { fromPbxEvent, pbxTime, toPbxTime } from '../src/main/calendars'
-import { broadcastAddresses, normalizeServer, parsePolicy, parseProfile, profileUrlFromLink } from '../src/main/provisioning'
+import { broadcastAddresses, normalizeServer, parseForward, parsePermissions, parsePolicy, parseProfile, profileUrlFromLink } from '../src/main/provisioning'
 import { MsSqlSource, quoteIdent } from '../src/main/sqlSource'
 import { covers, fmtEventTime, formatDuration, formatTalk } from '../src/shared/format'
 import { findNumbers, normalizeNumber, numberFromUri, numbersMatch } from '../src/shared/numbers'
@@ -328,5 +328,20 @@ describe('Einrichtung durch die Telefonanlage', () => {
       lo: [{ address: '127.0.0.1', netmask: '255.0.0.0', family: 'IPv4', internal: true }],
     } as never
     expect(broadcastAddresses(ifaces)).toEqual(['255.255.255.255', '192.168.1.255'])
+  })
+})
+
+describe('Umleitungen der Telefonanlage', () => {
+  it('liest Rechte, ältere Anlagen ohne Rechte wie bisher', () => {
+    expect(parsePermissions(['forward', 'unbekannt', 'phonebook_edit'])).toEqual(['forward', 'phonebook_edit'])
+    expect(parsePermissions(undefined)).toEqual(['calendar_edit'])
+  })
+
+  it('prüft die Antwort von …/forward', () => {
+    expect(parseForward({ error: 'x' })).toBeNull()
+    const f = parseForward({ permissions: ['forward'], cfu: '11', active: '11', rules: [], targets: [{ number: '11', name: 'Anna', kind: 'extension' }, null] })
+    expect(f?.cfu).toBe('11')
+    expect(f?.targets).toHaveLength(1)
+    expect(f?.timeconditions).toEqual([])
   })
 })
