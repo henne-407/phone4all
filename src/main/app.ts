@@ -288,6 +288,7 @@ export class App {
       missedUnseen: this.missedUnseen,
       watchdog: this.watchdog.summary(),
       update: this.updater.state,
+      forward: this.provisioning.active ? this.provisioning.forward : null,
     }
   }
 

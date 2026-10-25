@@ -1,5 +1,5 @@
 /**
- * Titelleiste: Anmeldung, „Nicht stören“, Mikrofon, Lautsprecher und Hauptmenü.
+ * Titelleiste: Anmeldung, „Nicht stören“, Rufumleitung, Mikrofon, Lautsprecher und Hauptmenü.
  * Sie ist zugleich die Fensterleiste (verschiebbar); unter Windows/Linux liegen die
  * Fensterknöpfe rechts darüber, unter macOS die Ampel links.
  */
@@ -10,6 +10,7 @@ import LoginIcon from '@mui/icons-material/Login'
 import MicIcon from '@mui/icons-material/Mic'
 import MoreIcon from '@mui/icons-material/MoreVert'
 import NotificationsOffIcon from '@mui/icons-material/NotificationsOff'
+import PhoneForwardedIcon from '@mui/icons-material/PhoneForwarded'
 import PlayIcon from '@mui/icons-material/PlayArrow'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import SpeakerIcon from '@mui/icons-material/VolumeUp'
@@ -38,6 +39,7 @@ import { playTestTone, startLevelMeter } from '../audio'
 import { emit } from '../bus'
 import { useApp } from '../state'
 import { StatusDot } from './common'
+import { ForwardPopover, ForwardRulesDialog, forwardLabel } from './Forward'
 
 const noDrag = { WebkitAppRegion: 'no-drag' } as const
 
@@ -46,6 +48,7 @@ function Chip({
   label,
   tooltip,
   active = false,
+  color = 'error',
   compact,
   onClick,
 }: {
@@ -53,13 +56,14 @@ function Chip({
   label: string
   tooltip: string
   active?: boolean
+  color?: 'error' | 'primary'
   compact: boolean
   onClick: (e: React.MouseEvent<HTMLElement>) => void
 }) {
   return (
     <Tooltip title={tooltip}>
       {compact ? (
-        <IconButton onClick={onClick} aria-label={tooltip} color={active ? 'error' : 'inherit'} sx={noDrag}>
+        <IconButton onClick={onClick} aria-label={tooltip} color={active ? color : 'inherit'} sx={noDrag}>
           {icon}
         </IconButton>
       ) : (
@@ -68,7 +72,7 @@ function Chip({
           aria-label={tooltip}
           size="small"
           variant={active ? 'contained' : 'text'}
-          color={active ? 'error' : 'inherit'}
+          color={active ? color : 'inherit'}
           startIcon={icon}
           sx={{ ...noDrag, maxWidth: 220 }}
         >
@@ -186,7 +190,8 @@ function SpeakerPopover({ anchor, onClose }: { anchor: HTMLElement | null; onClo
 
 export function TopBar({ compact, showTitle }: { compact: boolean; showTitle: boolean }) {
   const { state } = useApp()
-  const [menu, setMenu] = useState<null | 'account' | 'mic' | 'speaker' | 'main'>(null)
+  const [menu, setMenu] = useState<null | 'account' | 'forward' | 'mic' | 'speaker' | 'main'>(null)
+  const [rules, setRules] = useState(false)
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const open = (name: typeof menu) => (e: React.MouseEvent<HTMLElement>) => {
     setAnchor(e.currentTarget)
@@ -205,6 +210,9 @@ export function TopBar({ compact, showTitle }: { compact: boolean; showTitle: bo
   const mic = state.devices.sources.find((d) => d.id === audio.source)
   const spk = state.devices.sinks.find((d) => d.id === audio.sink)
   const mac = platform === 'darwin'
+  const fwd = state.forward
+  // Ohne Recht nur anzeigen, wenn eine Umleitung greift (z. B. von der Anlage geschaltet)
+  const showForward = fwd && (fwd.active || fwd.permissions.some((p) => p === 'forward' || p === 'forward_rules'))
 
   return (
     <Box
@@ -236,6 +244,17 @@ export function TopBar({ compact, showTitle }: { compact: boolean; showTitle: bo
         compact={compact}
         onClick={() => void api.setDnd(!settings.dnd)}
       />
+      {fwd && showForward && (
+        <Chip
+          icon={<PhoneForwardedIcon />}
+          label={fwd.active ? `→ ${forwardLabel(fwd, fwd.active)}` : 'Umleitung'}
+          tooltip={fwd.active ? `Rufumleitung an ${forwardLabel(fwd, fwd.active)}` : 'Rufumleitung'}
+          active={Boolean(fwd.active)}
+          color="primary"
+          compact={compact}
+          onClick={open('forward')}
+        />
+      )}
       <Box sx={{ flex: 1, textAlign: 'center', overflow: 'hidden' }}>
         {showTitle && (
           <Typography variant="subtitle1" noWrap sx={{ color: 'text.primary' }}>
@@ -317,6 +336,8 @@ export function TopBar({ compact, showTitle }: { compact: boolean; showTitle: bo
         </MenuItem>
       </Menu>
 
+      <ForwardPopover anchor={menu === 'forward' ? anchor : null} onClose={close} onRules={() => setRules(true)} />
+      <ForwardRulesDialog open={rules} onClose={() => setRules(false)} />
       <MicPopover anchor={menu === 'mic' ? anchor : null} onClose={close} />
       <SpeakerPopover anchor={menu === 'speaker' ? anchor : null} onClose={close} />
 

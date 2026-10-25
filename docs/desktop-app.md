@@ -96,6 +96,10 @@ nach Änderungen (siehe [App-Profile](telefonanlage.md#app-profile)).
 - Titelleiste mit Anmeldestatus (neu anmelden, ab-/anmelden, Konto), „Nicht stören“,
   Mikrofon mit Pegelanzeige, Lautsprecher mit Testton und separates Gerät zum Klingeln –
   Umschalten wirkt sofort, auch im laufenden Gespräch
+- Rufumleitung (mit Phone4All-Telefonanlage): in der Titelleiste auf eine Nebenstelle,
+  Gruppe oder Nummer umleiten; unter *Regeln und Weiterleitungen* Ziele bei besetzt / ohne
+  Antwort und Regeln nach Zeitplan, Zeitsteuerung oder „Nicht stören“. Was erlaubt ist,
+  legt die Anlage fest (Rechte unter *System → Zugang* und je Gruppe)
 - Anpassbare Startseite (Karten in bis zu drei Spalten): Status mit „Nicht stören“ und
   Schnellwahl, Favoriten, letzte Anrufe, nächste Termine – ein-/ausblenden, sortieren,
   Startansicht wählbar
