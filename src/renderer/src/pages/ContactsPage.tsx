@@ -35,7 +35,7 @@ import { contactNumbers, numbersMatch } from '../../../shared/numbers'
 import type { Contact } from '../../../shared/types'
 import { api } from '../api'
 import { emit } from '../bus'
-import { ContactAvatar, EmptyState, GroupTitle } from '../components/common'
+import { ContactAvatar, EmptyState, GroupTitle, PILL } from '../components/common'
 import { useApp } from '../state'
 import { HistoryItem } from './HistoryPage'
 
@@ -298,9 +298,12 @@ export function ContactsPage({ wide }: { wide: boolean }) {
       }}
     >
       <Stack sx={{ width: wide ? 420 : 'auto', flex: wide ? 'none' : 1, minWidth: 0 }}>
-        <Stack direction="row" sx={{ gap: 1, px: 1.5, pt: 1, pb: 1.5, maxWidth: wide ? 'none' : 584, width: '100%', mx: 'auto', boxSizing: 'border-box' }}>
+        <Stack direction="row" sx={{ gap: 1, px: 2, pt: 0.75, pb: 1.5, alignItems: 'center', maxWidth: wide ? 'none' : 584, width: '100%', mx: 'auto', boxSizing: 'border-box' }}>
           <TextField
+            variant="filled"
+            hiddenLabel
             size="small"
+            sx={PILL}
             placeholder="Kontakte durchsuchen"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -310,6 +313,7 @@ export function ContactsPage({ wide }: { wide: boolean }) {
             }}
             slotProps={{
               input: {
+                disableUnderline: true,
                 startAdornment: (
                   <InputAdornment position="start">
                     <SearchIcon />

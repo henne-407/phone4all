@@ -125,7 +125,7 @@ export function EventDialog({
     <Dialog open onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle>{isNew ? 'Neuer Termin' : editable ? 'Termin bearbeiten' : 'Termin'}</DialogTitle>
       <DialogContent>
-        <Stack sx={{ gap: 1.5 }}>
+        <Stack sx={{ gap: 2 }}>
           {!editable && (
             <Alert severity="info">
               {event.recurring

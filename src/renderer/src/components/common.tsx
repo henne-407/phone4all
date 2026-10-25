@@ -187,3 +187,6 @@ export function GroupTitle({ children, action }: { children: ReactNode; action?:
     </Stack>
   )
 }
+
+/** Such- und Eingabefelder als Pille (mit variant="filled", hiddenLabel, ohne Unterstrich) */
+export const PILL = { '& .MuiFilledInput-root': { borderRadius: 6, px: 2 }, '& .MuiInputAdornment-root': { mt: '0 !important' } } as const

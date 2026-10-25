@@ -141,7 +141,7 @@ export function ContactDialog({ contact, onClose }: { contact: Partial<Contact>;
         ) : (
           <Stack
             component="form"
-            sx={{ gap: 1.5 }}
+            sx={{ gap: 2 }}
             onSubmit={(e) => {
               e.preventDefault()
               void save()

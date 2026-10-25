@@ -27,6 +27,7 @@ import {
   Badge,
   Box,
   Button,
+  Card,
   Checkbox,
   CircularProgress,
   Dialog,
@@ -52,7 +53,7 @@ import {
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChatFile, ChatMessage, ChatRoom, MessengerState } from '../../../shared/types'
 import { api, onMain } from '../api'
-import { ContactAvatar, EmptyState } from '../components/common'
+import { ContactAvatar, EmptyState, PILL } from '../components/common'
 import { roomTitle, useMessenger, userName } from '../messenger'
 import { useApp } from '../state'
 import { joinVideo, useVideo } from '../video'
@@ -141,15 +142,18 @@ function RoomList({ s, current, onOpen, onNew }: { s: MessengerState; current: s
   }, [s, query])
   return (
     <Stack sx={{ minHeight: 0, flex: 1 }}>
-      <Stack direction="row" sx={{ gap: 1, p: 1.5, pb: 1, alignItems: 'center' }}>
+      <Stack direction="row" sx={{ gap: 1, p: 2, pb: 1.5, alignItems: 'center' }}>
         <TextField
+          variant="filled"
+          hiddenLabel
           size="small"
           placeholder="Chats durchsuchen"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          sx={{ flex: 1 }}
+          sx={{ flex: 1, ...PILL }}
           slotProps={{
             input: {
+              disableUnderline: true,
               startAdornment: (
                 <InputAdornment position="start">
                   <SearchIcon fontSize="small" />
@@ -188,9 +192,9 @@ function RoomList({ s, current, onOpen, onNew }: { s: MessengerState; current: s
           </MenuItem>
         </Menu>
       </Stack>
-      <List sx={{ overflowY: 'auto', flex: 1, px: 1 }}>
+      <List sx={{ overflowY: 'auto', flex: 1, px: 1, pt: 0 }}>
         {rooms.map((r) => (
-          <ListItemButton key={r.id} selected={r.id === current} onClick={() => onOpen(r.id)} sx={{ borderRadius: 3, mb: 0.5 }}>
+          <ListItemButton key={r.id} selected={r.id === current} onClick={() => onOpen(r.id)} sx={{ borderRadius: 3, mb: 0.5, py: 1 }}>
             <ListItemAvatar>
               <RoomAvatar room={r} s={s} />
             </ListItemAvatar>
@@ -239,6 +243,9 @@ function RoomList({ s, current, onOpen, onNew }: { s: MessengerState; current: s
   )
 }
 
+/** Spalte der Seite als Karte, die selbst nicht scrollt */
+const PANEL = { display: 'flex', flexDirection: 'column', minHeight: 0, p: 0 } as const
+
 // -- Dialoge ---------------------------------------------------------------------------
 
 function NewChatDialog({ s, onClose, onOpen }: { s: MessengerState; onClose: () => void; onOpen: (id: string) => void }) {
@@ -256,7 +263,20 @@ function NewChatDialog({ s, onClose, onOpen }: { s: MessengerState; onClose: () 
     <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
       <DialogTitle>Neuer Chat</DialogTitle>
       <DialogContent sx={{ px: 1.5 }}>
-        <TextField autoFocus fullWidth size="small" placeholder="Name oder Nebenstelle" value={query} onChange={(e) => setQuery(e.target.value)} sx={{ mb: 1, px: 1.5 }} />
+        <Box sx={{ px: 1.5, mb: 1.5 }}>
+          <TextField
+            autoFocus
+            fullWidth
+            variant="filled"
+            hiddenLabel
+            size="small"
+            placeholder="Name oder Nebenstelle"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            sx={PILL}
+            slotProps={{ input: { disableUnderline: true } }}
+          />
+        </Box>
         {error && <Alert severity="error">{error}</Alert>}
         <List dense>
           {users.map((u) => (
@@ -301,8 +321,8 @@ function GroupDialog({ s, room, onClose, onOpen }: { s: MessengerState; room: Ch
     <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
       <DialogTitle>{room ? 'Gruppe bearbeiten' : 'Neue Gruppe'}</DialogTitle>
       <DialogContent>
-        <TextField autoFocus fullWidth label="Name der Gruppe" value={name} onChange={(e) => setName(e.target.value)} sx={{ mt: 1, mb: 1 }} />
-        <Typography variant="subtitle2" sx={{ mt: 1 }}>
+        <TextField autoFocus fullWidth label="Name der Gruppe" value={name} onChange={(e) => setName(e.target.value)} sx={{ mt: 1 }} />
+        <Typography variant="subtitle2" sx={{ mt: 2.5, mb: 0.5 }}>
           Mitglieder ({members.length + 1})
         </Typography>
         {error && <Alert severity="error">{error}</Alert>}
@@ -522,9 +542,9 @@ function Composer({ room, disabled }: { room: string; disabled: boolean }) {
   }
 
   return (
-    <Box sx={{ p: 1.5, pt: 1 }}>
+    <Box sx={{ px: 1.5, py: 1.5, borderTop: 1, borderColor: 'divider' }}>
       {error && (
-        <Alert severity="error" onClose={() => setError('')} sx={{ mb: 1 }}>
+        <Alert severity="error" onClose={() => setError('')} sx={{ mb: 1.5 }}>
           {error}
         </Alert>
       )}
@@ -540,7 +560,10 @@ function Composer({ room, disabled }: { room: string; disabled: boolean }) {
           fullWidth
           multiline
           maxRows={6}
+          variant="filled"
+          hiddenLabel
           size="small"
+          slotProps={{ input: { disableUnderline: true } }}
           placeholder={disabled ? 'Keine Verbindung zur Telefonanlage' : 'Nachricht schreiben'}
           value={text}
           disabled={disabled}
@@ -552,11 +575,21 @@ function Composer({ room, disabled }: { room: string; disabled: boolean }) {
               void send()
             }
           }}
-          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 5 } }}
+          sx={PILL}
         />
         <Tooltip title="Senden (Enter)">
           <span>
-            <IconButton color="primary" onClick={() => void send()} disabled={disabled || busy || !text.trim()}>
+            <IconButton
+              aria-label="Senden"
+              onClick={() => void send()}
+              disabled={disabled || busy || !text.trim()}
+              sx={{
+                bgcolor: 'primary.main',
+                color: 'primary.contrastText',
+                '&:hover': { bgcolor: 'primary.dark' },
+                '&.Mui-disabled': { bgcolor: 'action.disabledBackground' },
+              }}
+            >
               <SendIcon />
             </IconButton>
           </span>
@@ -669,7 +702,7 @@ function ChatView({ s, room, video, onBack, onEdit }: { s: MessengerState; room:
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}
     >
-      <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5, px: 1.5, py: 1, borderBottom: 1, borderColor: 'divider' }}>
+      <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5, pl: onBack ? 1 : 2, pr: 1, py: 1.25, minHeight: 64, boxSizing: 'border-box', borderBottom: 1, borderColor: 'divider' }}>
         {onBack && (
           <IconButton onClick={onBack} aria-label="Zurück">
             <ArrowBackIcon />
@@ -733,12 +766,12 @@ function ChatView({ s, room, video, onBack, onEdit }: { s: MessengerState; room:
           </>
         )}
       </Stack>
-      {loading && <LinearProgress sx={{ position: 'absolute', top: 57, left: 0, right: 0 }} />}
+      {loading && <LinearProgress sx={{ position: 'absolute', top: 62, left: 0, right: 0, height: 2 }} />}
       {video && call && !inCall && (
         <Alert
           severity="success"
           icon={<VideocamIcon />}
-          sx={{ mx: 1.5, mt: 1, alignItems: 'center' }}
+          sx={{ mx: 2, mt: 1.5, alignItems: 'center' }}
           action={
             <Button color="inherit" size="small" onClick={() => void joinVideo(room.id)}>
               Beitreten
@@ -748,9 +781,9 @@ function ChatView({ s, room, video, onBack, onEdit }: { s: MessengerState; room:
           Videoanruf läuft mit {call.participants.map((p) => (p === s.me ? 'dir' : userName(p, s).split(' ')[0])).join(', ')}
         </Alert>
       )}
-      <Stack ref={scroller} onScroll={onScroll} sx={{ flex: 1, overflowY: 'auto', px: 2, py: 1 }}>
+      <Stack ref={scroller} onScroll={onScroll} sx={{ flex: 1, overflowY: 'auto', px: 2, py: 1.5 }}>
         {/* Wenige Nachrichten stehen unten, wie in Chat-Apps üblich */}
-        <Stack ref={content} sx={{ gap: 0.75, mt: 'auto', flexShrink: 0 }}>
+        <Stack ref={content} sx={{ gap: 1, mt: 'auto', flexShrink: 0 }}>
           {complete && messages.length > 0 && (
             <Typography variant="caption" sx={{ alignSelf: 'center', color: 'text.disabled', my: 1 }}>
               Anfang der Unterhaltung
@@ -770,7 +803,7 @@ function ChatView({ s, room, video, onBack, onEdit }: { s: MessengerState; room:
         </Stack>
       </Stack>
       {dropError && (
-        <Alert severity="error" onClose={() => setDropError('')} sx={{ mx: 1.5 }}>
+        <Alert severity="error" onClose={() => setDropError('')} sx={{ mx: 2, mb: 1.5 }}>
           {dropError}
         </Alert>
       )}
@@ -841,7 +874,7 @@ export function MessengerPage({ wide }: { wide: boolean }) {
 
   const status =
     s.status === 'online' ? null : (
-      <Alert severity={s.status === 'offline' ? 'warning' : 'info'} icon={s.status === 'offline' ? <CloudOffIcon /> : <CircularProgress size={18} />} sx={{ m: 1.5, mb: 0 }}>
+      <Alert severity={s.status === 'offline' ? 'warning' : 'info'} icon={s.status === 'offline' ? <CloudOffIcon /> : <CircularProgress size={18} />} sx={{ mx: 2, mb: 2 }}>
         {s.status === 'offline' ? 'Keine Verbindung zur Telefonanlage. Neuer Versuch läuft …' : 'Verbinde mit der Telefonanlage …'}
       </Alert>
     )
@@ -854,18 +887,18 @@ export function MessengerPage({ wide }: { wide: boolean }) {
   )
 
   return (
-    <Stack sx={{ flex: 1, minHeight: 0 }}>
+    <Stack sx={{ flex: 1, minHeight: 0, pt: 0.75, pb: 2 }}>
       {status}
-      {wide ? (
-        <Stack direction="row" sx={{ flex: 1, minHeight: 0 }}>
-          <Stack sx={{ width: 320, flexShrink: 0, borderRight: 1, borderColor: 'divider', minHeight: 0 }}>{list}</Stack>
-          {chat}
-        </Stack>
-      ) : room ? (
-        chat
-      ) : (
-        list
-      )}
+      <Stack direction="row" sx={{ flex: 1, minHeight: 0, gap: 2, px: 2 }}>
+        {wide ? (
+          <>
+            <Card sx={{ ...PANEL, width: 340, flexShrink: 0 }}>{list}</Card>
+            <Card sx={{ ...PANEL, flex: 1, minWidth: 0 }}>{chat}</Card>
+          </>
+        ) : (
+          <Card sx={{ ...PANEL, flex: 1, minWidth: 0 }}>{room ? chat : list}</Card>
+        )}
+      </Stack>
       {dialog === 'direct' && <NewChatDialog s={s} onClose={() => setDialog(null)} onOpen={setCurrent} />}
       {dialog === 'group' && <GroupDialog s={s} room={null} onClose={() => setDialog(null)} onOpen={setCurrent} />}
       {dialog === 'edit' && room && <GroupDialog s={s} room={room} onClose={() => setDialog(null)} onOpen={setCurrent} />}
