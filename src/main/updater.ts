@@ -45,7 +45,7 @@ function writable(dir: string): boolean {
   }
 }
 
-/** „/Applications/SIP-Telefon.app“ aus dem Pfad der laufenden App */
+/** „/Applications/Phone4All.app“ aus dem Pfad der laufenden App */
 function macBundle(): string | null {
   const i = process.execPath.indexOf('.app/')
   return i < 0 ? null : process.execPath.slice(0, i + 4)
@@ -249,7 +249,9 @@ export class Updater {
         // pkexec fragt grafisch nach dem Passwort
         const cmd = this.kind === 'rpm' ? ['dnf', 'install', '-y', file] : ['apt-get', 'install', '-y', file]
         await run('pkexec', cmd, { timeout: 15 * 60000 })
-        electronApp.relaunch({ args })
+        // Der Programmordner unter /opt kann sich mit dem Namen geändert haben
+        const link = `/usr/bin/${path.basename(process.execPath)}`
+        electronApp.relaunch({ execPath: fs.existsSync(link) ? link : process.execPath, args })
         break
       }
       case 'mac': {
@@ -259,10 +261,14 @@ export class Updater {
         await run('ditto', ['-x', '-k', file, staging])
         const app = fs.readdirSync(staging).find((d) => d.endsWith('.app'))
         if (!app) throw new Error('Das Update-Archiv enthält die App nicht.')
-        fs.rmSync(bundle + '.old', { recursive: true, force: true })
-        fs.renameSync(bundle, bundle + '.old')
-        fs.renameSync(path.join(staging, app), bundle)
-        electronApp.relaunch({ args })
+        // Neues Bundle unter seinem eigenen Namen (SIP-Telefon.app → Phone4All.app);
+        // das alte wandert in den Update-Ordner und wird beim nächsten Start gelöscht
+        const target = path.join(path.dirname(bundle), app)
+        fs.renameSync(bundle, path.join(staging, 'alt.app'))
+        if (target !== bundle) fs.rmSync(target, { recursive: true, force: true })
+        fs.renameSync(path.join(staging, app), target)
+        const exe = fs.readdirSync(path.join(target, 'Contents', 'MacOS'))[0]
+        electronApp.relaunch({ execPath: path.join(target, 'Contents', 'MacOS', exe), args })
         break
       }
       case 'win':

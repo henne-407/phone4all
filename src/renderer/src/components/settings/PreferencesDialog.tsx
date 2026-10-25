@@ -585,11 +585,11 @@ function UpdateGroup() {
   const text: Record<typeof u.status, string> = {
     idle: 'Noch nicht geprüft',
     checking: 'Suche nach Updates …',
-    none: 'SIP-Telefon ist aktuell',
+    none: 'Phone4All ist aktuell',
     available: `Version ${latest} ist verfügbar`,
     downloading: `Lade Version ${latest} … ${Math.round(u.progress * 100)} %`,
     ready: `Version ${latest} ist geladen – startet beim Aktualisieren neu`,
-    installing: 'Wird eingespielt, SIP-Telefon startet gleich neu …',
+    installing: 'Wird eingespielt, Phone4All startet gleich neu …',
     error: `Fehler: ${u.error}`,
   }
   let action: ReactNode = (
@@ -611,7 +611,7 @@ function UpdateGroup() {
   return (
     <Group title="Aktualisierung">
       <Row>
-        <ListItemText primary={`SIP-Telefon ${u.current}`} secondary={text[u.status]} />
+        <ListItemText primary={`Phone4All ${u.current}`} secondary={text[u.status]} />
         {action}
       </Row>
       {u.status === 'downloading' && <LinearProgress variant="determinate" value={u.progress * 100} sx={{ mx: 2, my: 1 }} />}

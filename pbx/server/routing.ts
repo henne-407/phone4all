@@ -4,8 +4,9 @@
  * Antworten sind durch „|“ getrennte Felder; Ziele haben die Form „Kontext^Extension“.
  */
 
+import { external } from './directory'
 import { closedReason } from './holidays'
-import type { Extension, PbxConfig, Trunk } from './model'
+import type { AppPermission, Extension, ForwardRule, PbxConfig, Trunk } from './model'
 import { SPECIAL_NUMBER, cleanNumber, formatFor, prefixToE164, toE164 } from './numbers'
 import { HANGUP_TARGET, destTarget } from './targets'
 
@@ -58,7 +59,7 @@ export function displayNumber(raw: string, cfg: PbxConfig): string {
 /** Bekannter Name zu einer Nummer (Telefonbuch, Nebenstellen). */
 export function lookupName(cfg: PbxConfig, number: string): string {
   if (!/\d{3,}/.test(number)) return ''
-  for (const e of cfg.phonebook) {
+  for (const e of [...cfg.phonebook, ...external.entries()]) {
     if ([e.phone, e.mobile].some((n) => n && sameNumber(n, number, cfg))) {
       return e.company && e.name ? `${e.name} (${e.company})` : e.name || e.company
     }
@@ -100,30 +101,76 @@ export function routeInbound(cfg: PbxConfig, req: InboundRequest): string {
   return reply(target, name, caller, displayNumber(called, cfg))
 }
 
+/** Nummer innerhalb der Anlage (Nebenstelle, Gruppe, Konferenz, Sprachmenü)? */
+export function isLocalNumber(cfg: PbxConfig, n: string): boolean {
+  return [cfg.extensions, cfg.groups, cfg.conferences, cfg.ivrs].some((list) => list.some((x) => x.number === n))
+}
+
 function targetForNumber(cfg: PbxConfig, raw: string): string {
   const n = cleanNumber(raw)
   if (!n) return ''
-  if (cfg.extensions.some((e) => e.number === n)) return `p4a-local^${n}`
-  if (cfg.groups.some((g) => g.number === n)) return `p4a-local^${n}`
-  if (cfg.conferences.some((c) => c.number === n)) return `p4a-local^${n}`
-  if (cfg.ivrs.some((i) => i.number === n)) return `p4a-local^${n}`
-  return `p4a-fwd^${n}`
+  return isLocalNumber(cfg, n) ? `p4a-local^${n}` : `p4a-fwd^${n}`
 }
 
-export function extensionPlan(cfg: PbxConfig, state: RuntimeState, num: string): string {
+/** Darf die Nebenstelle auf dieses Ziel umleiten? Gibt den Grund zurück, wenn nicht. */
+export function forwardDenied(cfg: PbxConfig, num: string, raw: string, need: AppPermission = 'forward'): string {
+  const perms = appPermissions(cfg, num)
+  if (!perms.includes(need)) return need === 'forward' ? 'Umleiten ist für diese Nebenstelle nicht freigegeben.' : 'Umleitungsregeln sind für diese Nebenstelle nicht freigegeben.'
+  const n = cleanNumber(raw)
+  if (!n) return ''
+  if (n === num) return 'Die Umleitung kann nicht auf die eigene Nebenstelle zeigen.'
+  if (!isLocalNumber(cfg, n) && !perms.includes('forward_external')) return 'Umleiten auf externe Rufnummern ist nicht freigegeben.'
+  return ''
+}
+
+/** Greift die Regel gerade? */
+export function ruleActive(cfg: PbxConfig, state: RuntimeState, num: string, rule: ForwardRule, now = new Date()): boolean {
+  if (!rule.enabled || !cleanNumber(rule.target) || cleanNumber(rule.target) === num) return false
+  switch (rule.when) {
+    case 'dnd':
+      return Boolean(state.dnd[num])
+    case 'schedule': {
+      const tc = { rules: [{ days: rule.days, from: rule.from, to: rule.to }], holidays: false, closed_dates: [], override: 'auto' as const }
+      return closedReason(tc as never, now, cfg.system.state, cfg.system.timezone) === null
+    }
+    case 'timecondition': {
+      const tc = cfg.timeconditions.find((t) => t.id === rule.timecondition)
+      if (!tc) return false
+      const closed = closedReason(tc, now, cfg.system.state, cfg.system.timezone) !== null
+      return closed === (rule.tc_state === 'closed')
+    }
+  }
+}
+
+/** Aktuelles Umleitungsziel: Sofort-Umleitung, sonst die erste greifende Regel. */
+export function activeForward(cfg: PbxConfig, state: RuntimeState, num: string, now = new Date()): string {
+  const cfu = state.cfu[num]
+  if (cfu && cleanNumber(cfu) !== num) return cfu
+  const ext = cfg.extensions.find((e) => e.number === num)
+  return ext?.forward.rules.find((r) => ruleActive(cfg, state, num, r, now))?.target ?? ''
+}
+
+/** Rechte in der App: für alle Nebenstellen plus die ihrer Gruppen */
+export function appPermissions(cfg: PbxConfig, num: string): AppPermission[] {
+  const set = new Set(cfg.provisioning.permissions)
+  for (const g of cfg.groups) if (g.members.includes(num)) for (const p of g.permissions) set.add(p)
+  return [...set]
+}
+
+export function extensionPlan(cfg: PbxConfig, state: RuntimeState, num: string, now = new Date()): string {
   const ext = cfg.extensions.find((e) => e.number === num)
   if (!ext) return reply('goto', HANGUP_TARGET)
   const vm = ext.voicemail.enabled
   const busy = ext.forward.busy ? targetForNumber(cfg, ext.forward.busy) : vm ? `p4a-vmb^${num}` : ''
   const noanswer = ext.forward.noanswer ? targetForNumber(cfg, ext.forward.noanswer) : vm ? `p4a-vmu^${num}` : ''
-  const cfu = state.cfu[num]
-  if (cfu && cleanNumber(cfu) !== num) return reply('goto', targetForNumber(cfg, cfu))
+  const forward = activeForward(cfg, state, num, now)
+  if (forward) return reply('goto', targetForNumber(cfg, forward))
   if (state.dnd[num]) return reply('goto', busy)
   return reply('ring', String(ext.ring_seconds || 25), ext.record ? '1' : '0', busy, noanswer)
 }
 
-export function isAvailable(state: RuntimeState, num: string): boolean {
-  return !state.dnd[num] && !state.cfu[num]
+export function isAvailable(state: RuntimeState, num: string, cfg?: PbxConfig): boolean {
+  return !state.dnd[num] && !(cfg ? activeForward(cfg, state, num) : state.cfu[num])
 }
 
 export function groupPlan(cfg: PbxConfig, state: RuntimeState, id: string, callerName: string, soundDir: string): string {
@@ -263,7 +310,7 @@ export function feature(cfg: PbxConfig, state: RuntimeState, ext: string, code: 
         delete state.cfu[ext]
         return { reply: 'off', stateChanged: true }
       }
-      if (target === ext) return { reply: 'error' }
+      if (forwardDenied(cfg, ext, target)) return { reply: 'error' }
       state.cfu[ext] = target
       return { reply: 'on', stateChanged: true }
     }

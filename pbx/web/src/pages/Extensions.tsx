@@ -22,6 +22,7 @@ import { useEffect, useState } from 'react'
 import type { Extension, Permission } from '../../../server/model'
 import { api } from '../api'
 import { CollectionPage, FormGrid, Full, Initials, NumberField, NumberPicker, Select, StatusDot, internalNumberOptions } from '../components/common'
+import { ForwardRules } from '../components/ForwardRules'
 import { usePbx } from '../state'
 import { useStatus } from '../useStatus'
 
@@ -65,7 +66,7 @@ function Provisioning({ ext }: { ext: Extension }) {
   return (
     <Box>
       <Typography variant="subtitle1" sx={{ mb: 0.5 }}>
-        SIP-Telefon automatisch einrichten
+        Phone4All automatisch einrichten
       </Typography>
       <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
         Den Link öffnen oder in der App unter Einstellungen → Konto → „Von Telefonanlage einrichten“ die Nebenstelle
@@ -95,7 +96,7 @@ function Provisioning({ ext }: { ext: Extension }) {
           Einladung per E-Mail
         </Button>
         <Button href={info.app} variant="outlined">
-          Hier in SIP-Telefon öffnen
+          Hier in Phone4All öffnen
         </Button>
         <Button startIcon={<RefreshIcon />} onClick={() => void renew()}>
           Link erneuern
@@ -151,7 +152,7 @@ function ExtensionForm({ value, onChange, isNew }: { value: Extension; onChange:
           value={value.app_profile}
           onChange={(v) => set('app_profile', v)}
           options={[['', 'Keine Vorgaben'], ...config.appprofiles.map((p): [string, string] => [p.id, p.name])]}
-          helperText="Legt fest, welche Ansichten die SIP-Telefon-App zeigt"
+          helperText="Legt fest, welche Ansichten die Phone4All-App zeigt"
         />
         <NumberField label="Klingeldauer (Sekunden)" value={value.ring_seconds} onChange={(v) => set('ring_seconds', v)} min={5} />
         <NumberField label="Geräte gleichzeitig" value={value.max_devices} onChange={(v) => set('max_devices', v)} min={1} helperText="z. B. App am PC, Tischtelefon, Handy" />
@@ -175,6 +176,20 @@ function ExtensionForm({ value, onChange, isNew }: { value: Extension; onChange:
           options={internalNumberOptions(config).filter((o) => o.value !== value.number)}
           helperText="Leer = Voicemail (wenn eingeschaltet)"
         />
+        <Full>
+          <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>
+            Automatisch umleiten
+          </Typography>
+          <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5 }}>
+            Die erste greifende Regel leitet alle Anrufe um. Eine Sofort-Umleitung (*21 oder in der App) geht immer vor.
+          </Typography>
+          <ForwardRules
+            value={value.forward.rules}
+            onChange={(rules) => set('forward', { ...value.forward, rules })}
+            targets={internalNumberOptions(config).filter((o) => o.value !== value.number)}
+            timeconditions={config.timeconditions}
+          />
+        </Full>
         <FormControlLabel control={<Switch checked={value.voicemail.enabled} onChange={(e) => set('voicemail', { ...value.voicemail, enabled: e.target.checked })} />} label="Voicemail" />
         <TextField label="Voicemail-PIN" value={value.voicemail.pin} onChange={(e) => set('voicemail', { ...value.voicemail, pin: e.target.value.replace(/\D/g, '') })} disabled={!value.voicemail.enabled} helperText="Abhören mit *97 (am eigenen Telefon ohne PIN)" />
         <FormControlLabel control={<Switch checked={value.voicemail.attach} disabled={!value.voicemail.enabled} onChange={(e) => set('voicemail', { ...value.voicemail, attach: e.target.checked })} />} label="Nachricht als Anhang per E-Mail" />
@@ -206,7 +221,7 @@ export default function Extensions() {
       overline="Personen"
       title="Nebenstellen"
       singular="Nebenstelle"
-      description="Jede Person bekommt eine interne Rufnummer. Darauf können sich mehrere Geräte anmelden – die SIP-Telefon-App, Tischtelefone oder Softphones."
+      description="Jede Person bekommt eine interne Rufnummer. Darauf können sich mehrere Geräte anmelden – die Phone4All-App, Tischtelefone oder Softphones."
       emptyText="Noch keine Nebenstellen. Lege die erste an, z. B. 10 für dich selbst."
       emptyIcon={<PersonIcon />}
       newItem={() => ({ number: nextNumber(config.extensions) })}

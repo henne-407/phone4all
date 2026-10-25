@@ -1,4 +1,7 @@
-/** Kontakt anlegen oder bearbeiten; Kontakte aus Adressbüchern nur ansehen. */
+/**
+ * Kontakt anlegen oder bearbeiten; Kontakte aus Adressbüchern nur ansehen. Mit dem Recht
+ * „Telefonbuch bearbeiten“ ändert die App Einträge im Telefonbuch der Telefonanlage.
+ */
 
 import CallIcon from '@mui/icons-material/Call'
 import ContactsIcon from '@mui/icons-material/Contacts'
@@ -28,9 +31,14 @@ import { useApp } from '../state'
 import { ContactAvatar } from './common'
 
 export function ContactDialog({ contact, onClose }: { contact: Partial<Contact>; onClose: () => void }) {
-  const { toast } = useApp()
+  const { state, toast } = useApp()
   const readonly = Boolean(contact.readonly)
   const isNew = !contact.id
+  const pbxName = state.settings.provisioning.pbx
+  const canPbx = Boolean(pbxName) && state.settings.provisioning.permissions.includes('phonebook_edit')
+  const [toPbx, setToPbx] = useState(false)
+  // Eintrag im Telefonbuch der Anlage: nur Telefon und Mobil, kein Favorit
+  const central = Boolean(contact.pbx) || (isNew && toPbx)
   const [values, setValues] = useState({
     name: contact.name ?? '',
     phone: contact.phone ?? '',
@@ -41,11 +49,23 @@ export function ContactDialog({ contact, onClose }: { contact: Partial<Contact>;
   })
   const set = (key: keyof typeof values) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setValues((v) => ({ ...v, [key]: key === 'favorite' ? e.target.checked : e.target.value }))
-  const hasNumber = [values.phone, values.mobile, values.other].some((v) => v.trim())
+  const hasNumber = [values.phone, values.mobile, ...(central ? [] : [values.other])].some((v) => v.trim())
   const valid = Boolean(values.name.trim()) && hasNumber
 
   const save = async (): Promise<void> => {
     if (!valid) return
+    if (central) {
+      const r = await api.pbxSaveContact({
+        pbx: contact.pbx,
+        name: values.name.trim(),
+        company: values.company.trim(),
+        phone: values.phone.trim(),
+        mobile: values.mobile.trim(),
+      })
+      if (!r.ok) return toast(r.error)
+      toast(`„${values.name.trim()}“ im Telefonbuch von „${pbxName}“ gespeichert`)
+      return onClose()
+    }
     await api.saveContact({
       ...(contact as Contact),
       name: values.name.trim(),
@@ -69,7 +89,12 @@ export function ContactDialog({ contact, onClose }: { contact: Partial<Contact>;
   }
 
   const remove = async (): Promise<void> => {
-    await api.deleteContact(contact.id!)
+    if (contact.pbx) {
+      const r = await api.pbxDeleteContact(contact.pbx)
+      if (!r.ok) return toast(r.error)
+    } else {
+      await api.deleteContact(contact.id!)
+    }
     toast(`„${contact.name}“ gelöscht`)
     onClose()
   }
@@ -122,26 +147,41 @@ export function ContactDialog({ contact, onClose }: { contact: Partial<Contact>;
               void save()
             }}
           >
-            {fields.map(([key, label, inputMode]) => (
-              <TextField
-                key={key}
-                label={label}
-                value={values[key]}
-                onChange={set(key)}
-                autoFocus={key === 'name'}
-                slotProps={{ htmlInput: { inputMode } }}
+            {central && (
+              <Alert icon={<ContactsIcon />} severity="info">
+                Im Telefonbuch von „{pbxName}“ – Änderungen sehen alle.
+              </Alert>
+            )}
+            {fields
+              .filter(([key]) => !central || key !== 'other')
+              .map(([key, label, inputMode]) => (
+                <TextField
+                  key={key}
+                  label={label}
+                  value={values[key]}
+                  onChange={set(key)}
+                  autoFocus={key === 'name'}
+                  slotProps={{ htmlInput: { inputMode } }}
+                />
+              ))}
+            {isNew && canPbx && (
+              <FormControlLabel
+                control={<Switch checked={toPbx} onChange={(e) => setToPbx(e.target.checked)} />}
+                label={`Im Telefonbuch von „${pbxName}“ speichern (für alle)`}
               />
-            ))}
-            <FormControlLabel
-              control={<Switch checked={values.favorite} onChange={set('favorite')} />}
-              label={
-                <Stack direction="row" sx={{ alignItems: 'center', gap: 1 }}>
-                  <StarIcon fontSize="small" sx={{ color: 'text.secondary' }} />
-                  Favorit – auf der Startseite als Kurzwahl
-                </Stack>
-              }
-              sx={{ mt: 1 }}
-            />
+            )}
+            {!central && (
+              <FormControlLabel
+                control={<Switch checked={values.favorite} onChange={set('favorite')} />}
+                label={
+                  <Stack direction="row" sx={{ alignItems: 'center', gap: 1 }}>
+                    <StarIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+                    Favorit – auf der Startseite als Kurzwahl
+                  </Stack>
+                }
+                sx={{ mt: 1 }}
+              />
+            )}
             <button type="submit" hidden />
           </Stack>
         )}

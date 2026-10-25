@@ -206,7 +206,7 @@ export function applyEvent(comp: ICAL.Component, ev: EventFields): void {
 export function newCalendar(ev: EventFields): string {
   const vcal = new ICAL.Component(['vcalendar', [], []])
   vcal.addPropertyWithValue('version', '2.0')
-  vcal.addPropertyWithValue('prodid', '-//SIP-Telefon//DE')
+  vcal.addPropertyWithValue('prodid', '-//Phone4All//DE')
   const vevent = new ICAL.Component('vevent')
   vevent.addPropertyWithValue('uid', ev.uid)
   applyEvent(vevent, ev)

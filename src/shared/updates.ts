@@ -26,7 +26,7 @@ export function compareVersions(a: string, b: string): number {
   return ap.localeCompare(bp, 'en', { numeric: true })
 }
 
-// Dateinamen aus electron-builder.yml: SIP-Telefon-<version>-<os>-<arch>.<ext>
+// Dateinamen aus electron-builder.yml: Phone4All-<version>-<os>-<arch>.<ext>
 const PATTERNS: Record<Exclude<InstallKind, 'manual'>, (arch: string) => RegExp> = {
   appimage: (arch) => new RegExp(`-linux-${arch === 'arm64' ? 'arm64' : 'x86_64'}\\.AppImage$`),
   dir: (arch) => new RegExp(`-linux-${arch === 'arm64' ? 'arm64' : 'x64'}\\.tar\\.gz$`),

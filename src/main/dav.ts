@@ -121,7 +121,7 @@ export class DavClient {
         body,
         headers: {
           'Content-Type': 'application/xml; charset=utf-8',
-          'User-Agent': 'SIP-Telefon',
+          'User-Agent': 'Phone4All',
           Authorization: this.authHeader(method, url),
           ...(depth !== undefined ? { Depth: String(depth) } : {}),
           ...headers,

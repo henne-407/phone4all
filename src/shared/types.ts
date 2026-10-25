@@ -10,6 +10,8 @@ export interface Contact {
   favorite?: boolean
   source?: string // Name des Adressbuchs (nur externe Kontakte)
   readonly?: boolean
+  /** Eintrag im Telefonbuch der Telefonanlage, den diese App bearbeiten darf */
+  pbx?: string
 }
 
 export interface HistoryEntry {
@@ -130,8 +132,41 @@ export interface Settings {
     policy: AppPolicy | null
     /** Zentrale Kalender der Anlage */
     calendars: PbxCalendar[]
+    /** Was die Anlage dieser Nebenstelle in der App erlaubt */
+    permissions: PbxPermission[]
   }
 }
+
+export type PbxPermission = 'forward' | 'forward_external' | 'forward_rules' | 'calendar_edit' | 'phonebook_edit'
+
+/** Umleitung, die die Anlage nach Zeit oder Zustand selbst schaltet */
+export interface PbxForwardRule {
+  id: string
+  enabled: boolean
+  when: 'schedule' | 'timecondition' | 'dnd'
+  days: number[] // 1 = Montag … 7 = Sonntag
+  from: string
+  to: string
+  timecondition: string
+  tc_state: 'open' | 'closed'
+  target: string
+}
+
+/** Umleitungen der Nebenstelle in der Telefonanlage */
+export interface PbxForward {
+  permissions: PbxPermission[]
+  /** Sofort-Umleitung ('' = aus) */
+  cfu: string
+  /** Was gerade greift (Sofort-Umleitung oder Regel) */
+  active: string
+  busy: string
+  noanswer: string
+  rules: PbxForwardRule[]
+  targets: { number: string; name: string; kind: 'extension' | 'group' }[]
+  timeconditions: { id: string; name: string }[]
+}
+
+export type PbxForwardChange = Partial<Pick<PbxForward, 'cfu' | 'busy' | 'noanswer' | 'rules'>>
 
 /** Von der Telefonanlage vorgegebene Ansichten (App-Profil) */
 export interface AppPolicy {
@@ -270,6 +305,8 @@ export interface AppState {
   /** Zusammenfassung des Watchdogs */
   watchdog: { level: CheckLevel; text: string; repairs: number }
   update: UpdateState
+  /** Umleitungen in der Telefonanlage (null = keine Anlage oder zu alt) */
+  forward: PbxForward | null
 }
 
 /** Stand der App-Aktualisierung */

@@ -117,6 +117,12 @@ export class CalendarStore {
     this.save(id, rest)
   }
 
+  /** Termine eines abonnierten Kalenders nach dem Abgleich ersetzen */
+  replace(id: string, events: CalendarEvent[]): void {
+    if (this.calendar(id).kind !== 'subscription') return
+    if (JSON.stringify(events) !== JSON.stringify(this.load(id))) this.save(id, events)
+  }
+
   /** Dateien gelöschter Kalender entfernen. */
   cleanup(): void {
     const known = new Set(this.cfg().calendars.map((c) => `${c.id}.json`))

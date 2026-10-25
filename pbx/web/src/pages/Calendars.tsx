@@ -26,6 +26,7 @@ import { useEffect, useState } from 'react'
 import type { CentralCalendar } from '../../../server/model'
 import { api } from '../api'
 import { CollectionPage, FormGrid, Full, Select } from '../components/common'
+import { CalendarSourceFields, SourceState, useSourceStatus } from '../components/Sources'
 import { usePbx } from '../state'
 
 interface CalendarEvent {
@@ -52,8 +53,10 @@ function CalendarForm({ value, onChange }: { value: CentralCalendar; onChange: (
         options={[
           ['events', 'Eigene Termine'],
           ['holidays', 'Feiertage des Bundeslandes (automatisch)'],
+          ['subscription', 'Anderer Kalender (Abo, CalDAV) – nur lesen'],
         ]}
       />
+      {value.kind === 'subscription' && <CalendarSourceFields value={value.source} onChange={(v) => set('source', v)} />}
       <Full>
         <Typography variant="subtitle2" sx={{ mb: 1 }}>
           Farbe
@@ -269,15 +272,22 @@ function Agenda() {
   )
 }
 
+function kindText(c: CentralCalendar): string {
+  if (c.kind === 'holidays') return 'Feiertage, automatisch'
+  if (c.kind === 'subscription') return c.source.type === 'caldav' ? 'CalDAV, nur lesen' : 'Abo, nur lesen'
+  return c.writable ? 'Alle können eintragen' : 'Nur hier änderbar'
+}
+
 export default function Calendars() {
   const { config } = usePbx()
+  const [status] = useSourceStatus()
   return (
     <CollectionPage<CentralCalendar>
       kind="calendars"
       overline="Zusammenarbeit"
       title="Zentrale Kalender"
       singular="Kalender"
-      description="Gemeinsame Kalender für alle Apps, z. B. Betriebsferien, Schichtplan oder Feiertage. Welche Kalender eine App zeigt, legt das App-Profil fest."
+      description="Gemeinsame Kalender für alle Apps, z. B. Betriebsferien, Schichtplan oder Feiertage – auch aus anderen Kalendern (Abo-Link, CalDAV). Welche Kalender eine App zeigt, legt das App-Profil fest."
       emptyText="Lege z. B. einen Kalender „Betrieb“ für Betriebsferien und Termine an, die alle sehen sollen."
       emptyIcon={<CalendarMonthIcon />}
       columns={[
@@ -290,7 +300,7 @@ export default function Calendars() {
             </Stack>
           ),
         },
-        { label: 'Art', render: (c) => (c.kind === 'holidays' ? 'Feiertage, automatisch' : c.writable ? 'Alle können eintragen' : 'Nur hier änderbar') },
+        { label: 'Art', render: (c) => (c.kind === 'subscription' ? <SourceState status={status[c.id]} unit="Termine" /> : kindText(c)) },
         {
           label: 'App-Profile',
           render: (c) => {
@@ -312,9 +322,10 @@ export default function Calendars() {
                 {c.name}
               </Typography>
               <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                {c.kind === 'holidays' ? 'Feiertage, automatisch' : c.writable ? 'Alle können eintragen' : 'Nur hier änderbar'}
+                {kindText(c)}
                 {config.appprofiles.length > 0 && ` · in ${profiles.length} von ${config.appprofiles.length} Profilen`}
               </Typography>
+              {c.kind === 'subscription' && <SourceState status={status[c.id]} unit="Termine" />}
             </Box>
           </Stack>
         )

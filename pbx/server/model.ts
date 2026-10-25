@@ -40,16 +40,45 @@ export interface Extension {
   permission: Permission
   allow_premium: boolean
   voicemail: { enabled: boolean; pin: string; attach: boolean }
-  /** Feste Weiterleitungen; die Sofort-Weiterleitung schaltet man per *21 am Telefon */
-  forward: { busy: string; noanswer: string }
+  /**
+   * Weiterleitungen bei besetzt / keine Antwort und Regeln (Zeitplan, Zeitsteuerung,
+   * Nicht stören). Die Sofort-Umleitung schaltet man per *21 oder in der App.
+   */
+  forward: { busy: string; noanswer: string; rules: ForwardRule[] }
   record: boolean
   /** Einrichtungs-PIN für die App (zusammen mit der Nebenstelle) */
   provision_pin: string
   /** Geheimer Teil des Einrichtungslinks */
   provision_token: string
-  /** App-Profil (Ansichten der SIP-Telefon-App), leer = ohne Vorgaben */
+  /** App-Profil (Ansichten der Phone4All-App), leer = ohne Vorgaben */
   app_profile: string
 }
+
+/** Umleitung, die sich nach Zeit oder Zustand selbst einschaltet. */
+export interface ForwardRule {
+  id: string
+  enabled: boolean
+  /** schedule: eigene Zeiten · timecondition: Zeitsteuerung der Anlage · dnd: bei „Nicht stören“ */
+  when: 'schedule' | 'timecondition' | 'dnd'
+  days: number[] // 1 = Montag … 7 = Sonntag
+  from: string // „18:00“
+  to: string // „08:00“ (über Mitternacht erlaubt)
+  timecondition: string
+  /** Bei welchem Zustand der Zeitsteuerung umleiten */
+  tc_state: 'open' | 'closed'
+  target: string
+}
+
+/** Was eine Nebenstelle in der App selbst einstellen darf */
+export type AppPermission = 'forward' | 'forward_external' | 'forward_rules' | 'calendar_edit' | 'phonebook_edit'
+
+export const APP_PERMISSIONS: [AppPermission, string, string][] = [
+  ['forward', 'Umleitung schalten', 'In der App die Sofort-Umleitung ein- und ausschalten'],
+  ['forward_external', 'Nach außen umleiten', 'Umleitung auch auf externe Rufnummern, nicht nur auf Nebenstellen'],
+  ['forward_rules', 'Umleitungsregeln bearbeiten', 'Weiterleitung bei besetzt/keine Antwort und Regeln nach Zeit'],
+  ['calendar_edit', 'Zentrale Kalender bearbeiten', 'Termine in beschreibbaren zentralen Kalendern anlegen und ändern'],
+  ['phonebook_edit', 'Telefonbuch bearbeiten', 'Einträge im zentralen Telefonbuch anlegen und ändern'],
+]
 
 export type GroupMode = 'all' | 'sequential' | 'queue'
 export type QueueStrategy = 'ringall' | 'linear' | 'rrmemory' | 'leastrecent' | 'fewestcalls' | 'random'
@@ -66,6 +95,8 @@ export interface Group {
   name_prefix: string // vor den Anrufernamen gesetzt, z. B. „Vertrieb: “
   announcement: string // Ansage vor dem Klingeln (ID, optional)
   fallback: Destination
+  /** Zusätzliche Rechte in der App für alle Mitglieder */
+  permissions: AppPermission[]
 }
 
 export type NumberFormat = 'e164' | 'national' | 'intl00' | 'e164_no_plus'
@@ -282,7 +313,7 @@ export interface IntegrationSettings {
   token: string
 }
 
-/** Seiten und Startkarten der SIP-Telefon-App (wie dort benannt) */
+/** Seiten und Startkarten der Phone4All-App (wie dort benannt) */
 export type AppPage = 'home' | 'dial' | 'contacts' | 'calendar' | 'history'
 export type AppHomeCard = 'status' | 'today' | 'favorites' | 'recent' | 'events'
 
@@ -323,10 +354,45 @@ export interface CentralCalendar {
   id: string
   name: string
   color: string
-  /** events: eigene Termine, holidays: gesetzliche Feiertage des Bundeslandes */
-  kind: 'events' | 'holidays'
+  /** events: eigene Termine, holidays: Feiertage des Bundeslandes, subscription: von außen gelesen */
+  kind: 'events' | 'holidays' | 'subscription'
   /** Termine dürfen in der App angelegt und geändert werden */
   writable: boolean
+  /** Nur bei subscription: woher die Termine kommen */
+  source: CalendarSource
+}
+
+/** Kalender eines anderen Servers, den die Anlage regelmäßig liest */
+export interface CalendarSource {
+  /** ics: Abo-Adresse (.ics, webcal://), caldav: Kalender auf einem CalDAV-Server */
+  type: 'ics' | 'caldav'
+  url: string
+  user: string
+  password: string
+  refresh_minutes: number
+}
+
+/** Externe Kontaktquelle (nur lesen): CardDAV, vCard-/CSV-Datei im Netz oder SQL Server */
+export interface ContactSource {
+  id: string
+  name: string
+  type: 'carddav' | 'url' | 'mssql'
+  enabled: boolean
+  /** CardDAV-Konto oder -Adressbuch bzw. Adresse einer .vcf-/.csv-Datei */
+  url: string
+  user: string
+  password: string
+  /** SQL Server: Server (auch server\instanz), Port, Datenbank */
+  host: string
+  port: number
+  database: string
+  mode: 'table' | 'query'
+  table: string
+  name_cols: string
+  company_col: string
+  phone_cols: string
+  query: string
+  refresh_minutes: number
 }
 
 /** Höchstzahl der Mobilteile an einer DECT-Basis (Gigaset N610/N670) */
@@ -369,13 +435,15 @@ export interface PbxConfig {
   conferences: Conference[]
   announcements: Announcement[]
   phonebook: PhonebookEntry[]
+  contactsources: ContactSource[]
   appprofiles: AppProfile[]
   calendars: CentralCalendar[]
   dect: DectBase[]
   mail: MailSettings
   security: SecuritySettings
   updates: UpdateSettings
-  provisioning: { discovery: boolean }
+  /** discovery: im Netz auffindbar · permissions: Rechte aller Nebenstellen in der App */
+  provisioning: { discovery: boolean; permissions: AppPermission[] }
   watchdog: WatchdogSettings
   integration: IntegrationSettings
   ldap: LdapSettings
@@ -411,6 +479,7 @@ export const DEFAULT_CONFIG: PbxConfig = {
   conferences: [],
   announcements: [],
   phonebook: [],
+  contactsources: [],
   appprofiles: [],
   calendars: [],
   dect: [],
@@ -424,7 +493,8 @@ export const DEFAULT_CONFIG: PbxConfig = {
     extension_nets: [],
   },
   updates: { channel: 'stable', auto: false, hour: 3 },
-  provisioning: { discovery: true },
+  // Wie bisher: Umleiten (*21) und Schreiben in zentrale Kalender darf jede Nebenstelle
+  provisioning: { discovery: true, permissions: ['forward', 'forward_external', 'forward_rules', 'calendar_edit'] },
   watchdog: { auto_repair: true, trunk_grace: 3, notify_email: '' },
   integration: { enabled: false, token: '' },
   ldap: { enabled: false, port: 389, password: '' },
@@ -442,6 +512,7 @@ export const COLLECTIONS = [
   'conferences',
   'announcements',
   'phonebook',
+  'contactsources',
   'appprofiles',
   'calendars',
   'dect',
@@ -497,7 +568,7 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         permission: 'national',
         allow_premium: false,
         voicemail: { enabled: true, pin: '', attach: true },
-        forward: { busy: '', noanswer: '' },
+        forward: { busy: '', noanswer: '', rules: [] },
         record: false,
         provision_pin: '',
         provision_token: '',
@@ -515,6 +586,7 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         name_prefix: '',
         announcement: '',
         fallback: HANGUP,
+        permissions: [],
       } satisfies Omit<Group, 'id'>
     case 'trunks':
       return {
@@ -592,7 +664,32 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         calendars: [],
       } satisfies Omit<AppProfile, 'id'>
     case 'calendars':
-      return { name: '', color: '#1a73e8', kind: 'events', writable: true } satisfies Omit<CentralCalendar, 'id'>
+      return {
+        name: '',
+        color: '#1a73e8',
+        kind: 'events',
+        writable: true,
+        source: { type: 'ics', url: '', user: '', password: '', refresh_minutes: 60 },
+      } satisfies Omit<CentralCalendar, 'id'>
+    case 'contactsources':
+      return {
+        name: '',
+        type: 'carddav',
+        enabled: true,
+        url: '',
+        user: '',
+        password: '',
+        host: '',
+        port: 1433,
+        database: '',
+        mode: 'table',
+        table: '',
+        name_cols: '',
+        company_col: '',
+        phone_cols: '',
+        query: '',
+        refresh_minutes: 60,
+      } satisfies Omit<ContactSource, 'id'>
     case 'dect':
       return { name: '', mac: '', handsets: [], pin: '', admin_password: '', token: '' } satisfies Omit<DectBase, 'id'>
   }

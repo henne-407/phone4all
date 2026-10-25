@@ -1,6 +1,6 @@
 # Phone4all-Telefonanlage
 
-Telefonanlage für das SIP-Telefon und alle anderen SIP-Geräte: Asterisk 20 (LTS)
+Telefonanlage für die Phone4All-App und alle anderen SIP-Geräte: Asterisk 20 (LTS)
 mit einer deutschsprachigen Weboberfläche, verpackt als ein Docker-Image. Läuft auf
 jedem Linux-Server, in einer VM (Proxmox, VMware, Hyper-V, VirtualBox), auf einem
 NAS mit Docker oder einem Raspberry Pi 4/5.
@@ -44,7 +44,7 @@ von 5060/5061 und 10000–10999 im Router sowie die öffentliche Adresse unter
 ## Funktionen
 
 - **Nebenstellen** mit mehreren Geräten gleichzeitig, Voicemail (auch per E-Mail),
-  Weiterleitung bei besetzt / nach Zeit, Berechtigungen (intern, Deutschland, weltweit),
+  Weiterleitung bei besetzt / nach Zeit, Umleitungsregeln (Zeitplan, Zeitsteuerung, Nicht stören), Berechtigungen (intern, Deutschland, weltweit),
   Sperre für Sonderrufnummern, Gesprächsaufzeichnung
 - **Gruppen**: alle gleichzeitig, reihum oder Warteschlange mit Wartemusik,
   Ausweichziel und Namensvorsatz („Vertrieb: …“)
@@ -58,13 +58,14 @@ von 5060/5061 und 10000–10999 im Router sowie die öffentliche Adresse unter
   Deutsche Glasfaser, 1&1, o2, sipgate (basic und trunking), easybell, Placetel und FRITZ!Box;
   **Wahlregeln** mit Ausweichkonto
 - **Zentrale Kontakte** (auch CSV-Import) für Anrufernamen, werden an die Apps verteilt
-  und stehen per **LDAP** für DECT- und Tischtelefone bereit
+  und stehen per **LDAP** für DECT- und Tischtelefone bereit; dazu externe Quellen
+  (CardDAV, vCard-/CSV-Datei im Netz, Microsoft SQL Server), die die Anlage regelmäßig liest
 - **DECT-Telefone**: Gigaset N610, N670 und N870 IP PRO richten sich per Auto-Provisioning
   selbst ein (ein SIP-Konto je Mobilteil, Voicemail-Anzeige, Übergabe)
-- **Zentrale Kalender** mit eigenen Terminen (z. B. Betriebsferien) oder den
-  Feiertagen des Bundeslandes; erscheinen in jeder App
+- **Zentrale Kalender** mit eigenen Terminen (z. B. Betriebsferien), den
+  Feiertagen des Bundeslandes oder aus anderen Kalendern (ICS-Abo, CalDAV); erscheinen in jeder App
 - **App-Profile**: legen fest, welche Bereiche, Startansicht und Startseiten-Karten
-  die SIP-Telefon-App zeigt, und können Startseite und Kontodaten sperren
+  die Phone4All-App zeigt, und können Startseite und Kontodaten sperren
 - **Anrufliste**, laufende Gespräche, Anmeldestatus aller Geräte
 - **Funktionscodes**: \*97 Voicemail, \*76 Nicht stören, \*21 Rufumleitung,
   \*8 / \*\*Nr. Heranholen, \*28 Nachtschaltung, \*31 anonym, \*43 Echo-Test
@@ -76,7 +77,7 @@ von 5060/5061 und 10000–10999 im Router sowie die öffentliche Adresse unter
 - **Online-Updates** aus der Weboberfläche (stabil oder Beta), auf Wunsch automatisch
   nachts, wenn niemand telefoniert
 
-## SIP-Telefon automatisch einrichten
+## Phone4All automatisch einrichten
 
 Jede Nebenstelle hat einen Einrichtungslink und eine Einrichtungs-PIN
 (*Nebenstellen → Bearbeiten*). Drei Wege:
@@ -97,11 +98,14 @@ Token ist zugleich die Berechtigung.
 
 | Anfrage | Ergebnis |
 | --- | --- |
-| `GET /provision/<token>` | Profil: Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `revision` |
+| `GET /provision/<token>` | Profil: Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `permissions`, `revision` |
 | `GET /provision/<token>/revision` | `{ profile, events }` – ändert sich, sobald Profil oder Termine sich ändern |
 | `GET /provision/<token>/events?start=…&end=…&calendar=…` | Termine im Zeitraum (höchstens 400 Tage) |
 | `PUT /provision/<token>/events/<kalender>/<uid>` | Termin anlegen oder ändern (nur beschreibbare Kalender) |
 | `DELETE /provision/<token>/events/<kalender>/<uid>` | Termin löschen |
+| `GET /provision/<token>/forward` | Umleitungen: `cfu`, `active`, `busy`, `noanswer`, `rules`, `permissions`, interne `targets`, `timeconditions` |
+| `POST /provision/<token>/phonebook`, `PUT`/`DELETE …/phonebook/<id>` | Telefonbuch bearbeiten (Recht `phonebook_edit`; bearbeitbare Einträge haben im Profil eine `id`) |
+| `PUT /provision/<token>/forward` | Änderungen davon (`cfu` braucht das Recht `forward`, der Rest `forward_rules`; externe Ziele `forward_external`) |
 
 Termine: `{ uid, summary, start, end, allDay, location, description }`. Ganztägige
 Termine haben Datumsangaben (`2026-12-24`, Ende exklusiv), alle anderen ISO-Zeitpunkte.
@@ -144,7 +148,7 @@ beantwortet LDAP-Suchen (nur lesen) auf Port 389 aus dem lokalen Netz bzw. den u
 | Nummernfilter | `(\|(telephoneNumber=%)(mobile=%))` |
 | Attribute | `cn`, `givenName`, `sn`, `o`, `telephoneNumber`, `mobile` |
 
-Enthalten sind Nebenstellen, Gruppen, Konferenzräume und die zentralen Kontakte.
+Enthalten sind Nebenstellen, Gruppen, Konferenzräume, die zentralen Kontakte und die externen Kontaktquellen.
 Rufnummern werden unabhängig von der Schreibweise gefunden (`030 1234567`,
 `+49301234567`). Test: `ldapsearch -x -H ldap://<anlage> -b dc=phone4all '(cn=*)'`.
 

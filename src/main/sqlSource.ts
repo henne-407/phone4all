@@ -70,7 +70,7 @@ export class MsSqlSource {
       options: {
         encrypt,
         trustServerCertificate: true,
-        appName: 'SIP-Telefon',
+        appName: 'Phone4All',
         ...(instanceName ? { instanceName } : {}),
       },
       pool: { max: 1, min: 0 },

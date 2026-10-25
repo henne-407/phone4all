@@ -8,7 +8,7 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { normalizeNumber } from '../shared/numbers'
-import type { AccountSettings, CalEvent, Contact, DavAccount, HomeCard, PageName, SqlSourceConf } from '../shared/types'
+import type { AccountSettings, CalEvent, Contact, DavAccount, HomeCard, PageName, PbxForwardChange, SqlSourceConf } from '../shared/types'
 import type { App } from './app'
 import { CalDavBackend } from './calendars'
 import { CardDavBackend } from './contactSync'
@@ -158,6 +158,11 @@ export function createApi(app: App) {
     /** Gibt false zurück, wenn kein Schlüsselbund verfügbar war. */
     pbxApply: () => app.provisioning.apply(),
     pbxDisconnect: () => app.provisioning.disconnect(),
+    pbxSetForward: (change: PbxForwardChange) => attempt(() => app.provisioning.setForward(change)),
+    pbxLoadForward: () => app.provisioning.loadForward(),
+    pbxSaveContact: (contact: Pick<Contact, 'name' | 'company' | 'phone' | 'mobile' | 'pbx'>) =>
+      attempt(() => app.provisioning.savePhonebookEntry(contact)),
+    pbxDeleteContact: (id: string) => attempt(() => app.provisioning.deletePhonebookEntry(id)),
     takePbxLink: () => app.takePendingLink(),
     setTitleBarColors: (color: string, symbolColor: string) => app.setTitleBarColors(color, symbolColor),
 

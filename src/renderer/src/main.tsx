@@ -25,7 +25,9 @@ function Themed({ state }: { state: AppState }) {
 
   useEffect(() => {
     void api.setTitleBarColors(...titleBarColors(theme))
-    document.title = callId ? 'Anruf' : 'SIP-Telefon'
+    // Auch <html> einfärben: beim Vergrößern ist die Seite kurz größer als der Inhalt
+    document.documentElement.style.backgroundColor = theme.palette.background.default
+    document.title = callId ? 'Anruf' : 'Phone4All'
   }, [theme])
 
   return (

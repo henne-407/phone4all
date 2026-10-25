@@ -1,5 +1,5 @@
 #!/bin/sh
-# Baut SIP-Telefon und installiert es für den aktuellen Benutzer (ohne sudo):
+# Baut Phone4All und installiert es für den aktuellen Benutzer (ohne sudo):
 #   ~/.local/lib/sip-telefon, Befehl "sip-telefon", Startmenü-Eintrag.
 # Voraussetzung: Node.js 22+ und baresip (z. B. sudo dnf install baresip baresip-pipewire)
 set -e
@@ -32,7 +32,7 @@ rm -f "$APPS/de.hpieper.SipTelefon.desktop"
 cat > "$APPS/sip-telefon.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
-Name=SIP-Telefon
+Name=Phone4All
 GenericName=Softphone
 Comment=Telefonieren über deine SIP-Telefonanlage
 Exec=$LIB/sip-telefon %U
