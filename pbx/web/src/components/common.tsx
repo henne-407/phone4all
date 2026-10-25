@@ -2,6 +2,8 @@
 
 import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
+import GridViewIcon from '@mui/icons-material/GridView'
+import ViewListIcon from '@mui/icons-material/ViewList'
 import {
   Autocomplete,
   Avatar,
@@ -26,6 +28,9 @@ import {
   TableHead,
   TableRow,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
   Typography,
   useMediaQuery,
   useTheme,
@@ -444,6 +449,48 @@ export function useEditor<T extends { id: string }>(kind: CollectionName, singul
   return { openNew, openItem, dialog }
 }
 
+export type ViewMode = 'cards' | 'list'
+
+/** Gewählte Ansicht (Karten oder Liste) einer Seite, im Browser gemerkt */
+export function useViewMode(page: string, initial: ViewMode = 'cards'): [ViewMode, (v: ViewMode) => void] {
+  const key = `pbx.view.${page}`
+  const [mode, setMode] = useState<ViewMode>(() => {
+    try {
+      const v = localStorage.getItem(key)
+      return v === 'cards' || v === 'list' ? v : initial
+    } catch {
+      return initial
+    }
+  })
+  const change = (v: ViewMode): void => {
+    setMode(v)
+    try {
+      localStorage.setItem(key, v)
+    } catch {
+      // ohne Speicher gilt die Wahl nur bis zum Neuladen
+    }
+  }
+  return [mode, change]
+}
+
+/** Umschalter zwischen Karten- und Listenansicht */
+export function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (v: ViewMode) => void }) {
+  return (
+    <ToggleButtonGroup size="small" exclusive value={value} onChange={(_e, v: ViewMode | null) => v && onChange(v)} aria-label="Ansicht">
+      <ToggleButton value="cards" aria-label="Karten">
+        <Tooltip title="Karten">
+          <GridViewIcon fontSize="small" />
+        </Tooltip>
+      </ToggleButton>
+      <ToggleButton value="list" aria-label="Liste">
+        <Tooltip title="Liste">
+          <ViewListIcon fontSize="small" />
+        </Tooltip>
+      </ToggleButton>
+    </ToggleButtonGroup>
+  )
+}
+
 export interface Column<T> {
   label: string
   render: (item: T) => ReactNode
@@ -452,7 +499,8 @@ export interface Column<T> {
 
 /**
  * Seite mit allen Einträgen einer Liste: als Tabelle (columns) oder als Karten (card),
- * „Anlegen“-Knopf und Bearbeiten-Dialog. #/seite?edit=<id> öffnet einen Eintrag direkt.
+ * „Anlegen“-Knopf und Bearbeiten-Dialog. Gibt es beides, lässt sich die Ansicht umschalten.
+ * #/seite?edit=<id> öffnet einen Eintrag direkt.
  */
 export function CollectionPage<T extends { id: string }>({
   kind,
@@ -493,6 +541,9 @@ export function CollectionPage<T extends { id: string }>({
   const editor = useEditor<T>(kind, singular, Form, newItem)
   const theme = useTheme()
   const mobile = useMediaQuery(theme.breakpoints.down('sm'))
+  const [mode, setMode] = useViewMode(page ?? kind, card ? 'cards' : 'list')
+  const switchable = Boolean(card && columns)
+  const showCards = card && (!columns || mode === 'cards')
 
   useEffect(() => {
     const id = takeEditRequest(page ?? kind)
@@ -515,7 +566,7 @@ export function CollectionPage<T extends { id: string }>({
         }
       />
     )
-  } else if (card) {
+  } else if (card && showCards) {
     list = (
       <CardGrid>
         {items.map((item) => (
@@ -575,10 +626,15 @@ export function CollectionPage<T extends { id: string }>({
         title={title}
         description={description}
         action={
-          !mobile && (
-            <Button variant="contained" startIcon={<AddIcon />} onClick={() => editor.openNew()}>
-              {singular} anlegen
-            </Button>
+          (switchable || !mobile) && (
+            <>
+              {switchable && <ViewToggle value={mode} onChange={setMode} />}
+              {!mobile && (
+                <Button variant="contained" startIcon={<AddIcon />} onClick={() => editor.openNew()}>
+                  {singular} anlegen
+                </Button>
+              )}
+            </>
           )
         }
       />

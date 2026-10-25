@@ -63,6 +63,24 @@ export default function TimeConditions() {
       description="Öffnungszeiten mit den Feiertagen des Bundeslandes und Betriebsferien. Am Telefon schaltet *28 mit der Nummer der Zeitsteuerung manuell um (Nachtschaltung)."
       emptyText="Mit einer Zeitsteuerung gehen Anrufe außerhalb der Öffnungszeiten z. B. auf eine Ansage oder die Voicemail."
       emptyIcon={<ScheduleIcon />}
+      columns={[
+        { label: 'Name', render: (t) => <b>{t.name}</b> },
+        { label: 'Umschalten', render: (t) => <code>*28{config.timeconditions.indexOf(t) + 1}</code>, hideOnMobile: true },
+        {
+          label: 'Jetzt',
+          render: (t) => {
+            const closed = closedReason(t, new Date(), config.system.state, config.system.timezone)
+            return (
+              <Stack direction="row" sx={{ gap: 0.75, flexWrap: 'wrap' }}>
+                <Chip size="small" color={closed ? 'warning' : 'success'} label={closed ? `Geschlossen: ${closed}` : 'Geöffnet'} />
+                {t.override !== 'auto' && <Chip size="small" color="info" label="Manuell" />}
+              </Stack>
+            )
+          },
+        },
+        { label: 'Geöffnet', render: (t) => describeDestination(t.open, config), hideOnMobile: true },
+        { label: 'Geschlossen', render: (t) => describeDestination(t.closed, config), hideOnMobile: true },
+      ]}
       card={(t) => {
         const closed = closedReason(t, new Date(), config.system.state, config.system.timezone)
         return (

@@ -2,10 +2,10 @@
 
 import AddIcon from '@mui/icons-material/Add'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
-import { Box, Button, Card, CardContent, Chip, IconButton, Stack, Tooltip, Typography } from '@mui/material'
+import { Box, Button, Card, CardContent, Chip, IconButton, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tooltip, Typography, useMediaQuery, useTheme } from '@mui/material'
 import { useEffect } from 'react'
 import type { InboundRoute } from '../../../server/model'
-import { EmptyState, PageHeader, useEditor } from '../components/common'
+import { EmptyState, PageHeader, ViewToggle, describeDestination, useEditor, useViewMode } from '../components/common'
 import { FlowDiagram, FlowPalette, NODE_ICONS } from '../components/FlowDiagram'
 import { go, takeEditRequest } from '../router'
 import { usePbx } from '../state'
@@ -14,6 +14,8 @@ import { InboundForm } from './FlowForms'
 export default function Flows() {
   const { config } = usePbx()
   const editor = useEditor<InboundRoute>('inbound', 'Rufnummern-Regel', InboundForm)
+  const [mode, setMode] = useViewMode('flows')
+  const mobile = useMediaQuery(useTheme().breakpoints.down('sm'))
   useEffect(() => {
     const id = takeEditRequest('flows')
     if (id === 'new') editor.openNew()
@@ -28,9 +30,12 @@ export default function Flows() {
         title="Rufabfolgen"
         description="So läuft ein Anruf von außen durch die Anlage: von der angerufenen Nummer über Zeitsteuerung und Sprachmenü bis zur Person oder Voicemail. Ein Klick auf einen Schritt öffnet ihn; Zweige hängst du mit dem Stift oder per Drag & Drop aus den Bausteinen um."
         action={
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => editor.openNew()}>
-            Rufnummer zuordnen
-          </Button>
+          <>
+            <ViewToggle value={mode} onChange={setMode} />
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => editor.openNew()}>
+              Rufnummer zuordnen
+            </Button>
+          </>
         }
       />
       {!config.trunks.length && !config.inbound.length && (
@@ -45,6 +50,48 @@ export default function Flows() {
           }
         />
       )}
+      {mode === 'list' && (config.inbound.length > 0 || config.trunks.length > 0) && (
+        <Card>
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Rufnummer</TableCell>
+                  {!mobile && <TableCell>Regel</TableCell>}
+                  {!mobile && <TableCell>SIP-Konto</TableCell>}
+                  <TableCell>Erstes Ziel</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {config.inbound.map((r) => (
+                  <TableRow key={r.id} hover sx={{ cursor: 'pointer' }} onClick={() => editor.openItem(r.id)}>
+                    <TableCell>
+                      <b>{r.number || 'alle Nummern'}</b>
+                      {r.caller && <Chip size="small" label={`nur Anrufer ${r.caller}…`} sx={{ ml: 1 }} />}
+                    </TableCell>
+                    {!mobile && <TableCell>{r.name || '–'}</TableCell>}
+                    {!mobile && <TableCell>{trunkName(r.trunk)}</TableCell>}
+                    <TableCell>{describeDestination(r.destination, config)}</TableCell>
+                  </TableRow>
+                ))}
+                {config.trunks.map((t) => {
+                  const covered = config.inbound.filter((r) => !r.trunk || r.trunk === t.id).map((r) => r.number)
+                  const rest = t.numbers.filter((n) => !covered.includes(n))
+                  return (
+                    <TableRow key={t.id} hover sx={{ cursor: 'pointer', bgcolor: 'background.default', '&:last-child td': { border: 0 } }} onClick={() => go('trunks', t.id)}>
+                      <TableCell>{rest.length ? rest.join(', ') : 'alle anderen Nummern'}</TableCell>
+                      {!mobile && <TableCell sx={{ color: 'text.secondary' }}>Alle übrigen Anrufe</TableCell>}
+                      {!mobile && <TableCell>{t.name}</TableCell>}
+                      <TableCell>{describeDestination(t.inbound_default, config)}</TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Card>
+      )}
+      {mode === 'cards' && (
       <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 260px' }, alignItems: 'start' }}>
       <Stack sx={{ gap: 2 }}>
         {config.inbound.map((r) => (
@@ -103,6 +150,7 @@ export default function Flows() {
         </Card>
       )}
       </Box>
+      )}
       {editor.dialog}
     </Box>
   )

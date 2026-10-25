@@ -295,6 +295,31 @@ export default function Dect() {
         description="Gigaset-Basen der Reihe N610, N670 und N870 IP PRO holen sich ihre Einrichtung von der Anlage: ein SIP-Konto je Mobilteil, Voicemail-Anzeige und Übergabe. Änderungen übernimmt die Basis beim nächsten Abruf."
         emptyText="Nach dem Anlegen zeigt „Einrichten“, was in der Basis einzutragen ist."
         emptyIcon={<SettingsPhoneIcon />}
+        columns={[
+          { label: 'Name', render: (b) => <b>{b.name}</b> },
+          { label: 'MAC-Adresse', render: (b) => (b.mac ? formatMac(b.mac) : '–'), hideOnMobile: true },
+          {
+            label: 'Abgerufen',
+            render: (b) => {
+              const seen = info?.bases.find((x) => x.id === b.id)?.seen
+              return seen ? ago(seen.time) : 'noch nicht'
+            },
+            hideOnMobile: true,
+          },
+          {
+            label: 'Mobilteile',
+            render: (b) => {
+              const list = b.handsets.filter(Boolean)
+              const on = list.filter((n) => devices(n) > 0).length
+              return list.length ? <StatusDot color={on === list.length ? 'success' : on ? 'warning' : 'default'} label={`${on} von ${list.length} angemeldet`} /> : 'keine'
+            },
+          },
+          {
+            label: 'Nebenstellen',
+            render: (b) => b.handsets.filter(Boolean).join(', ') || '–',
+            hideOnMobile: true,
+          },
+        ]}
         card={(b) => {
           const seen = info?.bases.find((x) => x.id === b.id)?.seen
           const list = b.handsets.map((n, i) => [i, n] as const).filter(([, n]) => n)

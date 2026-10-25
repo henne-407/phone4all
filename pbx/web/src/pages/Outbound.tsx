@@ -73,6 +73,13 @@ export default function Outbound() {
           Notrufe (110, 112) gehen immer raus – auch ohne passende Regel und mit jeder Berechtigung.
         </Alert>
       }
+      columns={[
+        { label: 'Nr.', render: (r) => config.outbound.indexOf(r) + 1 },
+        { label: 'Name', render: (r) => <b>{r.name}</b> },
+        { label: 'Für', render: (r) => (r.extensions.length ? r.extensions.join(', ') : 'alle Nebenstellen'), hideOnMobile: true },
+        { label: 'Nummern', render: (r) => (r.prefixes.length ? <code>{r.prefixes.map((p) => `${p}…`).join(' ')}</code> : 'alle Nummern') },
+        { label: 'SIP-Konten', render: (r) => <Chain route={r} /> },
+      ]}
       card={(r) => (
         <Box>
           <Typography variant="h6" sx={{ mb: 0.5 }}>
