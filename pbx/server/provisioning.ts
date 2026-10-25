@@ -10,6 +10,7 @@ import { directory } from './directory'
 import { messengerUsers } from './messenger'
 import type { AppHomeCard, AppPage, AppPermission, CentralCalendar, Extension, PbxConfig } from './model'
 import { SETTINGS } from './paths'
+import { type IceServer, appEndpoint, publicBase, websocketUrl } from './remote'
 import { appPermissions } from './routing'
 
 export const DISCOVERY_PORT = 15060
@@ -48,8 +49,21 @@ export interface ProvisioningProfile {
   permissions: AppPermission[]
   /** Messenger freigegeben; die App verbindet sich mit <url>/chat (WebSocket) */
   messenger: boolean
+  /** Zugang von unterwegs für die Mobil-App (SIP über WebSocket, WebRTC), null = aus */
+  remote: RemoteAccount | null
   /** Ändert sich mit jeder Änderung am Profil; die App fragt <url>/revision ab */
   revision: string
+}
+
+export interface RemoteAccount {
+  /** wss://telefon.example.de/ws */
+  websocket: string
+  /** SIP-Benutzer und Anmeldename der App (<nummer>-app), Passwort wie password */
+  user: string
+  /** Domain für SIP-Adressen (sip:<nummer>@<domain>) */
+  domain: string
+  /** STUN/TURN-Server für die Sprache (RTCIceServer) */
+  ice_servers: IceServer[]
 }
 
 export interface AppPolicy {
@@ -72,6 +86,11 @@ function policy(cfg: PbxConfig, ext: Extension): AppPolicy | null {
   return { pages: p.pages, start_tab: p.start_tab, home_cards: p.home_cards, lock_layout: p.lock_layout, lock_account: p.lock_account }
 }
 
+/** Basis für Links an Telefone: die öffentliche Adresse, sonst die aufgerufene */
+export function linkBase(cfg: PbxConfig, requestBase: string): string {
+  return publicBase(cfg) || requestBase
+}
+
 /** Basis-URL der Weboberfläche aus Sicht des Aufrufers */
 export function baseUrl(host: string | undefined, cfg: PbxConfig, proto = 'http'): string {
   const scheme = proto === 'https' ? 'https' : 'http'
@@ -89,7 +108,12 @@ export function appLink(base: string, ext: Extension): string {
   return `sip-telefon://provision?url=${encodeURIComponent(provisioningUrl(base, ext))}`
 }
 
-export function profile(cfg: PbxConfig, ext: Extension, base: string): ProvisioningProfile {
+/**
+ * @param base Adresse, unter der die Anlage aufgerufen wurde
+ * @param ice  STUN/TURN-Server für die Mobil-App
+ */
+export function profile(cfg: PbxConfig, ext: Extension, base: string, ice: IceServer[] = []): ProvisioningProfile {
+  const pub = linkBase(cfg, base)
   const domain = cfg.system.sip_host.trim() || new URL(base).hostname.replace(/^\[|\]$/g, '')
   const permissions = appPermissions(cfg, ext.number)
   const editable = permissions.includes('phonebook_edit')
@@ -119,7 +143,7 @@ export function profile(cfg: PbxConfig, ext: Extension, base: string): Provision
       regint: 300,
     },
     password: ext.secret,
-    url: provisioningUrl(base, ext),
+    url: provisioningUrl(pub, ext),
     phonebook,
     features: {
       voicemail: '*97',
@@ -137,6 +161,9 @@ export function profile(cfg: PbxConfig, ext: Extension, base: string): Provision
     })),
     permissions,
     messenger: messengerUsers(cfg).some((e) => e.id === ext.id),
+    remote: cfg.remote.enabled
+      ? { websocket: websocketUrl(pub), user: appEndpoint(ext.number), domain: new URL(pub).hostname, ice_servers: ice }
+      : null,
   }
   const revision = createHash('sha256').update(JSON.stringify(result)).digest('hex').slice(0, 16)
   return { ...result, revision }
@@ -188,7 +215,7 @@ dt{opacity:.7;font-size:14px}dd{margin:0 0 12px;font-size:18px;font-family:ui-mo
 <h1>Hallo ${esc(ext.name)}</h1>
 <p>Ihr Telefon an der Anlage <b>${esc(cfg.system.name)}</b> ist bereit.</p>
 <div class="card"><h2>Mit Phone4All</h2>
-<p>Phone4All installieren und dann auf diese Schaltfläche klicken – die App richtet sich selbst ein.</p>
+<p>Phone4All installieren (Computer, Android oder iPhone) und dann auf diese Schaltfläche tippen – die App richtet sich selbst ein.</p>
 <p><a class="btn" href="${esc(link)}">In Phone4All einrichten</a></p>
 <p>Alternativ in der App unter Einstellungen → Konto → „Von Telefonanlage einrichten“ diese Angaben eintragen:</p>
 <dl><dt>Anlage</dt><dd>${esc(base)}</dd><dt>Nebenstelle</dt><dd>${esc(ext.number)}</dd><dt>Einrichtungs-PIN</dt><dd>${esc(ext.provision_pin)}</dd></dl>

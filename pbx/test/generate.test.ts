@@ -1,29 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { generate, type GenContext } from '../server/generate'
-import { sampleConfig } from './helpers'
-
-const gen: GenContext = {
-  apiUrl: 'http://127.0.0.1:8080/internal',
-  dirs: {
-    etc: '/etc/asterisk',
-    data: '/data',
-    spool: '/data/voicemail',
-    log: '/data/log',
-    lib: '/var/lib/asterisk',
-    run: '/run/asterisk',
-    sounds: '/data/sounds/custom',
-    moh: '/data/sounds/moh',
-    recordings: '/data/recordings',
-    db: '/data/db',
-    modules: '/usr/lib/asterisk/modules',
-    asteriskData: '/usr/share/asterisk',
-  },
-  ami: { port: 5038, secret: 'x' },
-  tls: null,
-  banned: ['203.0.113.7'],
-  runUser: 'asterisk',
-  mailer: '/usr/bin/msmtp',
-}
+import { generate } from '../server/generate'
+import { gen, sampleConfig } from './helpers'
 
 describe('Asterisk-Konfiguration', () => {
   const files = generate(sampleConfig(), gen)

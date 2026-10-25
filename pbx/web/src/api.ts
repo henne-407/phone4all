@@ -76,6 +76,7 @@ export interface StatusResponse {
   bans: { ip: string; until: number; reason: string }[]
   update: UpdateInfo
   version: string
+  remote: { enabled: boolean; turn: 'off' | 'running' | 'missing' | 'error'; connections: number }
   watchdog: WatchdogStatus
 }
 
