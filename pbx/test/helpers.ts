@@ -1,4 +1,5 @@
 import type { Destination, Extension, Group, PbxConfig, PhonebookEntry, Trunk } from '../server/model'
+import type { GenContext } from '../server/generate'
 import { blankItem, withDefaults } from '../server/model'
 
 export function ext(id: string, number: string, extra: Partial<Extension> = {}): Extension {
@@ -40,4 +41,29 @@ export function sampleConfig(): PbxConfig {
   ]
   cfg.phonebook = [{ ...(blankItem('phonebook') as unknown as PhonebookEntry), id: 'p1', name: 'Max Kunde', company: 'Kunde GmbH', phone: '0301111111', mobile: '' }]
   return cfg
+}
+
+/** Umgebung wie im Container */
+export const gen: GenContext = {
+  apiUrl: 'http://127.0.0.1:8080/internal',
+  dirs: {
+    etc: '/etc/asterisk',
+    data: '/data',
+    spool: '/data/voicemail',
+    log: '/data/log',
+    lib: '/var/lib/asterisk',
+    run: '/run/asterisk',
+    sounds: '/data/sounds/custom',
+    moh: '/data/sounds/moh',
+    recordings: '/data/recordings',
+    db: '/data/db',
+    modules: '/usr/lib/asterisk/modules',
+    asteriskData: '/usr/share/asterisk',
+  },
+  ami: { port: 5038, secret: 'x' },
+  httpPort: 8088,
+  tls: null,
+  banned: ['203.0.113.7'],
+  runUser: 'asterisk',
+  mailer: '/usr/bin/msmtp',
 }

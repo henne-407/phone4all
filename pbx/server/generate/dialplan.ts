@@ -35,8 +35,33 @@ function goTo(variable: string): string {
   return `Goto(\${CUT(${variable},^,1)},\${CUT(${variable},^,2)},1)`
 }
 
-function genericContexts(): string[] {
+/**
+ * Erreichbare Geräte einer Nebenstelle nach C: Telefone und – mit Zugriff von unterwegs –
+ * die Mobil-App (<nummer>-app). Doppelpunkte in den Kontakten verbieten IF(), daher Sprünge.
+ */
+function contacts(variable: string, app: boolean): string {
+  return app ? `Gosub(p4a-contacts,s,1(\${${variable}}))` : `Set(C=\${PJSIP_DIAL_CONTACTS(\${${variable}})})`
+}
+
+function contactsContext(): string {
+  return ctx(
+    'p4a-contacts',
+    exten('s', [
+      'Set(C=${PJSIP_DIAL_CONTACTS(${ARG1})})',
+      'Set(A=${PJSIP_DIAL_CONTACTS(${ARG1}-app)})',
+      'GotoIf($["${A}" = ""]?done)',
+      'GotoIf($["${C}" = ""]?only)',
+      'Set(C=${C}&${A})',
+      'Goto(done)',
+      '(only)Set(C=${A})',
+      '(done)Return()',
+    ]),
+  )
+}
+
+function genericContexts(app: boolean): string[] {
   return [
+    ...(app ? [contactsContext()] : []),
     ctx(
       'p4a-from-ext',
       ['include => p4a-features', 'include => p4a-local', 'include => p4a-outbound'],
@@ -157,7 +182,7 @@ function genericContexts(): string[] {
         'Set(BUSY=${CUT(R,|,4)})',
         'Set(NOANS=${CUT(R,|,5)})',
         'Set(RT=${IF($["${RT}" = ""]?30:${RT})})',
-        'Set(C=${PJSIP_DIAL_CONTACTS(${P4A_TARGET})})',
+        contacts('P4A_TARGET', app),
         'GotoIf($["${C}" = ""]?noans)',
         'Set(__PICKUPMARK=${P4A_TARGET})',
         'GotoIf($["${REC}" != "1"]?dial)',
@@ -203,7 +228,7 @@ function genericContexts(): string[] {
         'Set(I=1)',
         '(allnext)Set(M=${CUT(MEMBERS,&,${I})})',
         'GotoIf($["${M}" = ""]?alldial)',
-        'Set(C=${PJSIP_DIAL_CONTACTS(${M})})',
+        contacts('M', app),
         'Set(I=$[${I} + 1])',
         'GotoIf($["${C}" = ""]?allnext)',
         'Set(D=${D}&${C})',
@@ -215,7 +240,7 @@ function genericContexts(): string[] {
         '(seq)Set(I=1)',
         '(seqnext)Set(M=${CUT(MEMBERS,&,${I})})',
         'GotoIf($["${M}" = ""]?fallback)',
-        'Set(C=${PJSIP_DIAL_CONTACTS(${M})})',
+        contacts('M', app),
         'Set(I=$[${I} + 1])',
         'GotoIf($["${C}" = ""]?seqnext)',
         'Dial(${C},${MS},${P4A_DIALOPTS})',
@@ -232,7 +257,7 @@ function genericContexts(): string[] {
       exten('_X.', [
         CURL_TIMEOUT,
         'GotoIf($["${CURL(${P4A_API}/available?num=${EXTEN})}" = "0"]?off)',
-        'Set(C=${PJSIP_DIAL_CONTACTS(${EXTEN})})',
+        contacts('EXTEN', app),
         'GotoIf($["${C}" = ""]?off)',
         'Dial(${C})',
         '(off)Hangup()',
@@ -265,13 +290,14 @@ export function extensionsConf(cfg: PbxConfig, gen: GenContext): string {
     '; Erzeugt von Phone4all – Änderungen in der Weboberfläche vornehmen',
     ctx('general', ['static=yes', 'writeprotect=yes', 'clearglobalvars=yes']),
     ctx('globals', [`P4A_API=${gen.apiUrl}`, `P4A_REC=${gen.dirs.recordings}`, 'P4A_DIALOPTS=']),
-    ...genericContexts(),
+    ...genericContexts(cfg.remote.enabled),
   ]
 
   // Interne Rufnummern
   const local: string[][] = []
   for (const ext of cfg.extensions) {
-    local.push([`exten => ${ext.number},hint,PJSIP/${ext.number}`])
+    const hint = cfg.remote.enabled ? `PJSIP/${ext.number}&PJSIP/${ext.number}-app` : `PJSIP/${ext.number}`
+    local.push([`exten => ${ext.number},hint,${hint}`])
     local.push(exten(ext.number, [MARK_TO, 'Set(P4A_TARGET=${EXTEN})', 'Goto(p4a-ext-run,s,1)']))
   }
   for (const g of cfg.groups) {
