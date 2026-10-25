@@ -30,9 +30,10 @@ describe('Zugriff von unterwegs', () => {
     expect(ext).toContain('Set(A=${PJSIP_DIAL_CONTACTS(${ARG1}-app)})')
   })
 
-  it('lässt alles weg, wenn der Zugriff von unterwegs aus ist', () => {
+  it('lässt alles weg, wenn der Zugriff von unterwegs und Videoanrufe aus sind', () => {
     const cfg = sampleConfig()
     cfg.remote.enabled = false
+    cfg.messenger.video = false
     const files = generate(cfg, gen)
     expect(files['pjsip.conf']).not.toContain('-app')
     expect(files['http.conf']).toContain('enabled=no')

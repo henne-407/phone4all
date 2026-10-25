@@ -15,6 +15,7 @@ import { writeAtomic } from './files'
 import { type GenContext, generate } from './generate'
 import type { PbxConfig } from './model'
 import { PATHS, SETTINGS } from './paths'
+import { webrtcEnabled } from './remote'
 
 const SECRET_FILES = new Set(['pjsip.conf', 'voicemail.conf', 'manager.conf', 'msmtprc'])
 
@@ -212,7 +213,7 @@ export class Asterisk extends EventEmitter {
       }
     }
     const s = cfg.system
-    const transport = JSON.stringify([s.sip_port, s.tls_port, s.external_address, s.local_nets, s.rtp_start, s.rtp_end, cfg.remote.enabled])
+    const transport = JSON.stringify([s.sip_port, s.tls_port, s.external_address, s.local_nets, s.rtp_start, s.rtp_end, webrtcEnabled(cfg)])
     const restart = this.lastTransport !== '' && transport !== this.lastTransport
     this.lastTransport = transport
     if (!this.ami.connected) return

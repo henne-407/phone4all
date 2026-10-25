@@ -53,6 +53,7 @@ mac:
   hardenedRuntime: false
   extendInfo:
     NSMicrophoneUsageDescription: Phone4All braucht das Mikrofon für Telefongespräche.
+    NSCameraUsageDescription: Phone4All braucht die Kamera für Videoanrufe im Messenger.
     LSMultipleInstancesProhibited: true
   extraResources:
     - from: build/engine

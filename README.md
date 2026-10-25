@@ -147,7 +147,7 @@ holen sich ihre Einrichtung selbst.
 - Wahlregeln mit Ausweichkonto
 - Zentrales Telefonbuch, auch per LDAP
 - Zentrale Kalender für alle Apps
-- Messenger: Einzel- und Gruppenchats mit Dateien
+- Messenger: Einzel- und Gruppenchats mit Dateien und Videoanrufen
 - App-Profile: was die Apps zeigen
 
 </td>

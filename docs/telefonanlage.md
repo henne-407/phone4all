@@ -206,6 +206,15 @@ Nachrichten, aber keine Inhalte; einzelne Unterhaltungen lassen sich löschen.
 Wer den Messenger nutzen darf, steuern die App-Profile: Nebenstellen mit einem Profil ohne
 den Bereich *Messenger* sind nicht dabei. Nebenstellen ohne Profil sehen ihn immer.
 
+**Videoanrufe in den Chats** (eingeschaltet, solange der Messenger an ist): Jeder Chat hat
+einen eigenen Konferenzraum, in den die Desktop-App per WebRTC (VP8 und Opus) wählt. Die
+Anlage leitet jedes Bild einzeln an die anderen weiter, statt es neu zu mischen; das
+schont den Prozessor, braucht aber je Teilnehmer Bandbreite für alle Bilder. Die Apps
+melden sich dafür als eigenes Gerät `<nummer>-video` an, das nur Chat-Räume anrufen kann,
+in denen die Nebenstelle Mitglied ist. Der Überblick zeigt, wie viele Videoanrufe gerade
+laufen. Für Anrufe von unterwegs gelten dieselben Voraussetzungen wie für die Mobil-App
+(*System → Fernzugriff*).
+
 ## Auswertung und System
 
 ### Anrufliste

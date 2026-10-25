@@ -20,7 +20,7 @@ import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, type P
 import { PATHS, SETTINGS } from './paths'
 import { PROVIDERS } from './providers'
 import { appLink, baseUrl, landingPage, linkBase, profile, startDiscovery, visibleCalendars } from './provisioning'
-import { Turn, WsProxy, appEndpoint } from './remote'
+import { Turn, WsProxy, appEndpoint, webrtcEnabled } from './remote'
 import {
   appPermissions,
   extensionPlan,
@@ -44,7 +44,7 @@ const store = new ConfigStore()
 const auth = new Auth()
 const asterisk = new Asterisk()
 const turn = new Turn()
-const ws = new WsProxy(() => store.config.remote.enabled, (ip) => guard.isBanned(ip))
+const ws = new WsProxy(() => webrtcEnabled(store.config), (ip) => guard.isBanned(ip))
 // Fehlanmeldungen über den WebSocket-Proxy der echten Adresse des Telefons zuordnen
 const guard = new Guard(() => store.config.security, (port) => ws.clientOf(port))
 const updater = new Updater()
@@ -134,7 +134,11 @@ guard.on('changed', () => {
   for (const ip of guard.banned()) ws.kick(ip)
   applySoon()
 })
-asterisk.on('ami', (e) => guard.onAmiEvent(e))
+asterisk.on('ami', (e) => {
+  guard.onAmiEvent(e)
+  messenger.onAmi(e)
+})
+asterisk.ami.on('disconnected', () => messenger.resetCalls())
 
 // -- Interne Schnittstelle für den Wählplan (nur von localhost) ------------------
 
@@ -160,6 +164,7 @@ internal.get('/internal/ext', (r) => extensionPlan(store.config, store.state, r.
 internal.get('/internal/group', (r) =>
   groupPlan(store.config, store.state, r.query.get('id') ?? '', r.query.get('name') ?? '', PATHS.sounds),
 )
+internal.get('/internal/video', (r) => (messenger.mayJoin(r.query.get('ext') ?? '', r.query.get('room') ?? '') ? '1' : '0'))
 internal.get('/internal/tc', (r) => timeConditionTarget(store.config, r.query.get('id') ?? ''))
 internal.get('/internal/available', (r) => (isAvailable(store.state, r.query.get('num') ?? '', store.config) ? '1' : '0'))
 internal.get('/internal/feature', (r) => {
@@ -579,6 +584,7 @@ api.get('/api/messenger', () => {
   return {
     online: messenger.online(),
     connections: messenger.connections,
+    calls: messenger.activeCalls,
     usage: messenger.store.usage(),
     free: freeBytes(),
     users: messengerUsers(store.config).length,

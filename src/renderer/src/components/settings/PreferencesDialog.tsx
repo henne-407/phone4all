@@ -99,7 +99,7 @@ function AccountTab({
     />
   )
   return (
-    <Stack sx={{ gap: 1.5 }}>
+    <Stack sx={{ gap: 2 }}>
       <Alert
         severity={pbx.pbx ? 'success' : 'info'}
         icon={false}
@@ -120,11 +120,13 @@ function AccountTab({
           : 'Phone4all-Telefonanlage? Dann richtet sich die App mit Nebenstelle und Einrichtungs-PIN von selbst ein.'}
       </Alert>
       {pbxSetup && <PbxSetupDialog onClose={() => setPbxSetup(false)} onApplied={onPbxApplied} />}
-      <Typography variant="subtitle1">SIP-Konto</Typography>
-      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-        Die Zugangsdaten findest du in der Oberfläche deiner Telefonanlage (z. B. FRITZ!Box: Telefonie → Telefoniegeräte →
-        IP-Telefon).
-      </Typography>
+      <Box sx={{ mt: 1 }}>
+        <Typography variant="subtitle1">SIP-Konto</Typography>
+        <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.25 }}>
+          Die Zugangsdaten findest du in der Oberfläche deiner Telefonanlage (z. B. FRITZ!Box: Telefonie → Telefoniegeräte →
+          IP-Telefon).
+        </Typography>
+      </Box>
       {field('domain', 'Server / Domain  (z. B. fritz.box oder 192.168.178.1)', { autoFocus: !acc.domain })}
       {field('user', 'Benutzername / Durchwahl')}
       <TextField
@@ -134,15 +136,15 @@ function AccountTab({
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         error={password.includes(';')}
-        helperText={password.includes(';') ? 'Das Zeichen „;“ wird von baresip nicht unterstützt' : ' '}
+        helperText={password.includes(';') ? 'Das Zeichen „;“ wird von baresip nicht unterstützt' : undefined}
       />
       {field('display_name', 'Anzeigename (optional)')}
-      <Accordion disableGutters variant="outlined" sx={{ mt: 1 }} disabled={locked}>
+      <Accordion disableGutters variant="outlined" disabled={locked}>
         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
           <ListItemText primary="Erweiterte Kontoeinstellungen" secondary="Nur nötig, wenn deine Anlage es verlangt" />
         </AccordionSummary>
         <AccordionDetails>
-          <Stack sx={{ gap: 1.5 }}>
+          <Stack sx={{ gap: 2 }}>
             {field('auth_user', 'Authentifizierungs-Benutzer (falls abweichend)')}
             {field('outbound', 'Outbound-Proxy (optional)')}
             {field('stun', 'STUN-Server (optional, z. B. stun.example.org)')}

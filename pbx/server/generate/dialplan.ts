@@ -5,6 +5,7 @@
  */
 
 import type { PbxConfig } from '../model'
+import { videoEnabled } from '../remote'
 import { destTarget, gotoArgs } from '../targets'
 import type { GenContext } from './context'
 
@@ -348,6 +349,23 @@ export function extensionsConf(cfg: PbxConfig, gen: GenContext): string {
     conf.push(exten(c.number, steps))
   }
   parts.push(ctx('p4a-conf', ...conf))
+
+  // Videoanrufe aus dem Messenger: Raum-ID wählen, die Anlage prüft die Mitgliedschaft
+  if (videoEnabled(cfg)) {
+    parts.push(
+      ctx(
+        'p4a-video',
+        exten('_[dg].', [
+          CURL_TIMEOUT,
+          'GotoIf($["${CURL(${P4A_API}/video?ext=${P4A_EXT}&room=${URIENCODE(${EXTEN})})}" = "1"]?join)',
+          'Hangup(21)',
+          '(join)Answer()',
+          'ConfBridge(p4a-chat-${EXTEN},p4a-video,p4a-video-user)',
+          'Hangup()',
+        ]),
+      ),
+    )
+  }
 
   // Ansagen
   for (const a of cfg.announcements) {

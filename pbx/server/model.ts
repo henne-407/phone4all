@@ -333,6 +333,8 @@ export interface MessengerSettings {
   max_file_mb: number
   /** Alte Nachrichten werden nur gelöscht, wenn weniger Speicher frei ist (MB) */
   min_free_mb: number
+  /** Videoanrufe in den Chats (WebRTC über /ws, Konferenzraum je Unterhaltung) */
+  video: boolean
 }
 
 /** Unterhaltung: Einzelchat (zwei Nebenstellen) oder Gruppe */
@@ -557,7 +559,7 @@ export const DEFAULT_CONFIG: PbxConfig = {
   watchdog: { auto_repair: true, trunk_grace: 3, notify_email: '' },
   integration: { enabled: false, token: '' },
   ldap: { enabled: false, port: 389, password: '' },
-  messenger: { enabled: true, max_file_mb: 25, min_free_mb: 2048 },
+  messenger: { enabled: true, max_file_mb: 25, min_free_mb: 2048, video: true },
 }
 
 /** Listen der Konfiguration, die die Weboberfläche einheitlich bearbeitet. */

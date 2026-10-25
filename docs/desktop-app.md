@@ -143,7 +143,26 @@ eingeschaltet, erscheint links der Bereich **Messenger**:
 
 Die Nachrichten liegen auf der Anlage, die App lädt den Verlauf beim Öffnen. Unterwegs
 funktioniert der Messenger über dieselbe HTTPS-Adresse wie die Einrichtung (siehe
-[Fernzugriff](fernzugriff.md)). Videoanrufe folgen in einer späteren Version.
+[Fernzugriff](fernzugriff.md)).
+
+### Videoanrufe
+
+![Videoanruf](bilder/app-videoanruf.png)
+
+Die Kamera oben im Chat startet einen Videoanruf mit allen Mitgliedern, im Einzelchat wie
+in Gruppen. Bei den anderen klingelt es (Fenster und Systembenachrichtigung) mit
+**Annehmen**, **Nur Ton** oder **Ablehnen**; wer später dazukommen will, tippt im Chat auf
+**Beitreten**. In der Anrufansicht lassen sich Mikrofon und Kamera abschalten, mit dem
+Pfeil oben rechts wird sie zur kleinen Leiste und der Chat bleibt bedienbar. Am Ende steht
+im Chat „Videoanruf, Dauer“ oder „Verpasster Videoanruf“.
+
+![Eingehender Videoanruf](bilder/app-videoanruf-klingeln.png)
+
+Bild und Ton laufen per WebRTC über die Anlage (eine Konferenz je Chat, jedes Bild wird
+einzeln weitergeleitet). Im LAN braucht es dafür nichts weiter; unterwegs dieselben
+Einstellungen wie für die Mobil-App (WebSocket `/ws` und TURN, siehe
+[Fernzugriff](fernzugriff.md)). Auf dem Mac fragt das System beim ersten Anruf nach Kamera
+und Mikrofon.
 
 ## Kalender
 

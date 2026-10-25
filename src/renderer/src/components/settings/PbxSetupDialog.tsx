@@ -120,7 +120,7 @@ export function PbxSetupDialog({
         ) : (
           <Stack
             component="form"
-            sx={{ gap: 1.5 }}
+            sx={{ gap: 2 }}
             onSubmit={(e) => {
               e.preventDefault()
               if (canLogin) void load(() => api.pbxFromPin(server, extension, pin))

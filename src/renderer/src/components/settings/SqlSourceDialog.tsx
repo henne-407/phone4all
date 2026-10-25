@@ -89,9 +89,9 @@ export function SqlSourceDialog({ existing, onClose }: { existing?: SqlSourceCon
     <Dialog open onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle>SQL-Server-Datenbank</DialogTitle>
       <DialogContent>
-        <Stack sx={{ gap: 1.5 }}>
+        <Stack sx={{ gap: 2 }}>
           <Typography variant="subtitle1">Verbindung</Typography>
-          <Stack direction="row" sx={{ gap: 1.5 }}>
+          <Stack direction="row" sx={{ gap: 2 }}>
             <TextField label="Server (Name oder IP, ggf. server\instanz)" value={conf.host} onChange={(e) => set('host', e.target.value)} autoFocus />
             <TextField
               label="Port"

@@ -3,7 +3,7 @@
  * aufrufbar (window.api.<name>(…)). Der Typ `Api` wird im Renderer importiert.
  */
 
-import { dialog, shell } from 'electron'
+import { dialog, shell, systemPreferences } from 'electron'
 import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -283,6 +283,22 @@ export function createApi(app: App) {
     messengerLeave: (room: string) => attempt(async () => app.messenger.leave(room)),
     messengerRead: (room: string, seq: number) => app.messenger.markRead(room, seq),
     messengerTyping: (room: string) => app.messenger.typing(room),
+    /** Zugang für Videoanrufe (SIP über WebSocket); null = nicht freigegeben */
+    messengerVideoAccount: () => {
+      const p = store.settings.provisioning
+      return p.messenger && p.video ? { ...p.video, password: store.getPassword() } : null
+    },
+    messengerDecline: (room: string) => app.messenger.decline(room),
+    /** macOS fragt beim ersten Videoanruf nach Kamera und Mikrofon */
+    messengerMediaAccess: async (video: boolean) => {
+      if (process.platform !== 'darwin') return true
+      const mic = await systemPreferences.askForMediaAccess('microphone')
+      return video ? mic && (await systemPreferences.askForMediaAccess('camera')) : mic
+    },
+    /** Raum des laufenden eigenen Videoanrufs (null = keiner); Updates warten so lange */
+    messengerInCall: (room: string | null) => {
+      app.videoCall = room
+    },
     /** Gerade geöffnete Unterhaltung (null = keine), für Benachrichtigungen */
     messengerFocus: (room: string | null) => {
       app.openChat = room
@@ -350,4 +366,6 @@ export interface RendererEvents {
   'messenger-message': [import('../shared/types').ChatMessage]
   'messenger-reset': []
   'messenger-open': [string]
+  'messenger-ring': [{ room: string; answer: boolean }]
+  'messenger-declined': [{ room: string; ext: string }]
 }

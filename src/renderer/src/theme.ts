@@ -42,22 +42,77 @@ function pressFeedback(onSurface: string, focus: string) {
   }
 }
 
+/** Farben eines M3-Schalters */
+interface SwitchColors {
+  on: string
+  onThumb: string
+  off: string
+  offTrack: string
+}
+
+/** M3-Schalter: breite Spur mit Rand, Daumen wächst beim Einschalten (in beiden Stilen) */
+function m3Switch(c: SwitchColors) {
+  return {
+    styleOverrides: {
+      root: { width: 64, height: 44, padding: 8 },
+      switchBase: {
+        padding: 12,
+        '&.Mui-checked': {
+          transform: 'translateX(20px)',
+          color: c.onThumb,
+          '& + .MuiSwitch-track': { backgroundColor: c.on, opacity: 1, border: 0 },
+          '& .MuiSwitch-thumb': { width: 20, height: 20, margin: 0, backgroundColor: c.onThumb },
+        },
+        '&.Mui-disabled + .MuiSwitch-track': { opacity: 0.38 },
+        '&.Mui-disabled .MuiSwitch-thumb': { opacity: 0.6 },
+      },
+      thumb: { width: 14, height: 14, margin: 3, boxShadow: 'none', backgroundColor: c.off, transition: 'width 150ms, height 150ms, margin 150ms' },
+      track: {
+        borderRadius: 14,
+        backgroundColor: c.offTrack,
+        border: `2px solid ${c.off}`,
+        opacity: 1,
+        boxSizing: 'border-box',
+      },
+    },
+  }
+}
+
 function buildClassic(primary: string, dark: boolean): Theme {
   const base = createTheme({ palette: { mode: dark ? 'dark' : 'light' } })
+  const main = base.palette.augmentColor({ color: { main: primary } })
+  // Karten heben sich vom Hintergrund ab (hell: weiß auf Grau, dunkel: heller auf dunkel)
+  const page = dark ? '#121212' : '#eef0f3'
+  const card = dark ? '#262626' : '#ffffff'
   return createTheme(base, {
     palette: {
-      primary: base.palette.augmentColor({ color: { main: primary } }),
+      primary: main,
+      background: { default: page, paper: card },
     },
     components: {
-      MuiCssBaseline: { styleOverrides: BEHAVIOUR },
+      MuiCssBaseline: { styleOverrides: { ...BEHAVIOUR, body: { ...BEHAVIOUR.body, backgroundColor: page } } },
       MuiButtonBase: pressFeedback(base.palette.text.primary, primary),
+      MuiPaper: { styleOverrides: { root: { backgroundImage: 'none' } } },
+      MuiCard: { styleOverrides: { root: { borderRadius: 8 } } },
       MuiTextField: { defaultProps: { fullWidth: true } },
+      MuiSwitch: m3Switch({
+        on: main.main,
+        onThumb: main.contrastText,
+        off: dark ? '#9e9e9e' : '#757575',
+        offTrack: dark ? '#424242' : '#e8e8e8',
+      }),
     },
   })
 }
 
 function buildMaterial3(md: Roles, dark: boolean): Theme {
   const base = createTheme({ palette: { mode: dark ? 'dark' : 'light' } })
+  // Deutlicher Abstand zwischen Seite und Karten: hell liegen helle Karten auf getöntem
+  // Grund, dunkel heben sich hellere Karten vom dunklen Grund ab
+  const page = dark ? md.surface : md.surfaceContainerHigh
+  const card = dark ? md.surfaceContainerHigh : md.surface
+  // Eingabefelder als Tönung, damit sie auf jeder Fläche sichtbar bleiben
+  const field = dark ? alpha(md.onSurface, 0.08) : md.surfaceContainerHighest
   return createTheme(base, {
     palette: {
       primary: base.palette.augmentColor({ color: { main: md.primary, contrastText: md.onPrimary } }),
@@ -68,7 +123,7 @@ function buildMaterial3(md: Roles, dark: boolean): Theme {
       success: base.palette.augmentColor({
         color: { main: md.call, contrastText: dark ? '#00390f' : '#ffffff' },
       }),
-      background: { default: md.surface, paper: md.surfaceContainerLow },
+      background: { default: page, paper: card },
       text: { primary: md.onSurface, secondary: md.onSurfaceVariant },
       divider: md.outlineVariant,
       action: {
@@ -90,12 +145,13 @@ function buildMaterial3(md: Roles, dark: boolean): Theme {
       MuiCssBaseline: {
         styleOverrides: {
           ...BEHAVIOUR,
-          body: { ...BEHAVIOUR.body, backgroundColor: md.surface },
+          body: { ...BEHAVIOUR.body, backgroundColor: page },
           '*::-webkit-scrollbar': { width: 10, height: 10 },
           '*::-webkit-scrollbar-thumb': {
             backgroundColor: alpha(md.onSurface, 0.2),
             borderRadius: 8,
-            border: `2px solid ${md.surface}`,
+            border: '2px solid transparent',
+            backgroundClip: 'padding-box',
           },
           '*::-webkit-scrollbar-track': { background: 'transparent' },
         },
@@ -151,20 +207,21 @@ function buildMaterial3(md: Roles, dark: boolean): Theme {
         styleOverrides: {
           root: {
             borderRadius: 16,
-            backgroundColor: md.surfaceContainerLow,
-            variants: [{ props: { variant: 'outlined' }, style: { backgroundColor: md.surface, borderColor: md.outlineVariant } }],
+            backgroundColor: card,
+            boxShadow: dark ? 'none' : `0 1px 2px ${alpha('#000', 0.06)}`,
+            variants: [{ props: { variant: 'outlined' }, style: { backgroundColor: card, borderColor: md.outlineVariant, boxShadow: 'none' } }],
           },
         },
       },
       MuiCardActionArea: { styleOverrides: { root: { borderRadius: 16 } } },
       MuiDialog: {
-        styleOverrides: { paper: { borderRadius: 28, backgroundColor: md.surfaceContainerHigh } },
+        styleOverrides: { paper: { borderRadius: 28, backgroundColor: dark ? md.surfaceContainerHigh : md.surface } },
       },
       MuiDialogTitle: { styleOverrides: { root: { fontSize: '1.5rem', fontWeight: 400, paddingTop: 24 } } },
       MuiMenu: {
-        styleOverrides: { paper: { borderRadius: 12, backgroundColor: md.surfaceContainer, minWidth: 200 } },
+        styleOverrides: { paper: { borderRadius: 12, backgroundColor: dark ? md.surfaceContainerHigh : md.surface, minWidth: 200 } },
       },
-      MuiPopover: { styleOverrides: { paper: { borderRadius: 16, backgroundColor: md.surfaceContainer } } },
+      MuiPopover: { styleOverrides: { paper: { borderRadius: 16, backgroundColor: dark ? md.surfaceContainerHigh : md.surface } } },
       MuiTooltip: {
         defaultProps: { enterDelay: 600, disableInteractive: true },
         styleOverrides: { tooltip: { backgroundColor: md.onSurface, color: md.surface, fontSize: 12, borderRadius: 6 } },
@@ -177,9 +234,9 @@ function buildMaterial3(md: Roles, dark: boolean): Theme {
           root: {
             borderTopLeftRadius: 8,
             borderTopRightRadius: 8,
-            backgroundColor: md.surfaceContainerHighest,
-            '&:hover': { backgroundColor: alpha(md.onSurface, 0.1) },
-            '&.Mui-focused': { backgroundColor: md.surfaceContainerHighest },
+            backgroundColor: field,
+            '&:hover': { backgroundColor: dark ? alpha(md.onSurface, 0.12) : alpha(md.onSurface, 0.1) },
+            '&.Mui-focused': { backgroundColor: field },
           },
         },
       },
@@ -187,33 +244,10 @@ function buildMaterial3(md: Roles, dark: boolean): Theme {
       MuiSnackbarContent: {
         styleOverrides: { root: { backgroundColor: md.onSurface, color: md.surface, borderRadius: 8 } },
       },
-      // M3-Schalter: breite Spur mit Rand, Daumen wächst beim Einschalten
-      MuiSwitch: {
-        styleOverrides: {
-          root: { width: 64, height: 44, padding: 8 },
-          switchBase: {
-            padding: 12,
-            '&.Mui-checked': {
-              transform: 'translateX(20px)',
-              color: md.onPrimary,
-              '& + .MuiSwitch-track': { backgroundColor: md.primary, opacity: 1, border: 0 },
-              '& .MuiSwitch-thumb': { width: 20, height: 20, margin: 0, backgroundColor: md.onPrimary },
-            },
-            '&.Mui-disabled + .MuiSwitch-track': { opacity: 0.38 },
-          },
-          thumb: { width: 14, height: 14, margin: 3, boxShadow: 'none', backgroundColor: md.outline },
-          track: {
-            borderRadius: 14,
-            backgroundColor: md.surfaceContainerHighest,
-            border: `2px solid ${md.outline}`,
-            opacity: 1,
-            boxSizing: 'border-box',
-          },
-        },
-      },
+      MuiSwitch: m3Switch({ on: md.primary, onThumb: md.onPrimary, off: md.outline, offTrack: md.surfaceContainerHighest }),
       // Navigationsleiste unten: aktives Symbol in einer Pille
       MuiBottomNavigation: {
-        styleOverrides: { root: { height: 72, backgroundColor: md.surfaceContainer } },
+        styleOverrides: { root: { height: 72, backgroundColor: dark ? md.surfaceContainer : md.surfaceContainerHigh } },
       },
       MuiBottomNavigationAction: {
         styleOverrides: {
@@ -233,7 +267,7 @@ function buildMaterial3(md: Roles, dark: boolean): Theme {
         styleOverrides: {
           // doppelte Klasse, damit es auch gegen die Trennlinie aus sx greift
           root: {
-            '&.MuiTabs-vertical': { backgroundColor: md.surface, borderRight: 0, paddingTop: 8 },
+            '&.MuiTabs-vertical': { backgroundColor: 'transparent', borderRight: 0, paddingTop: 8 },
             '&.MuiTabs-vertical .MuiTabs-indicator': { display: 'none' },
           },
         },

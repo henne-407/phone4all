@@ -20,6 +20,7 @@ import type {
   PbxFound,
   PbxPermission,
   PbxPreview,
+  VideoAccount,
 } from '../shared/types'
 import { loadJson, saveJson } from './files'
 import type { Store } from './store'
@@ -47,7 +48,25 @@ export interface PbxProfile {
   calendars: PbxCalendar[]
   permissions: PbxPermission[]
   messenger: boolean
+  video: VideoAccount | null
   revision: string
+}
+
+function parseVideo(data: unknown): VideoAccount | null {
+  const v = data as Partial<VideoAccount> | null
+  if (!v || typeof v.websocket !== 'string' || !/^wss?:\/\//.test(v.websocket) || typeof v.user !== 'string' || !v.user) return null
+  return {
+    websocket: v.websocket,
+    user: v.user,
+    domain: String(v.domain ?? ''),
+    ice_servers: (Array.isArray(v.ice_servers) ? v.ice_servers : [])
+      .filter((s) => s && Array.isArray(s.urls))
+      .map((s) => ({
+        urls: s.urls.map(String),
+        ...(typeof s.username === 'string' ? { username: s.username } : {}),
+        ...(typeof s.credential === 'string' ? { credential: s.credential } : {}),
+      })),
+  }
 }
 
 const PERMISSIONS: PbxPermission[] = ['forward', 'forward_external', 'forward_rules', 'calendar_edit', 'phonebook_edit']
@@ -123,6 +142,7 @@ export function parseProfile(data: unknown): PbxProfile {
     calendars: parseCalendars(p.calendars),
     permissions: parsePermissions(p.permissions),
     messenger: p.messenger === true,
+    video: p.messenger === true ? parseVideo(p.video) : null,
     revision: String(p.revision ?? ''),
   }
 }
@@ -403,7 +423,7 @@ export class Provisioning {
     if (this.accountLocked) throw new Error('Die Telefonanlage verwaltet dieses Konto. Bitte in der Anlage das App-Profil ändern.')
     const { store } = this.host
     store.deleteSecret(URL_SECRET)
-    store.settings.provisioning = { pbx: '', extension: '', server: '', updated: 0, policy: null, calendars: [], permissions: [], messenger: false }
+    store.settings.provisioning = { pbx: '', extension: '', server: '', updated: 0, policy: null, calendars: [], permissions: [], messenger: false, video: null }
     store.saveSettings()
     this.revision = { profile: '', events: '' }
     this.forward = null
@@ -442,6 +462,7 @@ export class Provisioning {
       calendars: p.calendars,
       permissions: p.permissions,
       messenger: p.messenger,
+      video: p.video,
     }
     this.revision.profile = p.revision
     store.settings.registered = true

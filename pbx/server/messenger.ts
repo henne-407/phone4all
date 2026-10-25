@@ -286,6 +286,33 @@ type ClientMessage =
   | { t: 'leave'; room: string }
   | { t: 'read'; room: string; seq: number }
   | { t: 'typing'; room: string }
+  | { t: 'decline'; room: string }
+
+/** Laufender Videoanruf eines Raums (Konferenz p4a-chat-<raum>) */
+interface Call {
+  since: number
+  /** wer angefangen hat */
+  by: string
+  /** Kanal → Nebenstelle */
+  channels: Map<string, string>
+  /** alle, die irgendwann dabei waren */
+  joined: Set<string>
+}
+
+export interface CallView {
+  since: number
+  by: string
+  participants: string[]
+}
+
+/** Konferenzraum der Anlage zu einem Chat */
+export const CALL_PREFIX = 'p4a-chat-'
+
+function duration(ms: number): string {
+  const s = Math.max(1, Math.round(ms / 1000))
+  const m = Math.floor(s / 60)
+  return m >= 60 ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')} Std.` : `${m}:${String(s % 60).padStart(2, '0')} Min.`
+}
 
 interface Client {
   ext: string
@@ -295,6 +322,7 @@ interface Client {
 
 export class MessengerHub {
   private clients = new Set<Client>()
+  private calls = new Map<string, Call>()
 
   constructor(
     readonly store: MessengerStore,
@@ -348,6 +376,12 @@ export class MessengerHub {
         users: this.users(),
         online: this.online(),
         rooms: this.store.roomsFor(ext).map((r) => this.store.view(r, ext)),
+        calls: Object.fromEntries(
+          this.store
+            .roomsFor(ext)
+            .filter((r) => this.calls.has(r.id))
+            .map((r) => [r.id, this.callView(r.id)]),
+        ),
       }),
     )
     if (!wasOnline) this.broadcast({ t: 'presence', online: this.online() })
@@ -446,6 +480,12 @@ export class MessengerHub {
         for (const m of r.members) if (m !== c.ext) this.sendTo(m, { t: 'typing', room: r.id, ext: c.ext })
         break
       }
+      case 'decline': {
+        // Anruf abgelehnt: alle Geräte hören auf zu klingeln, im Einzelchat legt der Anrufer auf
+        const r = s.room(String(msg.room), c.ext)
+        for (const m of r.members) this.sendTo(m, { t: 'declined', room: r.id, ext: c.ext })
+        break
+      }
     }
   }
 
@@ -471,6 +511,68 @@ export class MessengerHub {
       if (!ext || ext.provision_token !== c.token) c.conn.close(4003, 'Kein Zugriff mehr')
     }
     this.broadcast({ t: 'users', users: this.users() })
+  }
+
+  // -- Videoanrufe ---------------------------------------------------------------------
+
+  /** Darf die Nebenstelle dem Videoanruf des Raums beitreten? (Abfrage aus dem Wählplan) */
+  mayJoin(ext: string, room: string): boolean {
+    const cfg = this.config()
+    if (!cfg.messenger.video || !messengerUsers(cfg).some((e) => e.number === ext)) return false
+    return this.store.rooms.get(room)?.members.includes(ext) ?? false
+  }
+
+  get activeCalls(): number {
+    return this.calls.size
+  }
+
+  private callView(room: string): CallView | null {
+    const call = this.calls.get(room)
+    return call ? { since: call.since, by: call.by, participants: [...new Set(call.channels.values())] } : null
+  }
+
+  private publishCall(room: string): void {
+    const r = this.store.rooms.get(room)
+    if (!r) return
+    for (const m of r.members) this.sendTo(m, { t: 'call', room, call: this.callView(room) })
+  }
+
+  /** Ereignisse der Konferenzen (AMI): wer ist im Videoanruf welches Raums */
+  onAmi(e: Record<string, string>): void {
+    if (e.Event !== 'ConfbridgeJoin' && e.Event !== 'ConfbridgeLeave') return
+    if (!e.Conference?.startsWith(CALL_PREFIX)) return
+    const room = e.Conference.slice(CALL_PREFIX.length)
+    const ext = /^PJSIP\/(.+)-video-[0-9a-f]+$/.exec(e.Channel ?? '')?.[1] ?? e.CallerIDNum ?? ''
+    let call = this.calls.get(room)
+    if (e.Event === 'ConfbridgeJoin') {
+      if (!call) {
+        call = { since: Date.now(), by: ext, channels: new Map(), joined: new Set() }
+        this.calls.set(room, call)
+      }
+      call.channels.set(e.Channel, ext)
+      call.joined.add(ext)
+      this.publishCall(room)
+      return
+    }
+    if (!call) return
+    call.channels.delete(e.Channel)
+    if (call.channels.size) return void this.publishCall(room)
+    this.calls.delete(room)
+    this.publishCall(room)
+    const r = this.store.rooms.get(room)
+    if (!r) return
+    const text =
+      call.joined.size > 1
+        ? `Videoanruf, ${duration(Date.now() - call.since)}`
+        : `Verpasster Videoanruf von ${this.nameOf(call.by)}`
+    this.publishMessage(r, this.store.post(r, '', text))
+  }
+
+  /** Verbindung zu Asterisk verloren: Anrufe sind beendet */
+  resetCalls(): void {
+    const rooms = [...this.calls.keys()]
+    this.calls.clear()
+    for (const room of rooms) this.publishCall(room)
   }
 
   /** Unterhaltung wurde in der Verwaltung gelöscht */

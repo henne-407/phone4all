@@ -74,7 +74,7 @@ export function DavAccountDialog({ kind, onClose }: { kind: DavKind; onClose: ()
       <DialogContent>
         <Stack
           component="form"
-          sx={{ gap: 1.5 }}
+          sx={{ gap: 2 }}
           onSubmit={(e) => {
             e.preventDefault()
             void connect()

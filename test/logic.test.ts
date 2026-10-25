@@ -309,6 +309,11 @@ describe('Einrichtung durch die Telefonanlage', () => {
     expect(parseProfile(profile).app).toBeNull()
     expect(parseProfile(profile).messenger).toBe(false)
     expect(parseProfile({ ...profile, messenger: true }).messenger).toBe(true)
+    // Videoanrufe nur mit Messenger und gültiger WebSocket-Adresse
+    const video = { websocket: 'ws://192.168.1.5:8080/ws', user: '10-video', domain: '192.168.1.5', ice_servers: [{ urls: ['stun:x:3478'] }, { bad: 1 }] }
+    expect(parseProfile({ ...profile, messenger: true, video }).video).toEqual({ ...video, ice_servers: [{ urls: ['stun:x:3478'] }] })
+    expect(parseProfile({ ...profile, messenger: false, video }).video).toBeNull()
+    expect(parseProfile({ ...profile, messenger: true, video: { ...video, websocket: 'http://x' } }).video).toBeNull()
     expect(parsePolicy({ pages: ['messenger', 'dial'] })?.pages).toEqual(['messenger', 'dial'])
     expect(parsePolicy({ pages: [] })).toBeNull()
   })
