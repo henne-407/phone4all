@@ -11,10 +11,11 @@ import {
   DEFAULT_CONFIG,
   type DectBase,
   type Extension,
+  type ForwardRule,
   type PbxConfig,
   withDefaults,
 } from './model'
-import { isInternalNumber } from './numbers'
+import { cleanNumber, isInternalNumber } from './numbers'
 import { PATHS, SETTINGS } from './paths'
 import type { RuntimeState } from './routing'
 
@@ -71,12 +72,25 @@ function usedNumbers(cfg: PbxConfig): Map<string, string> {
   return used
 }
 
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
+
+function validateRule(num: string, r: ForwardRule): void {
+  if (!r.id) r.id = newId()
+  if (!['schedule', 'timecondition', 'dnd'].includes(r.when)) throw new ValidationError(`Nebenstelle ${num}: unbekannte Umleitungsregel.`)
+  if (!cleanNumber(r.target)) throw new ValidationError(`Nebenstelle ${num}: Bei einer Umleitungsregel fehlt das Ziel.`)
+  if (r.when === 'schedule') {
+    if (!TIME.test(r.from) || !TIME.test(r.to)) throw new ValidationError(`Nebenstelle ${num}: Uhrzeit der Umleitungsregel im Format 18:00 angeben.`)
+    if (!r.days.length || r.days.some((d) => d < 1 || d > 7)) throw new ValidationError(`Nebenstelle ${num}: Wochentage der Umleitungsregel fehlen.`)
+  }
+}
+
 export function validate(cfg: PbxConfig): void {
   for (const e of cfg.extensions) {
     if (!isInternalNumber(e.number)) throw new ValidationError(`Ungültige Nebenstelle „${e.number}“: 2–6 Ziffern, nicht mit 0 beginnend.`)
     if (!e.name.trim()) throw new ValidationError(`Nebenstelle ${e.number}: Name fehlt.`)
     if (e.secret && e.secret.length < 8) throw new ValidationError(`Nebenstelle ${e.number}: Das SIP-Passwort braucht mindestens 8 Zeichen.`)
     if (/[;\s]/.test(e.secret)) throw new ValidationError(`Nebenstelle ${e.number}: Das SIP-Passwort darf keine Leerzeichen oder „;“ enthalten.`)
+    for (const r of e.forward.rules) validateRule(e.number, r)
   }
   for (const g of cfg.groups) {
     if (g.number && !isInternalNumber(g.number)) throw new ValidationError(`Gruppe ${g.name}: ungültige Nummer „${g.number}“.`)

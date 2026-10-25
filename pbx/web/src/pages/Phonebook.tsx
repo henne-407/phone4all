@@ -1,10 +1,10 @@
 import MenuBookIcon from '@mui/icons-material/MenuBook'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
 import { Alert, Box, Button, FormControlLabel, Stack, Switch, TextField } from '@mui/material'
-import { useEffect, useRef, useState } from 'react'
+import { useRef } from 'react'
 import type { LdapSettings, PhonebookEntry } from '../../../server/model'
 import { api } from '../api'
-import { CollectionPage, FormGrid, NumberField, Section, StatusDot } from '../components/common'
+import { ChangesBar, CollectionPage, FormGrid, NumberField, Section, StatusDot, useDraft } from '../components/common'
 import { usePbx } from '../state'
 import { CopyField, LDAP_NAME_FILTER, LDAP_NUMBER_FILTER, useDectInfo } from './Dect'
 
@@ -40,60 +40,54 @@ function parseCsv(text: string): Omit<PhonebookEntry, 'id'>[] {
 
 /** Telefonbuch per LDAP für DECT-Basen und Tischtelefone */
 function Ldap() {
-  const { config, saveSection, toast } = usePbx()
-  const [draft, setDraft] = useState<LdapSettings>(config.ldap)
-  useEffect(() => setDraft(config.ldap), [config.ldap])
+  const { config, saveSection } = usePbx()
+  const d = useDraft<LdapSettings>(config.ldap)
+  const { draft, replace: setDraft } = d
   const info = useDectInfo([config.ldap])
-  const save = (values: Partial<LdapSettings>): void =>
-    void saveSection('ldap', values)
-      .then(() => toast('Gespeichert'))
-      .catch((e: Error) => toast(e.message, 'error'))
   const running = info?.ldap.listening
   return (
-    <Section
-      icon={<MenuBookIcon />}
-      title="Telefonbuch für DECT- und Tischtelefone (LDAP)"
-      description="Gigaset-Basen, Yealink, Snom und andere Telefone durchsuchen diese Kontakte und alle Nebenstellen über LDAP. Nur lesen, nur aus dem lokalen Netz (oder den erlaubten Netzen unter System → Sicherheit)."
-      action={
-        config.ldap.enabled && info ? (
-          <StatusDot color={running ? 'success' : 'error'} label={running ? `läuft auf Port ${info.ldap.port}` : info.ldap.error || 'startet nicht'} />
-        ) : undefined
-      }
-    >
-      <FormControlLabel control={<Switch checked={config.ldap.enabled} onChange={(e) => save({ enabled: e.target.checked })} />} label="LDAP-Telefonbuch einschalten" />
-      {config.ldap.enabled && (
-        <Stack sx={{ gap: 2, mt: 2 }}>
-          <FormGrid columns={3}>
-            <NumberField label="Port" value={draft.port} min={1} onChange={(port) => setDraft({ ...draft, port })} helperText="Standard 389" />
-            <TextField
-              label="Kennwort (optional)"
-              value={draft.password}
-              onChange={(e) => setDraft({ ...draft, password: e.target.value })}
-              helperText="Leer = Suche ohne Anmeldung"
-              autoComplete="off"
-            />
-            <Box sx={{ display: 'flex', alignItems: 'flex-start', pt: 1 }}>
-              <Button variant="contained" onClick={() => save(draft)}>
-                Speichern
-              </Button>
-            </Box>
-          </FormGrid>
-          {info && (
-            <FormGrid>
-              <CopyField label="Server" value={info.host} />
-              <CopyField label="Suchbasis (BaseDN)" value="dc=phone4all" />
-              {config.ldap.password && <CopyField label="Benutzer (Bind-DN)" value="cn=telefonbuch,dc=phone4all" helperText="Telefone können sich auch mit Nebenstelle und SIP-Passwort anmelden" />}
-              <CopyField label="Namensfilter" value={LDAP_NAME_FILTER} />
-              <CopyField label="Nummernfilter" value={LDAP_NUMBER_FILTER} />
+    <>
+      <Section
+        icon={<MenuBookIcon />}
+        title="Telefonbuch für DECT- und Tischtelefone (LDAP)"
+        description="Gigaset-Basen, Yealink, Snom und andere Telefone durchsuchen diese Kontakte und alle Nebenstellen über LDAP. Nur lesen, nur aus dem lokalen Netz (oder den erlaubten Netzen unter System → Sicherheit)."
+        action={
+          config.ldap.enabled && info ? (
+            <StatusDot color={running ? 'success' : 'error'} label={running ? `läuft auf Port ${info.ldap.port}` : info.ldap.error || 'startet nicht'} />
+          ) : undefined
+        }
+      >
+        <FormControlLabel control={<Switch checked={draft.enabled} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} />} label="LDAP-Telefonbuch einschalten" />
+        {draft.enabled && (
+          <Stack sx={{ gap: 2, mt: 2 }}>
+            <FormGrid columns={3}>
+              <NumberField label="Port" value={draft.port} min={1} onChange={(port) => setDraft({ ...draft, port })} helperText="Standard 389" />
+              <TextField
+                label="Kennwort (optional)"
+                value={draft.password}
+                onChange={(e) => setDraft({ ...draft, password: e.target.value })}
+                helperText="Leer = Suche ohne Anmeldung"
+                autoComplete="off"
+              />
             </FormGrid>
-          )}
-          <Alert severity="info" variant="outlined">
-            Attribute: Name <code>cn</code>, Vorname <code>givenName</code>, Nachname <code>sn</code>, Firma <code>o</code>, Telefon <code>telephoneNumber</code>, Mobil{' '}
-            <code>mobile</code>. Im Filter steht <code>%</code> für die Eingabe am Telefon.
-          </Alert>
-        </Stack>
-      )}
-    </Section>
+            {info && (
+              <FormGrid>
+                <CopyField label="Server" value={info.host} />
+                <CopyField label="Suchbasis (BaseDN)" value="dc=phone4all" />
+                {config.ldap.password && <CopyField label="Benutzer (Bind-DN)" value="cn=telefonbuch,dc=phone4all" helperText="Telefone können sich auch mit Nebenstelle und SIP-Passwort anmelden" />}
+                <CopyField label="Namensfilter" value={LDAP_NAME_FILTER} />
+                <CopyField label="Nummernfilter" value={LDAP_NUMBER_FILTER} />
+              </FormGrid>
+            )}
+            <Alert severity="info" variant="outlined">
+              Attribute: Name <code>cn</code>, Vorname <code>givenName</code>, Nachname <code>sn</code>, Firma <code>o</code>, Telefon <code>telephoneNumber</code>, Mobil{' '}
+              <code>mobile</code>. Im Filter steht <code>%</code> für die Eingabe am Telefon.
+            </Alert>
+          </Stack>
+        )}
+      </Section>
+      <ChangesBar dirty={d.dirty} onApply={() => saveSection('ldap', draft)} onDiscard={d.reset} />
+    </>
   )
 }
 

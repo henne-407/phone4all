@@ -7,8 +7,9 @@
 import { createHash } from 'node:crypto'
 import dgram from 'node:dgram'
 import { directory } from './directory'
-import type { AppHomeCard, AppPage, CentralCalendar, Extension, PbxConfig } from './model'
+import type { AppHomeCard, AppPage, AppPermission, CentralCalendar, Extension, PbxConfig } from './model'
 import { SETTINGS } from './paths'
+import { appPermissions } from './routing'
 
 export const DISCOVERY_PORT = 15060
 export const PROVISIONING_FORMAT = 'phone4all-provisioning'
@@ -41,6 +42,8 @@ export interface ProvisioningProfile {
   app: AppPolicy | null
   /** Zentrale Kalender, Termine unter <url>/events */
   calendars: { id: string; name: string; color: string; writable: boolean }[]
+  /** Was die App einstellen darf; Umleitungen unter <url>/forward */
+  permissions: AppPermission[]
   /** Ändert sich mit jeder Änderung am Profil; die App fragt <url>/revision ab */
   revision: string
 }
@@ -84,6 +87,7 @@ export function appLink(base: string, ext: Extension): string {
 
 export function profile(cfg: PbxConfig, ext: Extension, base: string): ProvisioningProfile {
   const domain = cfg.system.sip_host.trim() || new URL(base).hostname.replace(/^\[|\]$/g, '')
+  const permissions = appPermissions(cfg, ext.number)
   const phonebook = directory(cfg, ext.id).map(({ name, company, phone, mobile }) => ({ name, company, phone, mobile }))
   const result: Omit<ProvisioningProfile, 'revision'> = {
     format: PROVISIONING_FORMAT,
@@ -114,7 +118,13 @@ export function profile(cfg: PbxConfig, ext: Extension, base: string): Provision
       echo: '*43',
     },
     app: policy(cfg, ext),
-    calendars: visibleCalendars(cfg, ext).map((c) => ({ id: c.id, name: c.name, color: c.color, writable: c.writable && c.kind === 'events' })),
+    calendars: visibleCalendars(cfg, ext).map((c) => ({
+      id: c.id,
+      name: c.name,
+      color: c.color,
+      writable: c.writable && c.kind === 'events' && permissions.includes('calendar_edit'),
+    })),
+    permissions,
   }
   const revision = createHash('sha256').update(JSON.stringify(result)).digest('hex').slice(0, 16)
   return { ...result, revision }

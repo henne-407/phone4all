@@ -9,6 +9,7 @@ import { Auth, SESSION_COOKIE, SESSION_MAX_AGE } from './auth'
 import { readCalls, tailLog } from './cdr'
 import { describeAgent, gigasetFile, requestMac } from './dect'
 import { loadJson, saveJson } from './files'
+import { type ForwardChange, ForwardError, applyCfu, applyRules, check as checkForward, forwardInfo } from './forwarding'
 import { integrationReport, validToken } from './integration'
 import { LdapServer } from './ldap'
 import { HttpError, type Request, Router, makeRequest, sendFile, sendJson, sendText, serveStatic } from './http'
@@ -18,6 +19,7 @@ import { PATHS, SETTINGS } from './paths'
 import { PROVIDERS } from './providers'
 import { appLink, baseUrl, landingPage, profile, startDiscovery, visibleCalendars } from './provisioning'
 import {
+  appPermissions,
   extensionPlan,
   feature,
   groupPlan,
@@ -130,7 +132,7 @@ internal.get('/internal/group', (r) =>
   groupPlan(store.config, store.state, r.query.get('id') ?? '', r.query.get('name') ?? '', PATHS.sounds),
 )
 internal.get('/internal/tc', (r) => timeConditionTarget(store.config, r.query.get('id') ?? ''))
-internal.get('/internal/available', (r) => (isAvailable(store.state, r.query.get('num') ?? '') ? '1' : '0'))
+internal.get('/internal/available', (r) => (isAvailable(store.state, r.query.get('num') ?? '', store.config) ? '1' : '0'))
 internal.get('/internal/feature', (r) => {
   const result = feature(store.config, store.state, r.query.get('ext') ?? '', r.query.get('code') ?? '', r.query.get('arg') ?? '')
   if (result.stateChanged) store.saveState()
@@ -226,6 +228,9 @@ function writableFor(token: string, id: string): void {
   const cal = visibleCalendars(store.config, tokenExtension(token)).find((c) => c.id === id)
   if (!cal) throw new HttpError(404, 'Kalender nicht gefunden.')
   if (!cal.writable || cal.kind !== 'events') throw new HttpError(403, 'Dieser Kalender ist schreibgeschützt.')
+  if (!appPermissions(store.config, tokenExtension(token).number).includes('calendar_edit')) {
+    throw new HttpError(403, 'Termine bearbeiten ist für diese Nebenstelle nicht freigegeben.')
+  }
 }
 
 pub.put('/provision/:token/events/:calendar/:uid', async (r) => {
@@ -237,6 +242,28 @@ pub.delete('/provision/:token/events/:calendar/:uid', (r) => {
   writableFor(r.params.token, r.params.calendar)
   calendars.remove(r.params.calendar, r.params.uid)
   return { ok: true }
+})
+
+/** Umleitungen der Nebenstelle für die Statusleiste der App */
+pub.get('/provision/:token/forward', (r) => forwardInfo(store.config, store.state, tokenExtension(r.params.token)))
+
+pub.put('/provision/:token/forward', async (r) => {
+  const ext = tokenExtension(r.params.token)
+  const change = await r.json<ForwardChange>()
+  const rules = change.busy !== undefined || change.noanswer !== undefined || change.rules !== undefined
+  try {
+    // Erst die Sofort-Umleitung prüfen – sonst wären bei einem Fehler die Regeln schon gespeichert
+    if (change.cfu !== undefined) checkForward(store.config, ext.number, String(change.cfu))
+    if (rules) store.update((draft) => applyRules(draft, draft.extensions.find((e) => e.id === ext.id)!, change))
+    if (change.cfu !== undefined) {
+      applyCfu(store.config, store.state, ext.number, String(change.cfu))
+      store.saveState()
+    }
+  } catch (e) {
+    if (e instanceof ForwardError) throw new HttpError(403, e.message)
+    throw e
+  }
+  return forwardInfo(store.config, store.state, tokenExtension(r.params.token))
 })
 
 /** Einrichtung mit Nebenstelle und Einrichtungs-PIN */

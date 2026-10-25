@@ -22,6 +22,7 @@ import { useEffect, useState } from 'react'
 import type { Extension, Permission } from '../../../server/model'
 import { api } from '../api'
 import { CollectionPage, FormGrid, Full, Initials, NumberField, NumberPicker, Select, StatusDot, internalNumberOptions } from '../components/common'
+import { ForwardRules } from '../components/ForwardRules'
 import { usePbx } from '../state'
 import { useStatus } from '../useStatus'
 
@@ -175,6 +176,20 @@ function ExtensionForm({ value, onChange, isNew }: { value: Extension; onChange:
           options={internalNumberOptions(config).filter((o) => o.value !== value.number)}
           helperText="Leer = Voicemail (wenn eingeschaltet)"
         />
+        <Full>
+          <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>
+            Automatisch umleiten
+          </Typography>
+          <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5 }}>
+            Die erste greifende Regel leitet alle Anrufe um. Eine Sofort-Umleitung (*21 oder in der App) geht immer vor.
+          </Typography>
+          <ForwardRules
+            value={value.forward.rules}
+            onChange={(rules) => set('forward', { ...value.forward, rules })}
+            targets={internalNumberOptions(config).filter((o) => o.value !== value.number)}
+            timeconditions={config.timeconditions}
+          />
+        </Full>
         <FormControlLabel control={<Switch checked={value.voicemail.enabled} onChange={(e) => set('voicemail', { ...value.voicemail, enabled: e.target.checked })} />} label="Voicemail" />
         <TextField label="Voicemail-PIN" value={value.voicemail.pin} onChange={(e) => set('voicemail', { ...value.voicemail, pin: e.target.value.replace(/\D/g, '') })} disabled={!value.voicemail.enabled} helperText="Abhören mit *97 (am eigenen Telefon ohne PIN)" />
         <FormControlLabel control={<Switch checked={value.voicemail.attach} disabled={!value.voicemail.enabled} onChange={(e) => set('voicemail', { ...value.voicemail, attach: e.target.checked })} />} label="Nachricht als Anhang per E-Mail" />

@@ -33,13 +33,15 @@ anmelden: Desktop-App, Mobil-App, Tischtelefon, DECT-Mobilteil. Ein Anruf klinge
 | Darf anrufen | intern, Deutschland oder weltweit; Sonderrufnummern getrennt |
 | Klingeldauer | danach greift *Ohne Antwort weiterleiten an* bzw. die Voicemail |
 | Bei besetzt / ohne Antwort weiterleiten an | andere Nebenstelle, Gruppe, Voicemail oder externe Nummer |
+| Automatisch umleiten | Regeln: *zu bestimmten Zeiten* (Wochentage, von–bis, auch über Mitternacht), *nach Zeitsteuerung* (geöffnet/geschlossen) oder *bei „Nicht stören“*; die erste greifende Regel leitet alle Anrufe um |
 | Voicemail, Voicemail-PIN | Anrufbeantworter; *Nachricht als Anhang per E-Mail* |
 | Gespräche aufzeichnen | Aufnahmen erscheinen in der Anrufliste |
 | App-Profil | was die Apps zeigen (siehe [App-Profile](#app-profile)) |
 | Einrichtungslink, Einrichtungs-PIN, QR-Code | automatische Einrichtung der Apps; *Einladung per E-Mail* schickt beides an die Person |
 
 Die Liste zeigt, welche Geräte angemeldet sind und ob *Nicht stören* oder eine
-Rufumleitung aktiv ist (beides lässt sich hier auch ausschalten).
+Rufumleitung aktiv ist (beides lässt sich hier auch ausschalten). Eine Sofort-Umleitung
+(\*21 am Telefon oder in der Phone4All-App) geht den Regeln immer vor.
 
 ### Gruppen
 
@@ -54,6 +56,18 @@ Mehrere Nebenstellen unter einer Nummer:
 *Weiter zu* legt fest, wohin der Anruf geht, wenn niemand annimmt. *Vor den Anrufernamen
 setzen* zeigt am Telefon z. B. „Vertrieb: Anna Müller“, damit man weiß, über welche
 Nummer der Anruf kam. \*8 holt einen klingelnden Anruf der eigenen Gruppe heran.
+
+*Rechte der Mitglieder in der App* gibt allen Mitgliedern zusätzliche Rechte in der
+Phone4All-App, z. B. dem Empfang das Bearbeiten des Telefonbuchs. Die Grundrechte aller
+Nebenstellen stehen unter *System → Zugang*:
+
+| Recht | erlaubt in der App |
+| --- | --- |
+| Umleitung schalten | Sofort-Umleitung ein/aus (auch \*21 am Telefon) |
+| Nach außen umleiten | Umleitung auf externe Nummern statt nur auf Nebenstellen und Gruppen |
+| Umleitungsregeln bearbeiten | Weiterleitung bei besetzt/keine Antwort und Regeln nach Zeit |
+| Zentrale Kalender bearbeiten | Termine in beschreibbaren zentralen Kalendern |
+| Telefonbuch bearbeiten | Einträge im zentralen Telefonbuch |
 
 ### DECT-Telefone
 
@@ -171,6 +185,9 @@ lassen sich hier anhören.
 
 ### System
 
+Geänderte Einstellungen werden erst mit *Anwenden* in der Leiste am unteren Rand
+übernommen; *Verwerfen* stellt den gespeicherten Stand wieder her.
+
 | Reiter | Inhalt |
 | --- | --- |
 | Allgemein | Name, Adresse für Telefone, Länder-/Ortsvorwahl, Bundesland, Zeitzone, Ports, öffentliche Adresse (NAT), lokale Netze, Codecs |
@@ -178,7 +195,7 @@ lassen sich hier anhören.
 | Sicherheit | Sperre nach Fehlanmeldungen, nie sperren, Nebenstellen nur aus bestimmten Netzen, gesperrte Adressen |
 | Sicherung | Export, Import, automatische Sicherungen wiederherstellen |
 | Aktualisierung | neue Version installieren, Kanal stabil/Beta, automatisch nachts |
-| Zugang | Passwort der Weboberfläche, Suche der App im lokalen Netz |
+| Zugang | Passwort der Weboberfläche, Suche der App im lokalen Netz, Rechte aller Nebenstellen in der App |
 | Fernzugriff | öffentliche HTTPS-Adresse für Mobil-App und Einrichtungslinks ([Anleitung](fernzugriff.md)) |
 | Diagnose | Zustand, Watchdog-Einstellungen, Ereignisprotokoll |
 | Home Assistant | Schnittstelle einschalten, Zugriffsschlüssel ([Anleitung](home-assistant.md)) |

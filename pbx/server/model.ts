@@ -40,8 +40,11 @@ export interface Extension {
   permission: Permission
   allow_premium: boolean
   voicemail: { enabled: boolean; pin: string; attach: boolean }
-  /** Feste Weiterleitungen; die Sofort-Weiterleitung schaltet man per *21 am Telefon */
-  forward: { busy: string; noanswer: string }
+  /**
+   * Weiterleitungen bei besetzt / keine Antwort und Regeln (Zeitplan, Zeitsteuerung,
+   * Nicht stören). Die Sofort-Umleitung schaltet man per *21 oder in der App.
+   */
+  forward: { busy: string; noanswer: string; rules: ForwardRule[] }
   record: boolean
   /** Einrichtungs-PIN für die App (zusammen mit der Nebenstelle) */
   provision_pin: string
@@ -50,6 +53,32 @@ export interface Extension {
   /** App-Profil (Ansichten der Phone4All-App), leer = ohne Vorgaben */
   app_profile: string
 }
+
+/** Umleitung, die sich nach Zeit oder Zustand selbst einschaltet. */
+export interface ForwardRule {
+  id: string
+  enabled: boolean
+  /** schedule: eigene Zeiten · timecondition: Zeitsteuerung der Anlage · dnd: bei „Nicht stören“ */
+  when: 'schedule' | 'timecondition' | 'dnd'
+  days: number[] // 1 = Montag … 7 = Sonntag
+  from: string // „18:00“
+  to: string // „08:00“ (über Mitternacht erlaubt)
+  timecondition: string
+  /** Bei welchem Zustand der Zeitsteuerung umleiten */
+  tc_state: 'open' | 'closed'
+  target: string
+}
+
+/** Was eine Nebenstelle in der App selbst einstellen darf */
+export type AppPermission = 'forward' | 'forward_external' | 'forward_rules' | 'calendar_edit' | 'phonebook_edit'
+
+export const APP_PERMISSIONS: [AppPermission, string, string][] = [
+  ['forward', 'Umleitung schalten', 'In der App die Sofort-Umleitung ein- und ausschalten'],
+  ['forward_external', 'Nach außen umleiten', 'Umleitung auch auf externe Rufnummern, nicht nur auf Nebenstellen'],
+  ['forward_rules', 'Umleitungsregeln bearbeiten', 'Weiterleitung bei besetzt/keine Antwort und Regeln nach Zeit'],
+  ['calendar_edit', 'Zentrale Kalender bearbeiten', 'Termine in beschreibbaren zentralen Kalendern anlegen und ändern'],
+  ['phonebook_edit', 'Telefonbuch bearbeiten', 'Einträge im zentralen Telefonbuch anlegen und ändern'],
+]
 
 export type GroupMode = 'all' | 'sequential' | 'queue'
 export type QueueStrategy = 'ringall' | 'linear' | 'rrmemory' | 'leastrecent' | 'fewestcalls' | 'random'
@@ -66,6 +95,8 @@ export interface Group {
   name_prefix: string // vor den Anrufernamen gesetzt, z. B. „Vertrieb: “
   announcement: string // Ansage vor dem Klingeln (ID, optional)
   fallback: Destination
+  /** Zusätzliche Rechte in der App für alle Mitglieder */
+  permissions: AppPermission[]
 }
 
 export type NumberFormat = 'e164' | 'national' | 'intl00' | 'e164_no_plus'
@@ -375,7 +406,8 @@ export interface PbxConfig {
   mail: MailSettings
   security: SecuritySettings
   updates: UpdateSettings
-  provisioning: { discovery: boolean }
+  /** discovery: im Netz auffindbar · permissions: Rechte aller Nebenstellen in der App */
+  provisioning: { discovery: boolean; permissions: AppPermission[] }
   watchdog: WatchdogSettings
   integration: IntegrationSettings
   ldap: LdapSettings
@@ -424,7 +456,8 @@ export const DEFAULT_CONFIG: PbxConfig = {
     extension_nets: [],
   },
   updates: { channel: 'stable', auto: false, hour: 3 },
-  provisioning: { discovery: true },
+  // Wie bisher: Umleiten (*21) und Schreiben in zentrale Kalender darf jede Nebenstelle
+  provisioning: { discovery: true, permissions: ['forward', 'forward_external', 'forward_rules', 'calendar_edit'] },
   watchdog: { auto_repair: true, trunk_grace: 3, notify_email: '' },
   integration: { enabled: false, token: '' },
   ldap: { enabled: false, port: 389, password: '' },
@@ -497,7 +530,7 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         permission: 'national',
         allow_premium: false,
         voicemail: { enabled: true, pin: '', attach: true },
-        forward: { busy: '', noanswer: '' },
+        forward: { busy: '', noanswer: '', rules: [] },
         record: false,
         provision_pin: '',
         provision_token: '',
@@ -515,6 +548,7 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         name_prefix: '',
         announcement: '',
         fallback: HANGUP,
+        permissions: [],
       } satisfies Omit<Group, 'id'>
     case 'trunks':
       return {

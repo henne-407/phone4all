@@ -1,7 +1,7 @@
 import GroupsIcon from '@mui/icons-material/Groups'
 import { Autocomplete, Box, Chip, Stack, TextField, Tooltip, Typography } from '@mui/material'
 import type { Group, GroupMode, QueueStrategy } from '../../../server/model'
-import { CollectionPage, Initials, DestinationPicker, FormGrid, FormHeading, Full, NumberField, Select, describeDestination } from '../components/common'
+import { CollectionPage, Initials, DestinationPicker, FormGrid, FormHeading, Full, NumberField, PermissionChecks, Select, describeDestination } from '../components/common'
 import { usePbx } from '../state'
 
 const MODES: [GroupMode, string][] = [
@@ -67,6 +67,10 @@ function GroupForm({ value, onChange }: { value: Group; onChange: (v: Group) => 
         <Full>
           <FormHeading>Wenn niemand abnimmt</FormHeading>
           <DestinationPicker label="Weiter zu" value={value.fallback} onChange={(d) => set('fallback', d)} />
+        </Full>
+        <Full>
+          <FormHeading hint="Zusätzlich zu den Rechten aller Nebenstellen (System → Zugang). Gilt für alle Mitglieder in der Phone4All-App.">Rechte der Mitglieder in der App</FormHeading>
+          <PermissionChecks value={value.permissions} onChange={(v) => set('permissions', v)} inherited={config.provisioning.permissions} />
         </Full>
       </FormGrid>
     </Box>

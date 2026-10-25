@@ -44,7 +44,7 @@ von 5060/5061 und 10000–10999 im Router sowie die öffentliche Adresse unter
 ## Funktionen
 
 - **Nebenstellen** mit mehreren Geräten gleichzeitig, Voicemail (auch per E-Mail),
-  Weiterleitung bei besetzt / nach Zeit, Berechtigungen (intern, Deutschland, weltweit),
+  Weiterleitung bei besetzt / nach Zeit, Umleitungsregeln (Zeitplan, Zeitsteuerung, Nicht stören), Berechtigungen (intern, Deutschland, weltweit),
   Sperre für Sonderrufnummern, Gesprächsaufzeichnung
 - **Gruppen**: alle gleichzeitig, reihum oder Warteschlange mit Wartemusik,
   Ausweichziel und Namensvorsatz („Vertrieb: …“)
@@ -97,11 +97,13 @@ Token ist zugleich die Berechtigung.
 
 | Anfrage | Ergebnis |
 | --- | --- |
-| `GET /provision/<token>` | Profil: Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `revision` |
+| `GET /provision/<token>` | Profil: Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `permissions`, `revision` |
 | `GET /provision/<token>/revision` | `{ profile, events }` – ändert sich, sobald Profil oder Termine sich ändern |
 | `GET /provision/<token>/events?start=…&end=…&calendar=…` | Termine im Zeitraum (höchstens 400 Tage) |
 | `PUT /provision/<token>/events/<kalender>/<uid>` | Termin anlegen oder ändern (nur beschreibbare Kalender) |
 | `DELETE /provision/<token>/events/<kalender>/<uid>` | Termin löschen |
+| `GET /provision/<token>/forward` | Umleitungen: `cfu`, `active`, `busy`, `noanswer`, `rules`, `permissions`, interne `targets`, `timeconditions` |
+| `PUT /provision/<token>/forward` | Änderungen davon (`cfu` braucht das Recht `forward`, der Rest `forward_rules`; externe Ziele `forward_external`) |
 
 Termine: `{ uid, summary, start, end, allDay, location, description }`. Ganztägige
 Termine haben Datumsangaben (`2026-12-24`, Ende exklusiv), alle anderen ISO-Zeitpunkte.
