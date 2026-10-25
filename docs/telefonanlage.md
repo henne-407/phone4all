@@ -146,13 +146,29 @@ alle Apps übernehmen die Kontakte innerhalb von zwei Minuten. Darunter lässt s
 **Telefonbuch per LDAP** für DECT- und Tischtelefone einschalten (Werte siehe
 [Referenz](../pbx/README.md#telefonbuch-per-ldap)).
 
+**Externe Kontaktquellen** liest die Anlage regelmäßig (nur lesen) und gibt sie wie das
+eigene Telefonbuch weiter: an alle Apps, an DECT- und Tischtelefone (LDAP) und als Name bei
+eingehenden Anrufen.
+
+| Art | Angaben |
+| --- | --- |
+| CardDAV | Adresse des Servers, Kontos oder Adressbuchs (Nextcloud, iCloud, mailbox.org …), Benutzer, (App-)Passwort; alle Adressbücher des Kontos werden gelesen |
+| vCard- oder CSV-Datei | Adresse einer `.vcf`/`.csv`-Datei, z. B. Export-Link eines CRM; optional mit Anmeldung |
+| Microsoft SQL Server | Server (auch `server\instanz`), Port, Datenbank, Benutzer (auch `DOMÄNE\benutzer`); Tabelle/Sicht mit Namens-, Firmen- und Telefonspalten oder eine eigene `SELECT`-Abfrage |
+
+Die Liste zeigt je Quelle, wann sie zuletzt gelesen wurde, wie viele Kontakte sie liefert
+oder warum das Lesen fehlschlug. Bei einem Fehler bleiben die zuletzt gelesenen Kontakte
+erhalten.
+
 ### Kalender
 
 ![Zentrale Kalender](bilder/anlage-kalender.png)
 
-Gemeinsame Kalender für alle Apps: *Eigene Termine* (z. B. Betriebsferien, Schichtplan)
-oder *Feiertage des Bundeslandes (automatisch)*. Je Kalender einstellbar, ob alle
-eintragen dürfen oder nur hier geändert wird. Welche Kalender eine App zeigt, legt das
+Gemeinsame Kalender für alle Apps: *Eigene Termine* (z. B. Betriebsferien, Schichtplan),
+*Feiertage des Bundeslandes (automatisch)* oder *Anderer Kalender* – ein Kalender-Abo
+(ICS/webcal-Link aus Google, Outlook/Exchange, Nextcloud …) oder ein CalDAV-Kalender, den
+die Anlage regelmäßig liest (nur lesen, zwei Monate zurück bis gut ein Jahr voraus). Bei
+eigenen Terminen ist einstellbar, ob alle eintragen dürfen oder nur hier geändert wird. Welche Kalender eine App zeigt, legt das
 App-Profil fest.
 
 ### App-Profile

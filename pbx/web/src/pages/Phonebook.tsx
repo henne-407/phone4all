@@ -5,6 +5,7 @@ import { useRef } from 'react'
 import type { LdapSettings, PhonebookEntry } from '../../../server/model'
 import { api } from '../api'
 import { ChangesBar, CollectionPage, FormGrid, NumberField, Section, StatusDot, useDraft } from '../components/common'
+import { ContactSources } from '../components/Sources'
 import { usePbx } from '../state'
 import { CopyField, LDAP_NAME_FILTER, LDAP_NUMBER_FILTER, useDectInfo } from './Dect'
 
@@ -130,6 +131,7 @@ export default function Phonebook() {
       <Button startIcon={<UploadFileIcon />} sx={{ mt: 2, mb: 3 }} onClick={() => ref.current?.click()}>
         CSV importieren
       </Button>
+      <ContactSources />
       <Ldap />
     </Box>
   )

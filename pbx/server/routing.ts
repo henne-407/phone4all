@@ -4,6 +4,7 @@
  * Antworten sind durch „|“ getrennte Felder; Ziele haben die Form „Kontext^Extension“.
  */
 
+import { external } from './directory'
 import { closedReason } from './holidays'
 import type { AppPermission, Extension, ForwardRule, PbxConfig, Trunk } from './model'
 import { SPECIAL_NUMBER, cleanNumber, formatFor, prefixToE164, toE164 } from './numbers'
@@ -58,7 +59,7 @@ export function displayNumber(raw: string, cfg: PbxConfig): string {
 /** Bekannter Name zu einer Nummer (Telefonbuch, Nebenstellen). */
 export function lookupName(cfg: PbxConfig, number: string): string {
   if (!/\d{3,}/.test(number)) return ''
-  for (const e of cfg.phonebook) {
+  for (const e of [...cfg.phonebook, ...external.entries()]) {
     if ([e.phone, e.mobile].some((n) => n && sameNumber(n, number, cfg))) {
       return e.company && e.name ? `${e.name} (${e.company})` : e.name || e.company
     }

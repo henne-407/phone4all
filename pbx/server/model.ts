@@ -354,10 +354,45 @@ export interface CentralCalendar {
   id: string
   name: string
   color: string
-  /** events: eigene Termine, holidays: gesetzliche Feiertage des Bundeslandes */
-  kind: 'events' | 'holidays'
+  /** events: eigene Termine, holidays: Feiertage des Bundeslandes, subscription: von außen gelesen */
+  kind: 'events' | 'holidays' | 'subscription'
   /** Termine dürfen in der App angelegt und geändert werden */
   writable: boolean
+  /** Nur bei subscription: woher die Termine kommen */
+  source: CalendarSource
+}
+
+/** Kalender eines anderen Servers, den die Anlage regelmäßig liest */
+export interface CalendarSource {
+  /** ics: Abo-Adresse (.ics, webcal://), caldav: Kalender auf einem CalDAV-Server */
+  type: 'ics' | 'caldav'
+  url: string
+  user: string
+  password: string
+  refresh_minutes: number
+}
+
+/** Externe Kontaktquelle (nur lesen): CardDAV, vCard-/CSV-Datei im Netz oder SQL Server */
+export interface ContactSource {
+  id: string
+  name: string
+  type: 'carddav' | 'url' | 'mssql'
+  enabled: boolean
+  /** CardDAV-Konto oder -Adressbuch bzw. Adresse einer .vcf-/.csv-Datei */
+  url: string
+  user: string
+  password: string
+  /** SQL Server: Server (auch server\instanz), Port, Datenbank */
+  host: string
+  port: number
+  database: string
+  mode: 'table' | 'query'
+  table: string
+  name_cols: string
+  company_col: string
+  phone_cols: string
+  query: string
+  refresh_minutes: number
 }
 
 /** Höchstzahl der Mobilteile an einer DECT-Basis (Gigaset N610/N670) */
@@ -400,6 +435,7 @@ export interface PbxConfig {
   conferences: Conference[]
   announcements: Announcement[]
   phonebook: PhonebookEntry[]
+  contactsources: ContactSource[]
   appprofiles: AppProfile[]
   calendars: CentralCalendar[]
   dect: DectBase[]
@@ -443,6 +479,7 @@ export const DEFAULT_CONFIG: PbxConfig = {
   conferences: [],
   announcements: [],
   phonebook: [],
+  contactsources: [],
   appprofiles: [],
   calendars: [],
   dect: [],
@@ -475,6 +512,7 @@ export const COLLECTIONS = [
   'conferences',
   'announcements',
   'phonebook',
+  'contactsources',
   'appprofiles',
   'calendars',
   'dect',
@@ -626,7 +664,32 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         calendars: [],
       } satisfies Omit<AppProfile, 'id'>
     case 'calendars':
-      return { name: '', color: '#1a73e8', kind: 'events', writable: true } satisfies Omit<CentralCalendar, 'id'>
+      return {
+        name: '',
+        color: '#1a73e8',
+        kind: 'events',
+        writable: true,
+        source: { type: 'ics', url: '', user: '', password: '', refresh_minutes: 60 },
+      } satisfies Omit<CentralCalendar, 'id'>
+    case 'contactsources':
+      return {
+        name: '',
+        type: 'carddav',
+        enabled: true,
+        url: '',
+        user: '',
+        password: '',
+        host: '',
+        port: 1433,
+        database: '',
+        mode: 'table',
+        table: '',
+        name_cols: '',
+        company_col: '',
+        phone_cols: '',
+        query: '',
+        refresh_minutes: 60,
+      } satisfies Omit<ContactSource, 'id'>
     case 'dect':
       return { name: '', mac: '', handsets: [], pin: '', admin_password: '', token: '' } satisfies Omit<DectBase, 'id'>
   }

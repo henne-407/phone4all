@@ -5,6 +5,7 @@ import http from 'node:http'
 import path from 'node:path'
 import { Asterisk } from './asterisk'
 import { CalendarStore } from './calendars'
+import { external } from './directory'
 import { Auth, SESSION_COOKIE, SESSION_MAX_AGE } from './auth'
 import { readCalls, tailLog } from './cdr'
 import { describeAgent, gigasetFile, requestMac } from './dect'
@@ -29,6 +30,7 @@ import {
   timeConditionTarget,
 } from './routing'
 import { Guard } from './security'
+import { SourceSync } from './sources/sync'
 import { listSounds, saveSound, soundDir, soundFile, type SoundKind } from './sounds'
 import { ConfigStore, type ExportFile, ValidationError, fillSecrets, newPin, newSecret } from './store'
 import type { DectBase } from './model'
@@ -41,6 +43,11 @@ const asterisk = new Asterisk()
 const guard = new Guard(() => store.config.security)
 const updater = new Updater()
 const calendars = new CalendarStore(() => store.config)
+const sources = new SourceSync(
+  () => store.config,
+  (id, events) => calendars.replace(id, events),
+)
+external.entries = () => sources.entries()
 const ldap = new LdapServer(() => store.config)
 auth.init()
 
@@ -358,11 +365,14 @@ for (const kind of COLLECTIONS) {
     const item = await r.json<Record<string, unknown>>()
     const saved = store.upsert(kind as CollectionName, item)
     applySoon()
+    // Geänderte Quelle gleich neu lesen
+    if (kind === 'contactsources' || kind === 'calendars') void sources.syncNow(String(saved.id))
     return saved
   })
   api.delete(`/api/${kind}/:id`, (r) => {
     store.remove(kind as CollectionName, r.params.id)
     if (kind === 'calendars') calendars.cleanup()
+    if (kind === 'contactsources' || kind === 'calendars') sources.cleanup()
     applySoon()
     return { ok: true }
   })
@@ -478,6 +488,10 @@ api.get('/api/status', async () => ({
   version: SETTINGS.version,
   watchdog: watchdog.status(),
 }))
+
+/** Stand der externen Kontakt- und Kalenderquellen */
+api.get('/api/sources', () => sources.status)
+api.post('/api/sources/:id/sync', (r) => sources.syncNow(r.params.id))
 
 api.get('/api/watchdog', () => ({ ...watchdog.status(), events: [...watchdog.events].reverse() }))
 api.post('/api/watchdog/check', async () => {
@@ -676,6 +690,7 @@ async function main(): Promise<void> {
   watchdog.log('info', 'asterisk', `Verwaltungsdienst gestartet (Version ${SETTINGS.version})`)
   watchdog.start()
   setTimeout(() => void watchdog.tick(), 15000).unref()
+  sources.start()
 
   // Tägliche Sicherung, stündliche Update-Prüfung, automatisches Update im Zeitfenster
   let lastBackup = ''

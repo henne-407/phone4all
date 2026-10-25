@@ -115,6 +115,25 @@ export function validate(cfg: PbxConfig): void {
   for (const c of cfg.calendars) {
     if (!c.name.trim()) throw new ValidationError('Kalender ohne Namen.')
     if (!/^#[0-9a-f]{6}$/i.test(c.color)) throw new ValidationError(`Kalender ${c.name}: ungültige Farbe.`)
+    if (c.kind === 'subscription') {
+      // Abonnierte Kalender sind nur zum Lesen
+      c.writable = false
+      c.source.url = c.source.url.trim().replace(/^webcal:\/\//i, 'https://')
+      if (!/^https?:\/\/\S+$/i.test(c.source.url)) throw new ValidationError(`Kalender ${c.name}: Adresse mit http:// oder https:// angeben.`)
+      c.source.refresh_minutes = Math.max(5, Math.round(c.source.refresh_minutes) || 60)
+    }
+  }
+  for (const s of cfg.contactsources) {
+    if (!s.name.trim()) throw new ValidationError('Kontaktquelle ohne Namen.')
+    s.refresh_minutes = Math.max(5, Math.round(s.refresh_minutes) || 60)
+    if (s.type === 'mssql') {
+      if (!s.host.trim() || !s.database.trim()) throw new ValidationError(`Kontaktquelle ${s.name}: Server und Datenbank angeben.`)
+      if (s.mode === 'table' && (!s.table.trim() || !s.phone_cols.trim())) throw new ValidationError(`Kontaktquelle ${s.name}: Tabelle und Telefonspalten angeben.`)
+      if (s.mode === 'query' && !/^\s*(select|with)\b/i.test(s.query)) throw new ValidationError(`Kontaktquelle ${s.name}: Die Abfrage muss mit SELECT beginnen.`)
+    } else {
+      s.url = s.url.trim()
+      if (!/^https?:\/\/\S+$/i.test(s.url)) throw new ValidationError(`Kontaktquelle ${s.name}: Adresse mit http:// oder https:// angeben.`)
+    }
   }
   const handsets = new Map<string, string>()
   for (const b of cfg.dect) {
