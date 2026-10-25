@@ -307,6 +307,9 @@ describe('Einrichtung durch die Telefonanlage', () => {
     expect(p.calendars).toEqual([{ id: 'betrieb', name: 'Betrieb', color: '#0b8043', writable: true }])
     expect(p.revision).toBe('abc')
     expect(parseProfile(profile).app).toBeNull()
+    expect(parseProfile(profile).messenger).toBe(false)
+    expect(parseProfile({ ...profile, messenger: true }).messenger).toBe(true)
+    expect(parsePolicy({ pages: ['messenger', 'dial'] })?.pages).toEqual(['messenger', 'dial'])
     expect(parsePolicy({ pages: [] })).toBeNull()
   })
 

@@ -7,6 +7,7 @@
 import { createHash } from 'node:crypto'
 import dgram from 'node:dgram'
 import { directory } from './directory'
+import { messengerUsers } from './messenger'
 import type { AppHomeCard, AppPage, CentralCalendar, Extension, PbxConfig } from './model'
 import { SETTINGS } from './paths'
 
@@ -41,6 +42,8 @@ export interface ProvisioningProfile {
   app: AppPolicy | null
   /** Zentrale Kalender, Termine unter <url>/events */
   calendars: { id: string; name: string; color: string; writable: boolean }[]
+  /** Messenger freigegeben; die App verbindet sich mit <url>/chat (WebSocket) */
+  messenger: boolean
   /** Ändert sich mit jeder Änderung am Profil; die App fragt <url>/revision ab */
   revision: string
 }
@@ -115,6 +118,7 @@ export function profile(cfg: PbxConfig, ext: Extension, base: string): Provision
     },
     app: policy(cfg, ext),
     calendars: visibleCalendars(cfg, ext).map((c) => ({ id: c.id, name: c.name, color: c.color, writable: c.writable && c.kind === 'events' })),
+    messenger: messengerUsers(cfg).some((e) => e.id === ext.id),
   }
   const revision = createHash('sha256').update(JSON.stringify(result)).digest('hex').slice(0, 16)
   return { ...result, revision }

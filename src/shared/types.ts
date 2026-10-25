@@ -90,7 +90,7 @@ export interface SqlSourceConf {
 }
 
 export type HomeCard = 'status' | 'today' | 'favorites' | 'recent' | 'events'
-export type PageName = 'home' | 'dial' | 'contacts' | 'calendar' | 'history'
+export type PageName = 'home' | 'dial' | 'contacts' | 'calendar' | 'history' | 'messenger'
 
 export interface Settings {
   account: AccountSettings
@@ -130,6 +130,8 @@ export interface Settings {
     policy: AppPolicy | null
     /** Zentrale Kalender der Anlage */
     calendars: PbxCalendar[]
+    /** Messenger der Anlage freigegeben */
+    messenger: boolean
   }
 }
 
@@ -270,6 +272,8 @@ export interface AppState {
   /** Zusammenfassung des Watchdogs */
   watchdog: { level: CheckLevel; text: string; repairs: number }
   update: UpdateState
+  /** Messenger der Telefonanlage: verfügbar, verbunden, ungelesene Nachrichten */
+  messenger: { available: boolean; status: MessengerState['status']; unread: number }
 }
 
 /** Stand der App-Aktualisierung */
@@ -283,4 +287,53 @@ export interface UpdateState {
   progress: number
   error: string
   checked: number
+}
+
+// -- Messenger (Chats über die Phone4all-Telefonanlage) ---------------------------
+
+export interface ChatUser {
+  number: string
+  name: string
+}
+
+export interface ChatFile {
+  id: string
+  name: string
+  size: number
+  type: string
+}
+
+export interface ChatMessage {
+  seq: number
+  room: string
+  /** Nebenstelle des Absenders, leer bei Hinweisen der Anlage */
+  from: string
+  time: number
+  text: string
+  file?: ChatFile
+}
+
+export interface ChatRoom {
+  id: string
+  kind: 'direct' | 'group'
+  /** Gruppenname (Einzelchats: leer) */
+  name: string
+  members: string[]
+  created_by: string
+  seq: number
+  /** Zuletzt gelesene Nachricht je Nebenstelle */
+  read: Record<string, number>
+  last: ChatMessage | null
+  unread: number
+}
+
+export interface MessengerState {
+  /** off: nicht eingerichtet, connecting, online, offline: Verbindung unterbrochen */
+  status: 'off' | 'connecting' | 'online' | 'offline'
+  me: string
+  users: ChatUser[]
+  online: string[]
+  rooms: ChatRoom[]
+  /** Raum → Nebenstellen, die gerade tippen */
+  typing: Record<string, string[]>
 }

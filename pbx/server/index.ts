@@ -13,6 +13,7 @@ import { integrationReport, validToken } from './integration'
 import { LdapServer } from './ldap'
 import { HttpError, type Request, Router, makeRequest, sendFile, sendJson, sendText, serveStatic } from './http'
 import { sendMail } from './mail'
+import { ChatError, MessengerHub, MessengerStore, messengerUsers } from './messenger'
 import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, SECTIONS, type SectionName } from './model'
 import { PATHS, SETTINGS } from './paths'
 import { PROVIDERS } from './providers'
@@ -32,6 +33,7 @@ import { ConfigStore, type ExportFile, ValidationError, fillSecrets, newPin, new
 import type { DectBase } from './model'
 import { Updater } from './updates'
 import { type WatchEvent, Watchdog } from './watchdog'
+import { reject, upgrade } from './websocket'
 
 const store = new ConfigStore()
 const auth = new Auth()
@@ -40,7 +42,25 @@ const guard = new Guard(() => store.config.security)
 const updater = new Updater()
 const calendars = new CalendarStore(() => store.config)
 const ldap = new LdapServer(() => store.config)
+const messenger = new MessengerHub(new MessengerStore(PATHS.messenger), () => store.config)
 auth.init()
+
+function freeBytes(): number | null {
+  try {
+    const st = fs.statfsSync(PATHS.data)
+    return st.bavail * st.bsize
+  } catch {
+    return null
+  }
+}
+
+/** Speicher knapp: älteste Chatnachrichten löschen (sonst bleibt alles erhalten) */
+function messengerCleanup(): void {
+  const removed = messenger.store.cleanup(freeBytes, store.config.messenger.min_free_mb * 1024 * 1024)
+  if (!removed) return
+  watchdog.log('warning', 'disk', `Speicher knapp: ${removed} alte Chatnachrichten gelöscht`)
+  messenger.reloadAll()
+}
 
 // -- Watchdog: Überwachung und Selbstheilung ------------------------------------------
 
@@ -56,14 +76,7 @@ const watchdog = new Watchdog(
     registrations: () => asterisk.registrations(),
     register: (id) => asterisk.register(id),
     reloadPjsip: () => asterisk.reloadPjsip(),
-    freeBytes: () => {
-      try {
-        const st = fs.statfsSync(PATHS.data)
-        return st.bavail * st.bsize
-      } catch {
-        return null
-      }
-    },
+    freeBytes,
   },
   () => store.config.watchdog,
 )
@@ -98,6 +111,7 @@ function applySoon(): void {
   applyTimer = setTimeout(() => {
     applyTimer = null
     ldap.apply()
+    messenger.refresh()
     asterisk.apply(store.config, guard.banned()).catch((e) => console.error('Konfiguration:', e))
   }, 300)
 }
@@ -237,6 +251,51 @@ pub.delete('/provision/:token/events/:calendar/:uid', (r) => {
   writableFor(r.params.token, r.params.calendar)
   calendars.remove(r.params.calendar, r.params.uid)
   return { ok: true }
+})
+
+// -- Messenger: Verbindung per WebSocket (siehe upgrade unten), Dateien per HTTP ---------
+
+function chatUser(token: string): Extension {
+  const ext = tokenExtension(token)
+  if (!messengerUsers(store.config).some((e) => e.id === ext.id)) throw new HttpError(403, 'Der Messenger ist für diese Nebenstelle nicht freigegeben.')
+  return ext
+}
+
+const CHAT_UPLOAD = /^\/provision\/[^/]+\/chat\/files$/
+
+pub.post('/provision/:token/chat/files', async (r) => {
+  const ext = chatUser(r.params.token)
+  const name = r.query.get('name') ?? 'datei'
+  const type = String(r.raw.headers['content-type'] ?? 'application/octet-stream').split(';')[0].trim()
+  const data = await r.body()
+  if (!data.length) throw new HttpError(400, 'Die Datei ist leer.')
+  try {
+    const message = messenger.postFile(ext.number, r.query.get('room') ?? '', name, type, data, r.query.get('text') ?? '')
+    setImmediate(messengerCleanup)
+    return message
+  } catch (e) {
+    if (e instanceof ChatError) throw new HttpError(400, e.message)
+    throw e
+  }
+})
+
+pub.get('/provision/:token/chat/files/:room/:id', (r) => {
+  const ext = chatUser(r.params.token)
+  try {
+    messenger.store.room(r.params.room, ext.number)
+    const file = messenger.store.filePath(r.params.room, r.params.id)
+    if (!fs.existsSync(file)) throw new HttpError(404, 'Die Datei wurde gelöscht (Speicher war knapp).')
+    r.res.writeHead(200, {
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': fs.statSync(file).size,
+      'Cache-Control': 'private, max-age=31536000, immutable',
+      'X-Content-Type-Options': 'nosniff',
+    })
+    fs.createReadStream(file).pipe(r.res)
+  } catch (e) {
+    if (e instanceof ChatError) throw new HttpError(404, e.message)
+    throw e
+  }
 })
 
 /** Einrichtung mit Nebenstelle und Einrichtungs-PIN */
@@ -427,6 +486,38 @@ api.post('/api/dect/:id/renew', (r) => {
   return store.config.dect.find((x) => x.id === r.params.id)
 })
 
+// Messenger (nur Überblick; Inhalte der Chats zeigt die Verwaltung nicht)
+
+api.get('/api/messenger', () => {
+  const names = new Map(store.config.extensions.map((e) => [e.number, e.name]))
+  return {
+    online: messenger.online(),
+    connections: messenger.connections,
+    usage: messenger.store.usage(),
+    free: freeBytes(),
+    users: messengerUsers(store.config).length,
+    rooms: [...messenger.store.rooms.values()].map((r) => {
+      const last = messenger.store.messages(r.id).at(-1)
+      return {
+        id: r.id,
+        kind: r.kind,
+        name: r.kind === 'group' ? r.name : r.members.map((m) => names.get(m) || m).join(' und '),
+        members: r.members,
+        messages: messenger.store.messages(r.id).length,
+        last: last?.time ?? r.created,
+      }
+    }),
+  }
+})
+
+api.delete('/api/messenger/rooms/:id', (r) => {
+  if (!messenger.store.rooms.has(r.params.id)) throw new HttpError(404, 'Unterhaltung nicht gefunden.')
+  const members = messenger.store.rooms.get(r.params.id)!.members
+  messenger.store.removeRoom(r.params.id)
+  messenger.removed(r.params.id, members)
+  return { ok: true }
+})
+
 // Zentrale Kalender
 
 api.get('/api/calendars/:id/events', (r) => {
@@ -597,7 +688,9 @@ function isLoopback(ip: string): boolean {
 
 async function handle(raw: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const isUpload = raw.url?.startsWith('/api/sounds') || raw.url?.startsWith('/api/import')
-  const req = makeRequest(raw, res, isUpload ? 64 * 1024 * 1024 : 1024 * 1024)
+  const isChatFile = CHAT_UPLOAD.test((raw.url ?? '').split('?')[0])
+  const limit = isChatFile ? store.config.messenger.max_file_mb * 1024 * 1024 : isUpload ? 64 * 1024 * 1024 : 1024 * 1024
+  const req = makeRequest(raw, res, limit)
   try {
     if (req.path.startsWith('/internal/')) {
       const m = internal.match(req.method, req.path)
@@ -643,6 +736,22 @@ async function main(): Promise<void> {
   await asterisk.apply(store.config, guard.banned())
   ldap.apply()
   const server = http.createServer((req, res) => void handle(req, res))
+  // Messenger der Apps: /provision/<token>/chat
+  server.on('upgrade', (req, socket) => {
+    const m = /^\/provision\/([^/?]+)\/chat\/?(\?.*)?$/.exec(req.url ?? '')
+    if (!m) return reject(socket, 404, 'Not Found')
+    const ip = (req.socket.remoteAddress ?? '').replace(/^::ffff:/, '')
+    if (auth.blocked(ip)) return reject(socket, 429, 'Too Many Requests')
+    const ext = store.config.extensions.find((e) => e.provision_token && e.provision_token === decodeURIComponent(m[1]))
+    if (!ext) {
+      auth.failed(ip)
+      return reject(socket, 404, 'Not Found')
+    }
+    if (!messengerUsers(store.config).some((e) => e.id === ext.id)) return reject(socket, 403, 'Forbidden')
+    const conn = upgrade(req, socket)
+    if (!conn) return reject(socket, 400, 'Bad Request')
+    messenger.attach(ext.number, ext.provision_token, conn)
+  })
   server.listen(SETTINGS.httpPort, () => console.log(`Weboberfläche auf Port ${SETTINGS.httpPort}`))
   startDiscovery(() => store.config)
   asterisk.start()
@@ -659,6 +768,7 @@ async function main(): Promise<void> {
       lastBackup = today
       store.backup('taeglich')
     }
+    messengerCleanup()
     const u = store.config.updates
     const info = await updater.check(u.channel)
     if (u.auto && info.available && info.canApply && new Date().getHours() === u.hour && lastAutoUpdate !== today) {
@@ -675,6 +785,7 @@ async function main(): Promise<void> {
   const shutdown = async (): Promise<void> => {
     watchdog.stop()
     saveJson(PATHS.watchdog, watchdog.events, 0o644)
+    messenger.close()
     server.close()
     ldap.stop()
     await asterisk.stop()

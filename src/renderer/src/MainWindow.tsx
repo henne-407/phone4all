@@ -1,6 +1,7 @@
 /** Hauptfenster: Titelleiste, Navigation, Seiten, laufende Anrufe und Dialoge. */
 
 import CalendarIcon from '@mui/icons-material/CalendarMonth'
+import ChatIcon from '@mui/icons-material/Chat'
 import ContactsIcon from '@mui/icons-material/Contacts'
 import DialpadIcon from '@mui/icons-material/Dialpad'
 import HistoryIcon from '@mui/icons-material/History'
@@ -35,6 +36,7 @@ import { ContactsPage } from './pages/ContactsPage'
 import { DialPage } from './pages/DialPage'
 import { HistoryPage } from './pages/HistoryPage'
 import { CustomizeHomeDialog, HomePage } from './pages/HomePage'
+import { MessengerPage, openChatRoom } from './pages/MessengerPage'
 import { activeCall, useApp } from './state'
 
 const PAGES: [PageName, string, ReactNode][] = [
@@ -43,7 +45,24 @@ const PAGES: [PageName, string, ReactNode][] = [
   ['contacts', 'Kontakte', <ContactsIcon key="i" />],
   ['calendar', 'Kalender', <CalendarIcon key="i" />],
   ['history', 'Verlauf', <HistoryIcon key="i" />],
+  ['messenger', 'Messenger', <ChatIcon key="i" />],
 ]
+
+/** Markierung am Navigationssymbol: verpasste Anrufe (Punkt), ungelesene Chats (Zahl) */
+function NavIcon({ page, icon, missed, unread }: { page: PageName; icon: ReactNode; missed: boolean; unread: number }) {
+  if (page === 'messenger') {
+    return (
+      <Badge color="error" badgeContent={unread} max={99}>
+        {icon}
+      </Badge>
+    )
+  }
+  return (
+    <Badge color="error" variant="dot" invisible={!(page === 'history' && missed)}>
+      {icon}
+    </Badge>
+  )
+}
 
 function useWidth(): number {
   const [width, setWidth] = useState(window.innerWidth)
@@ -56,7 +75,7 @@ function useWidth(): number {
 }
 
 /** Seitennavigation für breite Fenster */
-function NavRail({ pages, page, onChange, missed }: { pages: typeof PAGES; page: PageName; onChange: (p: PageName) => void; missed: boolean }) {
+function NavRail({ pages, page, onChange, missed, unread }: { pages: typeof PAGES; page: PageName; onChange: (p: PageName) => void; missed: boolean; unread: number }) {
   return (
     <Tabs
       orientation="vertical"
@@ -70,11 +89,7 @@ function NavRail({ pages, page, onChange, missed }: { pages: typeof PAGES; page:
           value={key}
           label={label}
           sx={{ minWidth: 0 }}
-          icon={
-            <Badge color="error" variant="dot" invisible={!(key === 'history' && missed)}>
-              {icon}
-            </Badge>
-          }
+          icon={<NavIcon page={key} icon={icon} missed={missed} unread={unread} />}
         />
       ))}
     </Tabs>
@@ -110,7 +125,10 @@ export function MainWindow() {
   const width = useWidth()
   // Die Telefonanlage kann Bereiche und Startansicht vorgeben (App-Profil)
   const policy = state.settings.provisioning.policy
-  const pages = policy ? policy.pages.flatMap((k) => PAGES.filter(([p]) => p === k)) : PAGES
+  // Den Messenger gibt es nur, wenn die Anlage ihn freigibt
+  const pages = (policy ? policy.pages.flatMap((k) => PAGES.filter(([p]) => p === k)) : PAGES).filter(
+    ([p]) => p !== 'messenger' || state.messenger.available,
+  )
   const [page, setPageRaw] = useState<PageName>(policy?.start_tab ?? state.settings.home.start_tab)
   const visible = pages.some(([k]) => k === page) ? page : pages[0][0]
   const setPage = useCallback((p: PageName) => setPageRaw(p), [])
@@ -147,6 +165,10 @@ export function MainWindow() {
       onMain('new-event', (prefill) => setEvent({ event: prefill, isNew: true })),
       onMain('open-preferences', (p) => setPrefs(p)),
       onMain('edit-contact', (c) => setContact(c)),
+      onMain('messenger-open', (room) => {
+        openChatRoom(room)
+        setPage('messenger')
+      }),
     ]
     return () => offs.forEach((off) => off())
   }, [])
@@ -193,6 +215,9 @@ export function MainWindow() {
       case 'history':
         content = <HistoryPage wide={wide} />
         break
+      case 'messenger':
+        content = <MessengerPage wide={wide} />
+        break
     }
   }
 
@@ -217,7 +242,7 @@ export function MainWindow() {
         </Alert>
       )}
       <Stack direction="row" sx={{ flex: 1, minHeight: 0 }}>
-        {wide && !call && <NavRail pages={pages} page={visible} onChange={setPage} missed={state.missedUnseen} />}
+        {wide && !call && <NavRail pages={pages} page={visible} onChange={setPage} missed={state.missedUnseen} unread={state.messenger.unread} />}
         <Stack sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>{content}</Stack>
       </Stack>
       {!wide && !call && (
@@ -231,11 +256,8 @@ export function MainWindow() {
               key={key}
               value={key}
               label={label}
-              icon={
-                <Badge color="error" variant="dot" invisible={!(key === 'history' && state.missedUnseen)}>
-                  {icon}
-                </Badge>
-              }
+              sx={{ minWidth: 0, px: 0.5 }}
+              icon={<NavIcon page={key} icon={icon} missed={state.missedUnseen} unread={state.messenger.unread} />}
             />
           ))}
         </BottomNavigation>

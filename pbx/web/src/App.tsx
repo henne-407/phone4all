@@ -2,6 +2,7 @@ import AccountTreeIcon from '@mui/icons-material/AccountTree'
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
 import CallIcon from '@mui/icons-material/Call'
 import CampaignIcon from '@mui/icons-material/Campaign'
+import ChatIcon from '@mui/icons-material/Chat'
 import ContactsIcon from '@mui/icons-material/Contacts'
 import DashboardIcon from '@mui/icons-material/Dashboard'
 import DialpadIcon from '@mui/icons-material/Dialpad'
@@ -50,6 +51,7 @@ import Extensions from './pages/Extensions'
 import Flows from './pages/Flows'
 import Groups from './pages/Groups'
 import Ivrs from './pages/Ivrs'
+import Messenger from './pages/Messenger'
 import Outbound from './pages/Outbound'
 import Phonebook from './pages/Phonebook'
 import System from './pages/System'
@@ -99,6 +101,7 @@ const NAV: [string, NavItem[]][] = [
       { key: 'calendars', label: 'Kalender', icon: <CalendarMonthIcon />, page: <Calendars /> },
       { key: 'appprofiles', label: 'App-Profile', icon: <PhoneAndroidIcon />, page: <AppProfiles /> },
       { key: 'conferences', label: 'Konferenzräume', icon: <RecordVoiceOverIcon />, page: <Conferences /> },
+      { key: 'messenger', label: 'Messenger', icon: <ChatIcon />, page: <Messenger /> },
     ],
   ],
   [

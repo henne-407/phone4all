@@ -18,7 +18,7 @@ const PROFILE_FORMAT = 'phone4all-provisioning'
 const REFRESH_INTERVAL = 6 * 60 * 60 * 1000
 /** So oft fragt die App, ob sich Profil oder zentrale Termine geändert haben */
 const POLL_INTERVAL = 2 * 60 * 1000
-const PAGES: PageName[] = ['home', 'dial', 'contacts', 'calendar', 'history']
+const PAGES: PageName[] = ['home', 'dial', 'contacts', 'calendar', 'history', 'messenger']
 const CARDS: HomeCard[] = ['status', 'today', 'favorites', 'recent', 'events']
 const URL_SECRET = 'pbx:url'
 
@@ -33,6 +33,7 @@ export interface PbxProfile {
   phonebook: { name: string; company: string; phone: string; mobile: string }[]
   app: AppPolicy | null
   calendars: PbxCalendar[]
+  messenger: boolean
   revision: string
 }
 
@@ -83,6 +84,7 @@ export function parseProfile(data: unknown): PbxProfile {
     phonebook: Array.isArray(p.phonebook) ? p.phonebook.filter((e) => e && typeof e.phone === 'string') : [],
     app: parsePolicy(p.app),
     calendars: parseCalendars(p.calendars),
+    messenger: p.messenger === true,
     revision: String(p.revision ?? ''),
   }
 }
@@ -289,7 +291,7 @@ export class Provisioning {
     if (this.accountLocked) throw new Error('Die Telefonanlage verwaltet dieses Konto. Bitte in der Anlage das App-Profil ändern.')
     const { store } = this.host
     store.deleteSecret(URL_SECRET)
-    store.settings.provisioning = { pbx: '', extension: '', server: '', updated: 0, policy: null, calendars: [] }
+    store.settings.provisioning = { pbx: '', extension: '', server: '', updated: 0, policy: null, calendars: [], messenger: false }
     store.saveSettings()
     this.revision = { profile: '', events: '' }
     this.setPhonebook([])
@@ -324,6 +326,7 @@ export class Provisioning {
       updated: Date.now(),
       policy: p.app,
       calendars: p.calendars,
+      messenger: p.messenger,
     }
     this.revision.profile = p.revision
     store.settings.registered = true

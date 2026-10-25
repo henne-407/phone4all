@@ -18,7 +18,7 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AppState, AudioDevice, Contact, HomeCard, PageName } from '../shared/types'
+import type { AppState, AudioDevice, ChatMessage, Contact, HomeCard, PageName } from '../shared/types'
 import { type Api, type RendererEvents, createApi } from './api'
 import { listDevices } from './audioDevices'
 import { CalendarManager } from './calendars'
@@ -26,6 +26,7 @@ import { parseFileData } from './contactImport'
 import { ContactSync } from './contactSync'
 import { edsAvailable } from './eds'
 import { loadJson, saveJson } from './files'
+import { Messenger } from './messenger'
 import { DIRS, RINGTONE_DIR, resourcePath } from './paths'
 import { type Call, type NotifyOptions, Phone, type PhoneUi } from './phone'
 import { Provisioning } from './provisioning'
@@ -88,7 +89,10 @@ export class App {
   readonly provisioning: Provisioning
   readonly watchdog: Watchdog
   readonly updater: Updater
+  readonly messenger: Messenger
   readonly api: Api
+  /** Unterhaltung, die gerade offen ist (keine Benachrichtigung dafür) */
+  openChat: string | null = null
   /** Einrichtungslink, den die Oberfläche noch nicht abgeholt hat */
   private pendingLink: string | null = null
   private main: BrowserWindow | null = null
@@ -131,7 +135,10 @@ export class App {
       {
         store: this.store,
         restartEngine: () => this.phone.restartEngine(),
-        stateChanged: () => this.stateChanged(),
+        stateChanged: () => {
+          this.messenger.update()
+          this.stateChanged()
+        },
         phonebookChanged: () => void this.sync.sync(),
         calendarsChanged: () => void this.calendar.reload(),
         eventsChanged: () => this.calendar.emit('events-changed'),
@@ -185,6 +192,16 @@ export class App {
       },
       () => this.store.settings.auto_update,
     )
+    this.messenger = new Messenger({
+      url: () => this.provisioning.url,
+      enabled: () => Boolean(this.store.settings.provisioning.messenger),
+    })
+    this.messenger.on('changed', () => {
+      this.send('messenger', this.messenger.state)
+      this.stateChanged()
+    })
+    this.messenger.on('reset', () => this.send('messenger-reset'))
+    this.messenger.on('message', (m: ChatMessage) => this.onChatMessage(m))
     this.api = createApi(this)
     if (!this.store.settings.home.cards.length) this.store.settings.home.cards = DEFAULT_CARDS
     nativeTheme.themeSource = this.store.settings.appearance.scheme
@@ -211,10 +228,16 @@ export class App {
     void this.refreshDevices()
     this.phone.restartEngine()
     this.provisioning.start()
+    this.messenger.update()
     this.watchdog.start()
     if (!process.env.SIP_TELEFON_SCREENSHOT) this.updater.start()
     // Nach dem Ruhezustand sind SIP-Verbindungen und NAT-Zuordnungen meist verloren
-    powerMonitor.on('resume', () => setTimeout(() => this.watchdog.onResume(), 5000))
+    powerMonitor.on('resume', () =>
+      setTimeout(() => {
+        this.watchdog.onResume()
+        this.messenger.reconnect()
+      }, 5000),
+    )
   }
 
   /** sip-telefon://-Link (Einrichtung durch die Telefonanlage); bestätigt wird in der Oberfläche. */
@@ -286,6 +309,11 @@ export class App {
       missedUnseen: this.missedUnseen,
       watchdog: this.watchdog.summary(),
       update: this.updater.state,
+      messenger: {
+        available: Boolean(s.provisioning.messenger),
+        status: this.messenger.state.status,
+        unread: this.messenger.unread,
+      },
     }
   }
 
@@ -520,6 +548,26 @@ export class App {
 
   // -- Benachrichtigungen --------------------------------------------------
 
+  /** Neue Chatnachricht: an die Oberfläche geben und bei Bedarf benachrichtigen */
+  private onChatMessage(m: ChatMessage): void {
+    this.send('messenger-message', m)
+    const { state } = this.messenger
+    if (!m.from || m.from === state.me) return
+    if (this.openChat === m.room && this.main?.isFocused()) return
+    const room = state.rooms.find((r) => r.id === m.room)
+    const sender = state.users.find((u) => u.number === m.from)?.name || m.from
+    const title = room?.kind === 'group' ? `${sender} in „${room.name}“` : sender
+    this.notify({
+      tag: `chat-${m.room}`,
+      title,
+      body: m.text || (m.file ? `Datei: ${m.file.name}` : ''),
+      onClick: () => {
+        this.showPage('messenger')
+        this.send('messenger-open', m.room)
+      },
+    })
+  }
+
   private notify(opts: NotifyOptions): void {
     if (!Notification.isSupported()) return
     this.withdraw(opts.tag)
@@ -628,6 +676,7 @@ export class App {
     this.quitting = true
     this.watchdog.stop()
     this.updater.stop()
+    this.messenger.stop()
     saveJson(this.watchdogPath, this.watchdog.events)
     if (this.main && !this.main.isDestroyed()) saveJson(this.boundsPath, this.main.getNormalBounds())
     void this.phone.stop().finally(() => electronApp.exit(0))
