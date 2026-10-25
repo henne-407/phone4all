@@ -38,7 +38,8 @@ function tag(contacts: Omit<Contact, 'id'>[], book: AddressBook): Contact[] {
     ...c,
     id: `${book.id}#${i}`,
     source: book.group ? `${book.group} · ${book.name}` : book.name,
-    readonly: true,
+    // Einträge der Telefonanlage mit Bearbeitungsrecht ändert die App über die Anlage
+    readonly: !c.pbx,
   }))
 }
 

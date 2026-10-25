@@ -15,7 +15,7 @@ import { integrationReport, validToken } from './integration'
 import { LdapServer } from './ldap'
 import { HttpError, type Request, Router, makeRequest, sendFile, sendJson, sendText, serveStatic } from './http'
 import { sendMail } from './mail'
-import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, SECTIONS, type SectionName } from './model'
+import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, type PhonebookEntry, SECTIONS, type SectionName } from './model'
 import { PATHS, SETTINGS } from './paths'
 import { PROVIDERS } from './providers'
 import { appLink, baseUrl, landingPage, profile, startDiscovery, visibleCalendars } from './provisioning'
@@ -248,6 +248,41 @@ pub.put('/provision/:token/events/:calendar/:uid', async (r) => {
 pub.delete('/provision/:token/events/:calendar/:uid', (r) => {
   writableFor(r.params.token, r.params.calendar)
   calendars.remove(r.params.calendar, r.params.uid)
+  return { ok: true }
+})
+
+/** Zentrales Telefonbuch aus der App bearbeiten (Recht phonebook_edit) */
+function phonebookEditor(token: string): Extension {
+  const ext = tokenExtension(token)
+  if (!appPermissions(store.config, ext.number).includes('phonebook_edit')) {
+    throw new HttpError(403, 'Das Telefonbuch der Anlage darf von dieser Nebenstelle nicht bearbeitet werden.')
+  }
+  return ext
+}
+
+function phonebookEntry(raw: Partial<PhonebookEntry>, id = ''): PhonebookEntry {
+  const text = (v: unknown, max = 200): string => String(v ?? '').trim().slice(0, max)
+  const entry = { id, name: text(raw.name), company: text(raw.company), phone: text(raw.phone, 40), mobile: text(raw.mobile, 40) }
+  if (!entry.name) throw new HttpError(400, 'Der Kontakt braucht einen Namen.')
+  if (!entry.phone && !entry.mobile) throw new HttpError(400, 'Der Kontakt braucht eine Telefonnummer.')
+  return entry
+}
+
+pub.post('/provision/:token/phonebook', async (r) => {
+  phonebookEditor(r.params.token)
+  return store.upsert('phonebook', { ...phonebookEntry(await r.json()) })
+})
+
+pub.put('/provision/:token/phonebook/:id', async (r) => {
+  phonebookEditor(r.params.token)
+  if (!store.config.phonebook.some((p) => p.id === r.params.id)) throw new HttpError(404, 'Kontakt nicht gefunden.')
+  return store.upsert('phonebook', { ...phonebookEntry(await r.json(), r.params.id) })
+})
+
+pub.delete('/provision/:token/phonebook/:id', (r) => {
+  phonebookEditor(r.params.token)
+  if (!store.config.phonebook.some((p) => p.id === r.params.id)) throw new HttpError(404, 'Kontakt nicht gefunden.')
+  store.remove('phonebook', r.params.id)
   return { ok: true }
 })
 

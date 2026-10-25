@@ -113,3 +113,16 @@ describe('Rechte in der App', () => {
     expect(info.permissions).toContain('forward_external')
   })
 })
+
+describe('Telefonbuch aus der App', () => {
+  it('gibt bearbeitbaren Einträgen eine ID', async () => {
+    const { profile } = await import('../server/provisioning')
+    const cfg = sampleConfig()
+    cfg.provisioning.permissions = []
+    const ids = (): (string | undefined)[] => profile(cfg, cfg.extensions[0], 'http://pbx').phonebook.map((e) => e.id)
+    expect(ids().filter(Boolean)).toEqual([])
+    cfg.groups[0].permissions = ['phonebook_edit']
+    expect(ids().filter(Boolean)).toEqual(['p1'])
+    expect(profile(cfg, cfg.extensions[2], 'http://pbx').permissions).toEqual([])
+  })
+})

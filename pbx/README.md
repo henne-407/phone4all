@@ -104,6 +104,7 @@ Token ist zugleich die Berechtigung.
 | `PUT /provision/<token>/events/<kalender>/<uid>` | Termin anlegen oder ändern (nur beschreibbare Kalender) |
 | `DELETE /provision/<token>/events/<kalender>/<uid>` | Termin löschen |
 | `GET /provision/<token>/forward` | Umleitungen: `cfu`, `active`, `busy`, `noanswer`, `rules`, `permissions`, interne `targets`, `timeconditions` |
+| `POST /provision/<token>/phonebook`, `PUT`/`DELETE …/phonebook/<id>` | Telefonbuch bearbeiten (Recht `phonebook_edit`; bearbeitbare Einträge haben im Profil eine `id`) |
 | `PUT /provision/<token>/forward` | Änderungen davon (`cfu` braucht das Recht `forward`, der Rest `forward_rules`; externe Ziele `forward_external`) |
 
 Termine: `{ uid, summary, start, end, allDay, location, description }`. Ganztägige

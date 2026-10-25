@@ -42,7 +42,7 @@ export interface PbxProfile {
   account: AccountSettings
   password: string
   url: string
-  phonebook: { name: string; company: string; phone: string; mobile: string }[]
+  phonebook: { name: string; company: string; phone: string; mobile: string; id?: string }[]
   app: AppPolicy | null
   calendars: PbxCalendar[]
   permissions: PbxPermission[]
@@ -340,6 +340,36 @@ export class Provisioning {
     return next
   }
 
+  /** Kontakt im Telefonbuch der Anlage anlegen (ohne pbx) oder ändern (Recht phonebook_edit) */
+  async savePhonebookEntry(contact: Pick<Contact, 'name' | 'company' | 'phone' | 'mobile' | 'pbx'>): Promise<void> {
+    const { name, company, phone, mobile } = contact
+    await this.phonebookRequest(contact.pbx ? 'PUT' : 'POST', contact.pbx, { name, company, phone, mobile })
+  }
+
+  async deletePhonebookEntry(id: string): Promise<void> {
+    await this.phonebookRequest('DELETE', id)
+  }
+
+  private async phonebookRequest(method: string, id?: string, body?: object): Promise<void> {
+    const url = this.url
+    if (!url) throw new Error('Keine Telefonanlage verbunden.')
+    let r: Response
+    try {
+      r = await fetch(`${url}/phonebook${id ? `/${encodeURIComponent(id)}` : ''}`, {
+        method,
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(10000),
+      })
+    } catch {
+      throw new Error('Die Telefonanlage ist nicht erreichbar.')
+    }
+    const data = (await r.json().catch(() => null)) as { error?: string } | null
+    if (!r.ok) throw new Error(data?.error || `Die Telefonanlage antwortet mit Fehler ${r.status}.`)
+    // Neues Telefonbuch gleich holen, damit die Liste stimmt
+    await this.refresh()
+  }
+
   /** Profil per Link abrufen (zur Bestätigung). */
   async fromLink(link: string): Promise<PbxPreview> {
     const url = profileUrlFromLink(link)
@@ -422,7 +452,14 @@ export class Provisioning {
   }
 
   private setPhonebook(entries: PbxProfile['phonebook']): void {
-    this.phonebook = entries.map((e) => ({ name: e.name, company: e.company, phone: e.phone, mobile: e.mobile, other: [] }))
+    this.phonebook = entries.map((e) => ({
+      name: e.name,
+      company: e.company,
+      phone: e.phone,
+      mobile: e.mobile,
+      other: [],
+      ...(typeof e.id === 'string' && e.id ? { pbx: e.id } : {}),
+    }))
     saveJson(this.phonebookPath, this.phonebook)
     this.host.phonebookChanged()
   }

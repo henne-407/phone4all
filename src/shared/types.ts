@@ -10,6 +10,8 @@ export interface Contact {
   favorite?: boolean
   source?: string // Name des Adressbuchs (nur externe Kontakte)
   readonly?: boolean
+  /** Eintrag im Telefonbuch der Telefonanlage, den diese App bearbeiten darf */
+  pbx?: string
 }
 
 export interface HistoryEntry {

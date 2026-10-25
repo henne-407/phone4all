@@ -160,6 +160,9 @@ export function createApi(app: App) {
     pbxDisconnect: () => app.provisioning.disconnect(),
     pbxSetForward: (change: PbxForwardChange) => attempt(() => app.provisioning.setForward(change)),
     pbxLoadForward: () => app.provisioning.loadForward(),
+    pbxSaveContact: (contact: Pick<Contact, 'name' | 'company' | 'phone' | 'mobile' | 'pbx'>) =>
+      attempt(() => app.provisioning.savePhonebookEntry(contact)),
+    pbxDeleteContact: (id: string) => attempt(() => app.provisioning.deletePhonebookEntry(id)),
     takePbxLink: () => app.takePendingLink(),
     setTitleBarColors: (color: string, symbolColor: string) => app.setTitleBarColors(color, symbolColor),
 

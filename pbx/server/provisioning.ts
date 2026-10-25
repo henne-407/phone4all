@@ -36,7 +36,8 @@ export interface ProvisioningProfile {
   password: string
   /** Adresse, unter der die App das Profil später erneut abruft */
   url: string
-  phonebook: { name: string; company: string; phone: string; mobile: string }[]
+  /** id nur bei Einträgen, die diese Nebenstelle bearbeiten darf (Recht phonebook_edit) */
+  phonebook: { name: string; company: string; phone: string; mobile: string; id?: string }[]
   features: Record<string, string>
   /** Vorgaben für die Ansichten der App (null = keine) */
   app: AppPolicy | null
@@ -88,7 +89,14 @@ export function appLink(base: string, ext: Extension): string {
 export function profile(cfg: PbxConfig, ext: Extension, base: string): ProvisioningProfile {
   const domain = cfg.system.sip_host.trim() || new URL(base).hostname.replace(/^\[|\]$/g, '')
   const permissions = appPermissions(cfg, ext.number)
-  const phonebook = directory(cfg, ext.id).map(({ name, company, phone, mobile }) => ({ name, company, phone, mobile }))
+  const editable = permissions.includes('phonebook_edit')
+  const phonebook = directory(cfg, ext.id).map(({ id, name, company, phone, mobile }) => ({
+    name,
+    company,
+    phone,
+    mobile,
+    ...(editable && id.startsWith('pb-') ? { id: id.slice(3) } : {}),
+  }))
   const result: Omit<ProvisioningProfile, 'revision'> = {
     format: PROVISIONING_FORMAT,
     version: 1,

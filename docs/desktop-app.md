@@ -100,6 +100,8 @@ nach Änderungen (siehe [App-Profile](telefonanlage.md#app-profile)).
   Gruppe oder Nummer umleiten; unter *Regeln und Weiterleitungen* Ziele bei besetzt / ohne
   Antwort und Regeln nach Zeitplan, Zeitsteuerung oder „Nicht stören“. Was erlaubt ist,
   legt die Anlage fest (Rechte unter *System → Zugang* und je Gruppe)
+- Mit dem Recht *Telefonbuch bearbeiten* ändert und löscht die App Einträge im Telefonbuch
+  der Anlage und legt neue an (*Im Telefonbuch von „…“ speichern*)
 - Anpassbare Startseite (Karten in bis zu drei Spalten): Status mit „Nicht stören“ und
   Schnellwahl, Favoriten, letzte Anrufe, nächste Termine – ein-/ausblenden, sortieren,
   Startansicht wählbar
