@@ -160,6 +160,9 @@ export function validate(cfg: PbxConfig): void {
   const w = cfg.watchdog
   if (!(w.trunk_grace >= 1 && w.trunk_grace <= 60)) throw new ValidationError('Wartezeit für SIP-Konten: 1 bis 60 Minuten.')
   if (w.notify_email && !/^[^\s@<>]+@[^\s@<>]+$/.test(w.notify_email)) throw new ValidationError('Ungültige E-Mail-Adresse für Störungsmeldungen.')
+  const m = cfg.messenger
+  if (!(m.max_file_mb >= 1 && m.max_file_mb <= 1024)) throw new ValidationError('Größte Datei im Messenger: 1 bis 1024 MB.')
+  if (!(m.min_free_mb >= 100)) throw new ValidationError('Freier Speicher für den Messenger: mindestens 100 MB.')
 }
 
 export interface ExportFile {

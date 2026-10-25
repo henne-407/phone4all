@@ -8,12 +8,12 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { normalizeNumber } from '../shared/numbers'
-import type { AccountSettings, CalEvent, Contact, DavAccount, HomeCard, PageName, PbxForwardChange, SqlSourceConf } from '../shared/types'
+import type { AccountSettings, CalEvent, ChatFile, Contact, DavAccount, HomeCard, PageName, PbxForwardChange, SqlSourceConf } from '../shared/types'
 import type { App } from './app'
 import { CalDavBackend } from './calendars'
 import { CardDavBackend } from './contactSync'
 import { errorText } from './dav'
-import { RINGTONE_DIR } from './paths'
+import { DIRS, RINGTONE_DIR } from './paths'
 import { discover } from './provisioning'
 import { ringtonePath, saveCustomRingtone } from './ringtones'
 import { MsSqlSource } from './sqlSource'
@@ -271,8 +271,68 @@ export function createApi(app: App) {
       void calendar.reload()
     },
     defaultCalendar: () => calendar.defaultCalendar()?.id ?? null,
+
+    // -- Messenger -----------------------------------------------------------
+    messengerState: () => app.messenger.state,
+    messengerHistory: (room: string, before?: number) => attempt(() => app.messenger.loadHistory(room, before)),
+    messengerSend: (room: string, text: string) => attempt(() => app.messenger.sendText(room, text)),
+    messengerDirect: (ext: string) => attempt(() => app.messenger.openDirect(ext)),
+    messengerGroup: (name: string, members: string[]) => attempt(() => app.messenger.createGroup(name, members)),
+    messengerUpdateGroup: (room: string, change: { name?: string; members?: string[] }) =>
+      attempt(async () => app.messenger.updateGroup(room, change)),
+    messengerLeave: (room: string) => attempt(async () => app.messenger.leave(room)),
+    messengerRead: (room: string, seq: number) => app.messenger.markRead(room, seq),
+    messengerTyping: (room: string) => app.messenger.typing(room),
+    /** Gerade geöffnete Unterhaltung (null = keine), für Benachrichtigungen */
+    messengerFocus: (room: string | null) => {
+      app.openChat = room
+    },
+    messengerPickFiles: async (room: string) => {
+      const r = await dialog.showOpenDialog(app.mainWindow()!, { title: 'Dateien senden', properties: ['openFile', 'multiSelections'] })
+      if (r.canceled) return { ok: true as const, value: 0 }
+      return attempt(async () => {
+        for (const file of r.filePaths) await app.messenger.uploadPath(room, file)
+        return r.filePaths.length
+      })
+    },
+    messengerSendFiles: (room: string, files: string[]) =>
+      attempt(async () => {
+        for (const file of files) await app.messenger.uploadPath(room, file)
+        return files.length
+      }),
+    messengerSendData: (room: string, name: string, type: string, data: Uint8Array) => attempt(() => app.messenger.upload(room, name, type, data)),
+    /** Vorschaubild als data:-Adresse (nur Bilder bis 10 MB) */
+    messengerImage: (room: string, file: ChatFile) =>
+      attempt(async () => {
+        if (!file.type.startsWith('image/') || file.size > 10 * 1024 * 1024) return ''
+        const cached = imageCache.get(file.id)
+        if (cached) return cached
+        const url = `data:${file.type};base64,${(await app.messenger.download(room, file)).toString('base64')}`
+        imageCache.set(file.id, url)
+        if (imageCache.size > 100) imageCache.delete(imageCache.keys().next().value!)
+        return url
+      }),
+    messengerOpenFile: (room: string, file: ChatFile) =>
+      attempt(async () => {
+        const dir = path.join(DIRS.runtime, 'messenger')
+        fs.mkdirSync(dir, { recursive: true })
+        const target = path.join(dir, `${file.id}-${path.basename(file.name)}`)
+        if (!fs.existsSync(target)) fs.writeFileSync(target, await app.messenger.download(room, file))
+        const error = await shell.openPath(target)
+        if (error) throw new Error(error)
+      }),
+    messengerSaveFile: (room: string, file: ChatFile) =>
+      attempt(async () => {
+        const r = await dialog.showSaveDialog(app.mainWindow()!, { title: 'Datei speichern', defaultPath: path.basename(file.name) })
+        if (r.canceled || !r.filePath) return false
+        fs.writeFileSync(r.filePath, await app.messenger.download(room, file))
+        return true
+      }),
   }
 }
+
+/** Vorschaubilder des Messengers (Datei-ID → data:-Adresse) */
+const imageCache = new Map<string, string>()
 
 export type Api = ReturnType<typeof createApi>
 
@@ -286,4 +346,8 @@ export interface RendererEvents {
   'open-preferences': [string]
   'edit-contact': [Partial<Contact>]
   'pbx-link': []
+  messenger: [import('../shared/types').MessengerState]
+  'messenger-message': [import('../shared/types').ChatMessage]
+  'messenger-reset': []
+  'messenger-open': [string]
 }

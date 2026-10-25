@@ -177,7 +177,7 @@ App-Profil fest.
 
 Ein App-Profil legt fest, was Desktop- und Mobil-App zeigen:
 
-- welche Bereiche (Start, Wählen, Kontakte, Kalender, Verlauf) in welcher Reihenfolge –
+- welche Bereiche (Start, Wählen, Kontakte, Kalender, Verlauf, Messenger) in welcher Reihenfolge –
   per Drag & Drop sortierbar,
 - mit welcher Ansicht die App startet,
 - welche Karten auf der Startseite liegen (ebenfalls per Drag & Drop),
@@ -191,6 +191,20 @@ die Apps übernehmen Änderungen innerhalb von zwei Minuten.
 
 Telefonkonferenzen mit beliebig vielen Teilnehmern, optional mit PIN. Intern über die
 Nummer des Raums erreichbar, von außen, wenn der Raum Ziel einer Rufabfolge ist.
+
+### Messenger
+
+![Messenger](bilder/anlage-messenger.png)
+
+Chats zwischen den Nebenstellen in der Desktop-App. Hier wird der Messenger ein- und
+ausgeschaltet, die größte Datei festgelegt und wie viel Speicher frei bleiben soll.
+Nachrichten werden nicht nach Zeit gelöscht: Erst wenn auf der Anlage weniger frei ist als
+eingestellt, verschwinden die ältesten Nachrichten samt Anhängen (vermerkt unter
+*System → Diagnose*). Die Liste zeigt alle Unterhaltungen mit Mitgliedern und Anzahl der
+Nachrichten, aber keine Inhalte; einzelne Unterhaltungen lassen sich löschen.
+
+Wer den Messenger nutzen darf, steuern die App-Profile: Nebenstellen mit einem Profil ohne
+den Bereich *Messenger* sind nicht dabei. Nebenstellen ohne Profil sehen ihn immer.
 
 ## Auswertung und System
 

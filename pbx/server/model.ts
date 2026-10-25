@@ -313,8 +313,50 @@ export interface IntegrationSettings {
   token: string
 }
 
+/** Messenger: Chats zwischen den Nebenstellen (server/messenger.ts) */
+export interface MessengerSettings {
+  enabled: boolean
+  /** Größte Datei, die man verschicken kann (MB) */
+  max_file_mb: number
+  /** Alte Nachrichten werden nur gelöscht, wenn weniger Speicher frei ist (MB) */
+  min_free_mb: number
+}
+
+/** Unterhaltung: Einzelchat (zwei Nebenstellen) oder Gruppe */
+export interface ChatRoom {
+  id: string
+  kind: 'direct' | 'group'
+  /** Name der Gruppe (Einzelchats zeigen den Namen der Gegenseite) */
+  name: string
+  /** Nebenstellen (Nummern) */
+  members: string[]
+  created: number
+  created_by: string
+  /** Fortlaufende Nummer der letzten Nachricht */
+  seq: number
+  /** Zuletzt gelesene Nachricht je Nebenstelle */
+  read: Record<string, number>
+}
+
+export interface ChatFile {
+  id: string
+  name: string
+  size: number
+  type: string
+}
+
+export interface ChatMessage {
+  seq: number
+  room: string
+  /** Nebenstelle des Absenders (leer bei Systemnachrichten) */
+  from: string
+  time: number
+  text: string
+  file?: ChatFile
+}
+
 /** Seiten und Startkarten der Phone4All-App (wie dort benannt) */
-export type AppPage = 'home' | 'dial' | 'contacts' | 'calendar' | 'history'
+export type AppPage = 'home' | 'dial' | 'contacts' | 'calendar' | 'history' | 'messenger'
 export type AppHomeCard = 'status' | 'today' | 'favorites' | 'recent' | 'events'
 
 export const APP_PAGES: [AppPage, string][] = [
@@ -323,6 +365,7 @@ export const APP_PAGES: [AppPage, string][] = [
   ['contacts', 'Kontakte'],
   ['calendar', 'Kalender'],
   ['history', 'Verlauf'],
+  ['messenger', 'Messenger'],
 ]
 
 export const APP_HOME_CARDS: [AppHomeCard, string][] = [
@@ -447,6 +490,7 @@ export interface PbxConfig {
   watchdog: WatchdogSettings
   integration: IntegrationSettings
   ldap: LdapSettings
+  messenger: MessengerSettings
 }
 
 export const HANGUP: Destination = { type: 'hangup', target: '' }
@@ -498,6 +542,7 @@ export const DEFAULT_CONFIG: PbxConfig = {
   watchdog: { auto_repair: true, trunk_grace: 3, notify_email: '' },
   integration: { enabled: false, token: '' },
   ldap: { enabled: false, port: 389, password: '' },
+  messenger: { enabled: true, max_file_mb: 25, min_free_mb: 2048 },
 }
 
 /** Listen der Konfiguration, die die Weboberfläche einheitlich bearbeitet. */
@@ -519,7 +564,7 @@ export const COLLECTIONS = [
 ] as const
 export type CollectionName = (typeof COLLECTIONS)[number]
 
-export const SECTIONS = ['system', 'mail', 'security', 'updates', 'provisioning', 'watchdog', 'integration', 'ldap'] as const
+export const SECTIONS = ['system', 'mail', 'security', 'updates', 'provisioning', 'watchdog', 'integration', 'ldap', 'messenger'] as const
 export type SectionName = (typeof SECTIONS)[number]
 
 export const DESTINATION_LABELS: Record<DestinationType, string> = {

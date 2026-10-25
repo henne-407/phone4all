@@ -125,6 +125,26 @@ nach Änderungen (siehe [App-Profile](telefonanlage.md#app-profile)).
 - Passwörter verschlüsselt mit dem Schlüsselbund des Systems (macOS-Schlüsselbund,
   Windows DPAPI, GNOME-Schlüsselbund/KWallet); Passwörter der GTK-Version werden übernommen
 
+## Messenger
+
+![Messenger](bilder/app-messenger.png)
+
+Ist die App über eine Phone4all-Telefonanlage eingerichtet und dort der Messenger
+eingeschaltet, erscheint links der Bereich **Messenger**:
+
+- Einzelchats mit jeder Nebenstelle und Gruppen mit Namen und Mitgliedern
+  (Knopf oben neben der Suche)
+- Text, Bilder und Dateien: Büroklammer, Drag & Drop ins Fenster oder Bildschirmfoto
+  mit Strg+V einfügen; Bilder erscheinen als Vorschau, andere Dateien öffnen oder speichern
+- Haken für zugestellt, Doppelhaken für gelesen, Anzeige „schreibt …“ und wer gerade online ist
+- Zahl ungelesener Nachrichten am Navigationssymbol, Benachrichtigung bei neuen Nachrichten
+  (nicht für den Chat, der gerade offen ist)
+- Telefonhörer im Einzelchat ruft die Nebenstelle an
+
+Die Nachrichten liegen auf der Anlage, die App lädt den Verlauf beim Öffnen. Unterwegs
+funktioniert der Messenger über dieselbe HTTPS-Adresse wie die Einrichtung (siehe
+[Fernzugriff](fernzugriff.md)). Videoanrufe folgen in einer späteren Version.
+
 ## Kalender
 
 Einstellungen → **Kalender**:

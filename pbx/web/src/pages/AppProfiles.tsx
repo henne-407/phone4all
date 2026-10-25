@@ -4,6 +4,7 @@ import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
 import ContactsIcon from '@mui/icons-material/Contacts'
 import DialpadIcon from '@mui/icons-material/Dialpad'
 import DoNotDisturbOnIcon from '@mui/icons-material/DoNotDisturbOn'
+import ChatIcon from '@mui/icons-material/Chat'
 import EventIcon from '@mui/icons-material/Event'
 import HistoryIcon from '@mui/icons-material/History'
 import HomeIcon from '@mui/icons-material/Home'
@@ -24,6 +25,7 @@ const PAGE_ICONS: Record<AppPage, ReactNode> = {
   contacts: <ContactsIcon fontSize="small" />,
   calendar: <CalendarMonthIcon fontSize="small" />,
   history: <HistoryIcon fontSize="small" />,
+  messenger: <ChatIcon fontSize="small" />,
 }
 
 const CARD_ICONS: Record<AppHomeCard, ReactNode> = {

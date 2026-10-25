@@ -98,17 +98,27 @@ Token ist zugleich die Berechtigung.
 
 | Anfrage | Ergebnis |
 | --- | --- |
-| `GET /provision/<token>` | Profil: Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `permissions`, `revision` |
+| `GET /provision/<token>` | Profil: Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `permissions`, `messenger`, `revision` |
 | `GET /provision/<token>/revision` | `{ profile, events }` – ändert sich, sobald Profil oder Termine sich ändern |
 | `GET /provision/<token>/events?start=…&end=…&calendar=…` | Termine im Zeitraum (höchstens 400 Tage) |
 | `PUT /provision/<token>/events/<kalender>/<uid>` | Termin anlegen oder ändern (nur beschreibbare Kalender) |
 | `DELETE /provision/<token>/events/<kalender>/<uid>` | Termin löschen |
+| `GET /provision/<token>/chat` (WebSocket) | Messenger, Nachrichten als JSON (siehe unten) |
+| `POST /provision/<token>/chat/files?room=…&name=…` | Datei senden (Inhalt als Body, `Content-Type` setzen) |
+| `GET /provision/<token>/chat/files/<raum>/<id>` | Datei abrufen (nur Mitglieder des Raums) |
 | `GET /provision/<token>/forward` | Umleitungen: `cfu`, `active`, `busy`, `noanswer`, `rules`, `permissions`, interne `targets`, `timeconditions` |
 | `POST /provision/<token>/phonebook`, `PUT`/`DELETE …/phonebook/<id>` | Telefonbuch bearbeiten (Recht `phonebook_edit`; bearbeitbare Einträge haben im Profil eine `id`) |
 | `PUT /provision/<token>/forward` | Änderungen davon (`cfu` braucht das Recht `forward`, der Rest `forward_rules`; externe Ziele `forward_external`) |
 
 Termine: `{ uid, summary, start, end, allDay, location, description }`. Ganztägige
 Termine haben Datumsangaben (`2026-12-24`, Ende exklusiv), alle anderen ISO-Zeitpunkte.
+
+Messenger-Protokoll: Nach dem Verbinden schickt die Anlage `{ t: 'init', me, users, online,
+rooms }`. Die App sendet `history` (`room`, `before`), `send` (`room`, `text`), `direct`
+(`with`), `group` (`name`, `members`), `update` (`room`, `name`, `members`), `leave`, `read`
+(`room`, `seq`) und `typing`; ein mitgeschicktes `ref` kommt mit der Antwort zurück. Die
+Anlage meldet `message`, `room`, `removed`, `read`, `typing`, `presence`, `users` und
+`error`. Nachrichten tragen eine je Raum fortlaufende `seq`.
 
 Andere Telefone (Tischtelefone, Softphones) werden mit Nebenstelle als Benutzer,
 SIP-Passwort und der Adresse der Anlage als Server angemeldet.
@@ -230,6 +240,7 @@ Alles liegt im Ordner `data/` neben der `docker-compose.yml`:
 | `voicemail/`, `recordings/` | Nachrichten, Aufzeichnungen |
 | `sounds/` | eigene Ansagen und Wartemusik |
 | `calendars/` | Termine der zentralen Kalender |
+| `messenger/` | Chats (`rooms.json`, `rooms/*.jsonl`) und Anhänge (`files/`) |
 | `log/` | Anrufliste (CDR) und Protokoll |
 | `watchdog.json` | Ereignisse des Watchdogs |
 
