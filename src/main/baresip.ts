@@ -211,6 +211,10 @@ export class Baresip extends EventEmitter {
       `audio_player ${driver},${player}`,
       `audio_source ${driver},${source}`,
       `audio_alert ${driver},${alert}`,
+      // Mikrofon immer mono öffnen: Opus wird mit 2 Kanälen ausgehandelt, viele Mikrofone
+      // (Headsets, Notebook) können unter PortAudio aber nur 1 Kanal ("Invalid number of
+      // channels"). auresamp wandelt für den Encoder auf die Kanalzahl des Codecs um.
+      'ausrc_channels 1',
       'call_max_calls 4',
       `ctrl_tcp_listen 127.0.0.1:${this.port}`,
     )
