@@ -1,8 +1,9 @@
 /** pjsip.conf: Transporte, Nebenstellen, SIP-Konten und Sperrliste. */
 
+import { messengerUsers } from '../messenger'
 import type { Extension, PbxConfig, Trunk } from '../model'
 import { formatFor, toE164 } from '../numbers'
-import { appEndpoint } from '../remote'
+import { appEndpoint, videoEnabled, videoEndpoint, webrtcEnabled } from '../remote'
 import type { GenContext } from './context'
 
 /** Werte für Konfigurationsdateien: keine Zeilenumbrüche, kein Semikolon (Kommentarzeichen). */
@@ -206,6 +207,44 @@ function appTemplate(cfg: PbxConfig): string {
   ], '!')
 }
 
+/**
+ * Videoanrufe aus dem Messenger: WebRTC mit VP8, mehrere Videoströme (die Konferenz
+ * leitet jedes Bild einzeln weiter, SFU). Kann nur Chat-Räume anrufen (p4a-video).
+ */
+function videoTemplate(cfg: PbxConfig): string {
+  const s = cfg.system
+  return section('p4a-video', [
+    'type=endpoint',
+    'context=p4a-video',
+    'transport=transport-ws',
+    'webrtc=yes',
+    'disallow=all',
+    `allow=${webrtcCodecs(s.codecs)},vp8`,
+    'bundle=yes',
+    'max_audio_streams=1',
+    'max_video_streams=16',
+    'direct_media=no',
+    'rtp_symmetric=yes',
+    'force_rport=yes',
+    'rewrite_contact=yes',
+    'dtmf_mode=rfc4733',
+    `language=${val(s.language)}`,
+    // Abgestürzte App (kein BYE): Sitzung läuft ohne Auffrischung nach 2 Minuten ab.
+    // rtp_timeout geht nicht: Auf den Videoströmen der anderen kommt nie etwas zurück
+    'timers=yes',
+    'timers_sess_expires=120',
+  ], '!')
+}
+
+/** Gerät „<nummer>-video“ einer Nebenstelle; meldet sich nicht an, ruft nur an */
+function videoSections(ext: Extension): string {
+  const id = videoEndpoint(ext.number)
+  return [
+    section(id, [`callerid="${val(ext.name).replace(/"/g, '')}" <${ext.number}>`, `auth=${id}`, `set_var=P4A_EXT=${ext.number}`], 'p4a-video'),
+    section(id, ['type=auth', 'auth_type=userpass', `username=${id}`, `password=${val(ext.secret)}`]),
+  ].join('\n')
+}
+
 export function pjsipConf(cfg: PbxConfig, ctx: GenContext): string {
   const s = cfg.system
   const nat = s.external_address.trim()
@@ -239,7 +278,7 @@ export function pjsipConf(cfg: PbxConfig, ctx: GenContext): string {
       ]),
     )
   }
-  if (cfg.remote.enabled) {
+  if (webrtcEnabled(cfg)) {
     // Läuft über den HTTP-Server von Asterisk (http.conf), die Anlage reicht /ws weiter. Die
     // Adresse muss 0.0.0.0 sein: Asterisk bindet auch die Sprache (RTP) daran
     parts.push(section('transport-ws', ['type=transport', 'protocol=ws', 'bind=0.0.0.0']))
@@ -268,6 +307,7 @@ export function pjsipConf(cfg: PbxConfig, ctx: GenContext): string {
       'media_encryption_optimistic=yes',
     ], '!'),
     ...(cfg.remote.enabled ? [appTemplate(cfg)] : []),
+    ...(videoEnabled(cfg) ? [videoTemplate(cfg)] : []),
     section('p4a-trunk', [
       'type=endpoint',
       'context=p4a-from-trunk',
@@ -287,6 +327,7 @@ export function pjsipConf(cfg: PbxConfig, ctx: GenContext): string {
   )
   for (const ext of cfg.extensions) parts.push(extensionSections(cfg, ext))
   if (cfg.remote.enabled) for (const ext of cfg.extensions) parts.push(appSections(cfg, ext))
+  if (videoEnabled(cfg)) for (const ext of messengerUsers(cfg)) parts.push(videoSections(ext))
   for (const t of cfg.trunks.filter((t) => t.enabled && t.registrar.trim())) parts.push(trunkSections(cfg, t, ctx))
   return parts.join('\n')
 }

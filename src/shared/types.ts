@@ -136,7 +136,19 @@ export interface Settings {
     permissions: PbxPermission[]
     /** Messenger der Anlage freigegeben */
     messenger: boolean
+    /** Videoanrufe im Messenger (null = aus) */
+    video?: VideoAccount | null
   }
+}
+
+/** Zugang für Videoanrufe: SIP über WebSocket, Passwort wie das Konto */
+export interface VideoAccount {
+  /** ws(s)://…/ws */
+  websocket: string
+  /** <nummer>-video */
+  user: string
+  domain: string
+  ice_servers: { urls: string[]; username?: string; credential?: string }[]
 }
 
 export type PbxPermission = 'forward' | 'forward_external' | 'forward_rules' | 'calendar_edit' | 'phonebook_edit'
@@ -310,7 +322,7 @@ export interface AppState {
   /** Umleitungen in der Telefonanlage (null = keine Anlage oder zu alt) */
   forward: PbxForward | null
   /** Messenger der Telefonanlage: verfügbar, verbunden, ungelesene Nachrichten */
-  messenger: { available: boolean; status: MessengerState['status']; unread: number }
+  messenger: { available: boolean; status: MessengerState['status']; unread: number; video: boolean }
 }
 
 /** Stand der App-Aktualisierung */
@@ -373,4 +385,14 @@ export interface MessengerState {
   rooms: ChatRoom[]
   /** Raum → Nebenstellen, die gerade tippen */
   typing: Record<string, string[]>
+  /** Raum → laufender Videoanruf */
+  calls: Record<string, ChatCall>
+}
+
+/** Laufender Videoanruf in einem Chat */
+export interface ChatCall {
+  since: number
+  /** wer angefangen hat */
+  by: string
+  participants: string[]
 }

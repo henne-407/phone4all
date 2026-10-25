@@ -1,6 +1,7 @@
 /** Erzeugt alle Asterisk-Konfigurationsdateien aus der Konfiguration der Anlage. */
 
 import type { PbxConfig } from '../model'
+import { webrtcEnabled } from '../remote'
 import type { GenContext } from './context'
 import { extensionsConf } from './dialplan'
 import { pjsipConf, val } from './pjsip'
@@ -12,7 +13,7 @@ const MODULES = [
   // Grundlagen
   'res_timing_timerfd', 'res_sorcery_config', 'res_sorcery_memory', 'res_sorcery_astdb', 'res_crypto',
   'res_rtp_asterisk', 'res_srtp', 'res_musiconhold', 'res_curl', 'res_clioriginate', 'res_limit',
-  'res_format_attr_opus', 'res_manager_devicestate', 'res_security_log', 'pbx_config', 'cdr_custom',
+  'res_format_attr_opus', 'res_format_attr_vp8', 'res_manager_devicestate', 'res_security_log', 'pbx_config', 'cdr_custom',
   // PJSIP
   'res_pjproject', 'res_pjsip', 'res_pjsip_session', 'res_pjsip_authenticator_digest',
   'res_pjsip_outbound_authenticator_digest', 'res_pjsip_endpoint_identifier_ip',
@@ -102,18 +103,18 @@ writetimeout = 5000
 }
 
 function rtpConf(cfg: PbxConfig): string {
-  // ICE nur für die Mobil-App (WebRTC); andere Endpunkte haben ice_support=no
+  // ICE nur für WebRTC (Mobil-App, Videoanrufe); andere Endpunkte haben ice_support=no
   return `[general]
 rtpstart=${cfg.system.rtp_start}
 rtpend=${cfg.system.rtp_end}
 strictrtp=yes
-icesupport=${cfg.remote.enabled ? 'yes' : 'no'}
+icesupport=${webrtcEnabled(cfg) ? 'yes' : 'no'}
 `
 }
 
 /** HTTP-Server von Asterisk nur lokal: die Anlage reicht /ws von außen weiter */
 function httpConf(cfg: PbxConfig, gen: GenContext): string {
-  if (!cfg.remote.enabled) return '[general]\nenabled=no\n'
+  if (!webrtcEnabled(cfg)) return '[general]\nenabled=no\n'
   return `[general]
 enabled=yes
 bindaddr=127.0.0.1
@@ -219,6 +220,21 @@ type=user
 music_on_hold_when_empty=yes
 announce_user_count=yes
 announce_join_leave=no
+dsp_drop_silence=yes
+
+; Videoanrufe aus dem Messenger: jedes Bild wird einzeln weitergeleitet (SFU)
+[p4a-video]
+type=bridge
+video_mode=sfu
+max_members=25
+remb_send_interval=1000
+remb_behavior=lowest_all
+
+[p4a-video-user]
+type=user
+quiet=yes
+announce_user_count=no
+music_on_hold_when_empty=no
 dsp_drop_silence=yes
 `
 }

@@ -20,6 +20,7 @@ import LogoutIcon from '@mui/icons-material/Logout'
 import MoreIcon from '@mui/icons-material/MoreVert'
 import SearchIcon from '@mui/icons-material/Search'
 import SendIcon from '@mui/icons-material/Send'
+import VideocamIcon from '@mui/icons-material/Videocam'
 import {
   Alert,
   Avatar,
@@ -52,20 +53,9 @@ import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import type { ChatFile, ChatMessage, ChatRoom, MessengerState } from '../../../shared/types'
 import { api, onMain } from '../api'
 import { ContactAvatar, EmptyState } from '../components/common'
+import { roomTitle, useMessenger, userName } from '../messenger'
 import { useApp } from '../state'
-
-// -- Zustand ------------------------------------------------------------------------
-
-const EMPTY: MessengerState = { status: 'off', me: '', users: [], online: [], rooms: [], typing: {} }
-
-function useMessenger(): MessengerState {
-  const [state, setState] = useState<MessengerState>(EMPTY)
-  useEffect(() => {
-    void api.messengerState().then(setState)
-    return onMain('messenger', setState)
-  }, [])
-  return state
-}
+import { joinVideo, useVideo } from '../video'
 
 /** Unterhaltung, die beim nächsten Anzeigen geöffnet werden soll (Klick auf Benachrichtigung) */
 let requested: string | null = null
@@ -74,16 +64,6 @@ const openListeners = new Set<(room: string) => void>()
 export function openChatRoom(room: string): void {
   requested = room
   for (const l of openListeners) l(room)
-}
-
-function roomTitle(room: ChatRoom, s: MessengerState): string {
-  if (room.kind === 'group') return room.name
-  const other = room.members.find((m) => m !== s.me) ?? s.me
-  return userName(other, s)
-}
-
-function userName(ext: string, s: MessengerState): string {
-  return s.users.find((u) => u.number === ext)?.name || ext
 }
 
 function otherMember(room: ChatRoom, s: MessengerState): string {
@@ -216,10 +196,10 @@ function RoomList({ s, current, onOpen, onNew }: { s: MessengerState; current: s
             </ListItemAvatar>
             <ListItemText
               primary={roomTitle(r, s)}
-              secondary={s.typing[r.id]?.length ? 'schreibt …' : preview(r.last, s, r.kind === 'group')}
+              secondary={s.calls[r.id] ? 'Videoanruf läuft' : s.typing[r.id]?.length ? 'schreibt …' : preview(r.last, s, r.kind === 'group')}
               slotProps={{
                 primary: { noWrap: true, sx: { fontWeight: r.unread ? 600 : undefined } },
-                secondary: { noWrap: true, sx: { color: s.typing[r.id]?.length ? 'primary.main' : undefined } },
+                secondary: { noWrap: true, sx: { color: s.calls[r.id] ? 'success.main' : s.typing[r.id]?.length ? 'primary.main' : undefined } },
               }}
             />
             <Stack sx={{ alignItems: 'flex-end', gap: 0.5, ml: 1, flexShrink: 0 }}>
@@ -586,7 +566,7 @@ function Composer({ room, disabled }: { room: string; disabled: boolean }) {
   )
 }
 
-function ChatView({ s, room, onBack, onEdit }: { s: MessengerState; room: ChatRoom; onBack?: () => void; onEdit: () => void }) {
+function ChatView({ s, room, video, onBack, onEdit }: { s: MessengerState; room: ChatRoom; video: boolean; onBack?: () => void; onEdit: () => void }) {
   const { messages, complete, loading, error, older } = useRoomMessages(room.id)
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
@@ -596,6 +576,9 @@ function ChatView({ s, room, onBack, onEdit }: { s: MessengerState; room: ChatRo
   const [dragging, setDragging] = useState(false)
   const [dropError, setDropError] = useState('')
   const other = room.kind === 'direct' ? otherMember(room, s) : ''
+  const call = s.calls[room.id]
+  const v = useVideo()
+  const inCall = v.room === room.id && v.status !== 'idle'
 
   // Unten bleiben, wenn man unten war; beim Nachladen oben die Position halten
   useLayoutEffect(() => {
@@ -701,6 +684,15 @@ function ChatView({ s, room, onBack, onEdit }: { s: MessengerState; room: ChatRo
             {subtitle}
           </Typography>
         </Box>
+        {video && (
+          <Tooltip title={call ? 'Videoanruf beitreten' : 'Videoanruf'}>
+            <span>
+              <IconButton aria-label="Videoanruf" onClick={() => void joinVideo(room.id)} disabled={s.status !== 'online' || inCall} color={call ? 'success' : 'default'}>
+                <VideocamIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+        )}
         {other && (
           <Tooltip title={`${userName(other, s)} anrufen`}>
             <IconButton onClick={() => void api.dial(other)}>
@@ -742,6 +734,20 @@ function ChatView({ s, room, onBack, onEdit }: { s: MessengerState; room: ChatRo
         )}
       </Stack>
       {loading && <LinearProgress sx={{ position: 'absolute', top: 57, left: 0, right: 0 }} />}
+      {video && call && !inCall && (
+        <Alert
+          severity="success"
+          icon={<VideocamIcon />}
+          sx={{ mx: 1.5, mt: 1, alignItems: 'center' }}
+          action={
+            <Button color="inherit" size="small" onClick={() => void joinVideo(room.id)}>
+              Beitreten
+            </Button>
+          }
+        >
+          Videoanruf läuft mit {call.participants.map((p) => (p === s.me ? 'dir' : userName(p, s).split(' ')[0])).join(', ')}
+        </Alert>
+      )}
       <Stack ref={scroller} onScroll={onScroll} sx={{ flex: 1, overflowY: 'auto', px: 2, py: 1 }}>
         {/* Wenige Nachrichten stehen unten, wie in Chat-Apps üblich */}
         <Stack ref={content} sx={{ gap: 0.75, mt: 'auto', flexShrink: 0 }}>
@@ -842,7 +848,7 @@ export function MessengerPage({ wide }: { wide: boolean }) {
 
   const list = <RoomList s={s} current={room?.id ?? null} onOpen={setCurrent} onNew={(kind) => setDialog(kind)} />
   const chat = room ? (
-    <ChatView key={room.id} s={s} room={room} onBack={wide ? undefined : () => setCurrent(null)} onEdit={() => setDialog('edit')} />
+    <ChatView key={room.id} s={s} room={room} video={state.messenger.video} onBack={wide ? undefined : () => setCurrent(null)} onEdit={() => setDialog('edit')} />
   ) : (
     <EmptyState icon={<ChatIcon />} title="Messenger" description="Wähle links einen Chat oder beginne einen neuen. Dateien kannst du einfach ins Fenster ziehen." />
   )

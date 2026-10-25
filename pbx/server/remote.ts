@@ -22,6 +22,21 @@ export function appEndpoint(number: string): string {
   return `${number}-app`
 }
 
+/** Endpunkt für Videoanrufe aus dem Messenger (WebRTC, kann nur Chat-Räume anrufen) */
+export function videoEndpoint(number: string): string {
+  return `${number}-video`
+}
+
+/** Videoanrufe im Messenger eingeschaltet */
+export function videoEnabled(cfg: PbxConfig): boolean {
+  return cfg.messenger.enabled && cfg.messenger.video
+}
+
+/** SIP über WebSocket wird gebraucht: Mobil-App oder Videoanrufe */
+export function webrtcEnabled(cfg: PbxConfig): boolean {
+  return cfg.remote.enabled || videoEnabled(cfg)
+}
+
 /** Öffentliche Basisadresse (aus den Einstellungen, ohne Schrägstrich am Ende) */
 export function publicBase(cfg: PbxConfig): string {
   return cfg.remote.public_url.trim().replace(/\/+$/, '')

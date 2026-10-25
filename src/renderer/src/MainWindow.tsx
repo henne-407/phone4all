@@ -31,6 +31,7 @@ import { EventDialog } from './components/EventDialog'
 import { PbxSetupDialog } from './components/settings/PbxSetupDialog'
 import { PreferencesDialog } from './components/settings/PreferencesDialog'
 import { TopBar } from './components/TopBar'
+import { VideoCallLayer } from './components/VideoCall'
 import { CalendarPage } from './pages/CalendarPage'
 import { ContactsPage } from './pages/ContactsPage'
 import { DialPage } from './pages/DialPage'
@@ -269,6 +270,7 @@ export function MainWindow() {
       {pbxLink && <PbxSetupDialog link={pbxLink} onClose={() => setPbxLink(null)} onApplied={() => setPrefs(null)} />}
       {customize && <CustomizeHomeDialog onClose={() => setCustomize(false)} />}
       {about && <AboutDialog onClose={() => setAbout(false)} />}
+      {state.messenger.video && <VideoCallLayer />}
     </Stack>
   )
 }

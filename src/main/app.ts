@@ -18,7 +18,7 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AppState, AudioDevice, ChatMessage, Contact, HomeCard, PageName } from '../shared/types'
+import type { AppState, AudioDevice, ChatCall, ChatMessage, Contact, HomeCard, PageName } from '../shared/types'
 import { type Api, type RendererEvents, createApi } from './api'
 import { listDevices } from './audioDevices'
 import { CalendarManager } from './calendars'
@@ -81,6 +81,9 @@ interface Bounds {
   y?: number
 }
 
+/** So lange klingelt ein Videoanruf */
+const RING_MS = 45000
+
 export class App {
   readonly store = new Store()
   readonly calendar = new CalendarManager(this.store)
@@ -90,6 +93,8 @@ export class App {
   readonly watchdog: Watchdog
   readonly updater: Updater
   readonly messenger: Messenger
+  /** Raum des laufenden Videoanrufs in der Oberfläche */
+  videoCall: string | null = null
   readonly api: Api
   /** Unterhaltung, die gerade offen ist (keine Benachrichtigung dafür) */
   openChat: string | null = null
@@ -167,7 +172,7 @@ export class App {
         wanted: () => this.phone.connectionWanted(),
         engineState: () => this.phone.engineState,
         regKind: () => this.phone.reg.kind,
-        busy: () => this.phone.calls.size > 0,
+        busy: () => this.phone.calls.size > 0 || this.videoCall !== null,
         ping: () => this.phone.ping(),
         reregister: () => this.phone.reregister(),
         restart: () => this.phone.restartEngine(),
@@ -202,6 +207,11 @@ export class App {
     })
     this.messenger.on('reset', () => this.send('messenger-reset'))
     this.messenger.on('message', (m: ChatMessage) => this.onChatMessage(m))
+    this.messenger.on('call', (room: string, call: ChatCall | null, before: ChatCall | null) => this.onVideoCall(room, call, before))
+    this.messenger.on('declined', (room: string, ext: string) => {
+      if (ext === this.messenger.state.me) this.withdraw(`video-${room}`)
+      this.send('messenger-declined', { room, ext })
+    })
     this.api = createApi(this)
     if (!this.store.settings.home.cards.length) this.store.settings.home.cards = DEFAULT_CARDS
     nativeTheme.themeSource = this.store.settings.appearance.scheme
@@ -316,6 +326,7 @@ export class App {
         available: Boolean(s.provisioning.messenger),
         status: this.messenger.state.status,
         unread: this.messenger.unread,
+        video: Boolean(s.provisioning.messenger && s.provisioning.video),
       },
     }
   }
@@ -572,6 +583,37 @@ export class App {
         this.send('messenger-open', m.room)
       },
     })
+  }
+
+  /** Videoanruf in einem Chat: Beginnt jemand anderes, klingelt es */
+  private onVideoCall(room: string, call: ChatCall | null, before: ChatCall | null): void {
+    const { state } = this.messenger
+    if (!call) return this.withdraw(`video-${room}`)
+    if (call.participants.includes(state.me)) return this.withdraw(`video-${room}`)
+    if (before || call.by === state.me || !this.store.settings.provisioning.video) return
+    const r = state.rooms.find((x) => x.id === room)
+    const caller = state.users.find((u) => u.number === call.by)?.name || call.by
+    const answer = (): void => {
+      this.present()
+      this.send('messenger-ring', { room, answer: true })
+    }
+    this.send('messenger-ring', { room, answer: false })
+    this.notify({
+      tag: `video-${room}`,
+      title: r?.kind === 'group' ? `Videoanruf in „${r.name}“` : `Videoanruf von ${caller}`,
+      body: r?.kind === 'group' ? `${caller} hat angefangen` : 'Im Messenger annehmen',
+      urgent: true,
+      onClick: () => {
+        this.showPage('messenger')
+        this.send('messenger-open', room)
+      },
+      actions: [
+        { text: 'Annehmen', run: answer },
+        { text: 'Ablehnen', run: () => this.messenger.decline(room) },
+      ],
+    })
+    // Nicht endlos klingeln (Gruppenanrufe laufen oft länger)
+    setTimeout(() => this.withdraw(`video-${room}`), RING_MS).unref()
   }
 
   private notify(opts: NotifyOptions): void {

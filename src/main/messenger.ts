@@ -7,7 +7,7 @@
 import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { ChatFile, ChatMessage, ChatRoom, ChatUser, MessengerState } from '../shared/types'
+import type { ChatCall, ChatFile, ChatMessage, ChatRoom, ChatUser, MessengerState } from '../shared/types'
 
 /** Wie lange „schreibt gerade …“ angezeigt wird */
 const TYPING_MS = 5000
@@ -47,7 +47,7 @@ async function errorOf(r: Response): Promise<string> {
 
 /** Nachrichten der Anlage */
 type ServerMessage =
-  | { t: 'init'; me: string; users: ChatUser[]; online: string[]; rooms: ChatRoom[] }
+  | { t: 'init'; me: string; users: ChatUser[]; online: string[]; rooms: ChatRoom[]; calls?: Record<string, ChatCall> }
   | { t: 'users'; users: ChatUser[] }
   | { t: 'presence'; online: string[] }
   | { t: 'room'; room: ChatRoom; ref?: string }
@@ -56,6 +56,8 @@ type ServerMessage =
   | { t: 'history'; room: string; messages: ChatMessage[]; complete: boolean }
   | { t: 'read'; room: string; ext: string; seq: number }
   | { t: 'typing'; room: string; ext: string }
+  | { t: 'call'; room: string; call: ChatCall | null }
+  | { t: 'declined'; room: string; ext: string }
   | { t: 'error'; text: string; ref?: string }
 
 interface Pending {
@@ -70,7 +72,10 @@ export interface MessengerHost {
   enabled: () => boolean
 }
 
-/** Ereignisse: 'changed' (Zustand), 'message' (neue Nachricht), 'reset' (Verlauf neu laden) */
+/**
+ * Ereignisse: 'changed' (Zustand), 'message' (neue Nachricht), 'reset' (Verlauf neu laden),
+ * 'call' (Videoanruf eines Raums begonnen, geändert oder beendet), 'declined' (jemand hat abgelehnt)
+ */
 export class Messenger extends EventEmitter {
   private ws: WebSocket | null = null
   private wsUrl = ''
@@ -80,7 +85,7 @@ export class Messenger extends EventEmitter {
   private pending = new Map<string, Pending>()
   private history = new Map<string, Pending[]>()
   private typingTimers = new Map<string, NodeJS.Timeout>()
-  readonly state: MessengerState = { status: 'off', me: '', users: [], online: [], rooms: [], typing: {} }
+  readonly state: MessengerState = { status: 'off', me: '', users: [], online: [], rooms: [], typing: {}, calls: {} }
 
   constructor(private host: MessengerHost) {
     super()
@@ -102,7 +107,7 @@ export class Messenger extends EventEmitter {
     this.disconnect()
     this.wsUrl = target
     if (!target) {
-      Object.assign(this.state, { status: 'off', me: '', users: [], online: [], rooms: [], typing: {} })
+      Object.assign(this.state, { status: 'off', me: '', users: [], online: [], rooms: [], typing: {}, calls: {} })
       this.changed()
       return
     }
@@ -145,6 +150,7 @@ export class Messenger extends EventEmitter {
       this.failPending('Verbindung zur Telefonanlage unterbrochen')
       this.state.status = 'offline'
       this.state.online = []
+      this.state.calls = {}
       this.changed()
       this.scheduleRetry()
     })
@@ -233,7 +239,7 @@ export class Messenger extends EventEmitter {
     switch (m.t) {
       case 'init':
         this.delay = 2000
-        Object.assign(this.state, { status: 'online', me: m.me, users: m.users, online: m.online, rooms: m.rooms, typing: {} })
+        Object.assign(this.state, { status: 'online', me: m.me, users: m.users, online: m.online, rooms: m.rooms, typing: {}, calls: m.calls ?? {} })
         // Nachrichten können während der Trennung gekommen sein
         this.emit('reset')
         break
@@ -292,6 +298,18 @@ export class Messenger extends EventEmitter {
         )
         break
       }
+      case 'call': {
+        const before = this.state.calls[m.room] ?? null
+        if (m.call) this.state.calls[m.room] = m.call
+        else delete this.state.calls[m.room]
+        // Erst den Zustand senden, dann klingeln: Die Oberfläche braucht den Anruf schon
+        this.changed()
+        this.emit('call', m.room, m.call, before)
+        return
+      }
+      case 'declined':
+        this.emit('declined', m.room, m.ext)
+        return
       case 'error':
         this.settle(m.ref, null, m.text)
         return
@@ -369,6 +387,15 @@ export class Messenger extends EventEmitter {
       this.send({ t: 'typing', room })
     } catch {
       // ohne Verbindung egal
+    }
+  }
+
+  /** Videoanruf ablehnen: Alle eigenen Geräte hören auf zu klingeln */
+  decline(room: string): void {
+    try {
+      this.send({ t: 'decline', room })
+    } catch {
+      // ohne Verbindung klingelt es ohnehin nicht mehr
     }
   }
 

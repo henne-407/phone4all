@@ -4,10 +4,12 @@ import type { AddressInfo } from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { generate } from '../server/generate'
 import { MessengerHub, MessengerStore, messengerUsers } from '../server/messenger'
 import type { AppProfile } from '../server/model'
+import { profile } from '../server/provisioning'
 import { decodeFrame, encodeFrame, upgrade } from '../server/websocket'
-import { ext, sampleConfig } from './helpers'
+import { ext, gen, sampleConfig } from './helpers'
 
 let dir = ''
 beforeEach(() => {
@@ -178,5 +180,66 @@ describe('Messenger über WebSocket', () => {
     a.ws.close()
     hub.close()
     server.close()
+  })
+})
+
+describe('Videoanrufe', () => {
+  it('legt Video-Geräte, Wählplan und Konferenzprofil an', () => {
+    const cfg = sampleConfig()
+    cfg.remote.enabled = false
+    cfg.extensions = [ext('e10', '10', { secret: 'geheim10' })]
+    const files = generate(cfg, gen)
+    expect(files['pjsip.conf']).toContain('[10-video](p4a-video)')
+    expect(files['pjsip.conf']).toContain('max_video_streams=16')
+    expect(files['pjsip.conf']).toMatch(/allow=.*vp8/)
+    // SIP über WebSocket auch ohne Fernzugriff
+    expect(files['pjsip.conf']).toContain('[transport-ws]')
+    expect(files['http.conf']).toContain('enabled=yes')
+    expect(files['extensions.conf']).toContain('[p4a-video]')
+    expect(files['extensions.conf']).toContain('ConfBridge(p4a-chat-${EXTEN},p4a-video,p4a-video-user)')
+    expect(files['confbridge.conf']).toContain('video_mode=sfu')
+
+    cfg.messenger.video = false
+    const off = generate(cfg, gen)
+    expect(off['pjsip.conf']).not.toContain('-video]')
+    expect(off['pjsip.conf']).not.toContain('[transport-ws]')
+    expect(off['extensions.conf']).not.toContain('[p4a-video]')
+  })
+
+  it('gibt den Zugang nur Messenger-Nutzern ins Profil', () => {
+    const cfg = sampleConfig()
+    cfg.extensions = [ext('e10', '10')]
+    const p = profile(cfg, cfg.extensions[0], 'http://192.168.1.5:8080')
+    expect(p.video).toMatchObject({ websocket: 'ws://192.168.1.5:8080/ws', user: '10-video' })
+    cfg.messenger.video = false
+    expect(profile(cfg, cfg.extensions[0], 'http://192.168.1.5:8080').video).toBeNull()
+  })
+
+  it('verfolgt Teilnehmer über die Konferenz-Ereignisse und meldet das Ende im Chat', () => {
+    const cfg = sampleConfig()
+    cfg.extensions = [ext('e10', '10'), ext('e11', '11'), ext('e12', '12')]
+    const hub = new MessengerHub(new MessengerStore(dir), () => cfg)
+    const r = hub.store.direct('10', '11')
+    expect(hub.mayJoin('10', r.id)).toBe(true)
+    expect(hub.mayJoin('12', r.id)).toBe(false)
+    expect(hub.mayJoin('10', 'g-gibtsnicht')).toBe(false)
+
+    const conf = `p4a-chat-${r.id}`
+    hub.onAmi({ Event: 'ConfbridgeJoin', Conference: conf, Channel: 'PJSIP/10-video-00000001', CallerIDNum: '10' })
+    expect(hub.activeCalls).toBe(1)
+    hub.onAmi({ Event: 'ConfbridgeJoin', Conference: conf, Channel: 'PJSIP/11-video-00000002', CallerIDNum: '11' })
+    hub.onAmi({ Event: 'ConfbridgeLeave', Conference: conf, Channel: 'PJSIP/11-video-00000002' })
+    hub.onAmi({ Event: 'ConfbridgeLeave', Conference: conf, Channel: 'PJSIP/10-video-00000001' })
+    expect(hub.activeCalls).toBe(0)
+    expect(hub.store.messages(r.id).at(-1)?.text).toMatch(/^Videoanruf, 0:0\d Min\.$/)
+
+    // Allein geblieben: verpasst
+    hub.onAmi({ Event: 'ConfbridgeJoin', Conference: conf, Channel: 'PJSIP/11-video-00000003', CallerIDNum: '11' })
+    hub.onAmi({ Event: 'ConfbridgeLeave', Conference: conf, Channel: 'PJSIP/11-video-00000003' })
+    expect(hub.store.messages(r.id).at(-1)?.text).toBe('Verpasster Videoanruf von Person 11')
+    // Fremde Konferenzen interessieren nicht
+    hub.onAmi({ Event: 'ConfbridgeJoin', Conference: 'p4a-700', Channel: 'PJSIP/10-00000004' })
+    expect(hub.activeCalls).toBe(0)
+    hub.close()
   })
 })

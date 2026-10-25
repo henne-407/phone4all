@@ -10,7 +10,7 @@ import { directory } from './directory'
 import { messengerUsers } from './messenger'
 import type { AppHomeCard, AppPage, AppPermission, CentralCalendar, Extension, PbxConfig } from './model'
 import { SETTINGS } from './paths'
-import { type IceServer, appEndpoint, publicBase, websocketUrl } from './remote'
+import { type IceServer, appEndpoint, publicBase, videoEnabled, videoEndpoint, websocketUrl } from './remote'
 import { appPermissions } from './routing'
 
 export const DISCOVERY_PORT = 15060
@@ -51,6 +51,8 @@ export interface ProvisioningProfile {
   messenger: boolean
   /** Zugang von unterwegs für die Mobil-App (SIP über WebSocket, WebRTC), null = aus */
   remote: RemoteAccount | null
+  /** Videoanrufe im Messenger (Benutzer <nummer>-video, ruft sip:<raum>@<domain>), null = aus */
+  video: RemoteAccount | null
   /** Ändert sich mit jeder Änderung am Profil; die App fragt <url>/revision ab */
   revision: string
 }
@@ -164,6 +166,11 @@ export function profile(cfg: PbxConfig, ext: Extension, base: string, ice: IceSe
     remote: cfg.remote.enabled
       ? { websocket: websocketUrl(pub), user: appEndpoint(ext.number), domain: new URL(pub).hostname, ice_servers: ice }
       : null,
+    // Adresse, unter der die App die Anlage erreicht (im LAN direkt, sonst über den Proxy)
+    video:
+      videoEnabled(cfg) && messengerUsers(cfg).some((e) => e.id === ext.id)
+        ? { websocket: websocketUrl(base.replace(/\/+$/, '')), user: videoEndpoint(ext.number), domain, ice_servers: cfg.remote.enabled ? ice : [] }
+        : null,
   }
   const revision = createHash('sha256').update(JSON.stringify(result)).digest('hex').slice(0, 16)
   return { ...result, revision }

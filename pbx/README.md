@@ -93,6 +93,8 @@ für beide. Fehlanmeldungen über den WebSocket sperren die Adresse des Telefons
   selbst ein (ein SIP-Konto je Mobilteil, Voicemail-Anzeige, Übergabe)
 - **Zentrale Kalender** mit eigenen Terminen (z. B. Betriebsferien), den
   Feiertagen des Bundeslandes oder aus anderen Kalendern (ICS-Abo, CalDAV); erscheinen in jeder App
+- **Messenger** für die Desktop-App: Einzel- und Gruppenchats mit Dateien und
+  Videoanrufen (Konferenzraum je Chat, Bilder werden einzeln weitergeleitet)
 - **Mobil-App** für Android und iPhone, auch unterwegs über HTTPS (SIP über WebSocket,
   WebRTC, eingebauter TURN-Server), Einrichtung per QR-Code
 - **App-Profile**: legen fest, welche Bereiche, Startansicht und Startseiten-Karten
@@ -129,7 +131,7 @@ Token ist zugleich die Berechtigung.
 
 | Anfrage | Ergebnis |
 | --- | --- |
-| `GET /provision/<token>` | Profil: Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `permissions`, `messenger`, `remote`, `revision` |
+| `GET /provision/<token>` | Profil: Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `permissions`, `messenger`, `remote`, `video`, `revision` |
 | `GET /provision/<token>/revision` | `{ profile, events }` – ändert sich, sobald Profil oder Termine sich ändern |
 | `GET /provision/<token>/events?start=…&end=…&calendar=…` | Termine im Zeitraum (höchstens 400 Tage) |
 | `PUT /provision/<token>/events/<kalender>/<uid>` | Termin anlegen oder ändern (nur beschreibbare Kalender) |
@@ -146,15 +148,23 @@ Token ist zugleich die Berechtigung.
 Steht unter *System → Fernzugriff* eine öffentliche Adresse, zeigen `url` und
 `websocket` immer dorthin.
 
+`video` ist der Zugang für Videoanrufe im Messenger (gleicher Aufbau, Benutzer
+`<nummer>-video`, `null` ohne Messenger oder Video). `websocket` zeigt hier auf die Adresse,
+unter der die App das Profil abgerufen hat, im LAN also direkt auf die Anlage. Die App ruft
+`sip:<raum-id>@<domain>` an; die Anlage prüft die Mitgliedschaft und legt alle in die
+Konferenz `p4a-chat-<raum-id>` (ConfBridge, `video_mode=sfu`).
+
 Termine: `{ uid, summary, start, end, allDay, location, description }`. Ganztägige
 Termine haben Datumsangaben (`2026-12-24`, Ende exklusiv), alle anderen ISO-Zeitpunkte.
 
 Messenger-Protokoll: Nach dem Verbinden schickt die Anlage `{ t: 'init', me, users, online,
 rooms }`. Die App sendet `history` (`room`, `before`), `send` (`room`, `text`), `direct`
 (`with`), `group` (`name`, `members`), `update` (`room`, `name`, `members`), `leave`, `read`
-(`room`, `seq`) und `typing`; ein mitgeschicktes `ref` kommt mit der Antwort zurück. Die
-Anlage meldet `message`, `room`, `removed`, `read`, `typing`, `presence`, `users` und
-`error`. Nachrichten tragen eine je Raum fortlaufende `seq`.
+(`room`, `seq`), `typing` und `decline` (`room`, Videoanruf ablehnen); ein mitgeschicktes
+`ref` kommt mit der Antwort zurück. Die Anlage meldet `message`, `room`, `removed`, `read`,
+`typing`, `presence`, `users`, `call` (`room`, `call`: `{ since, by, participants }` oder
+`null` am Ende), `declined` (`room`, `ext`) und `error`; `init` enthält zusätzlich die
+laufenden `calls`. Nachrichten tragen eine je Raum fortlaufende `seq`.
 
 Andere Telefone (Tischtelefone, Softphones) werden mit Nebenstelle als Benutzer,
 SIP-Passwort und der Adresse der Anlage als Server angemeldet.

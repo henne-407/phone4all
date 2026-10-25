@@ -30,6 +30,7 @@ import { usePbx } from '../state'
 interface Overview {
   online: string[]
   connections: number
+  calls: number
   usage: number
   free: number | null
   users: number
@@ -63,6 +64,11 @@ function Settings() {
       />
       {config.messenger.enabled && (
         <>
+          <FormControlLabel
+            control={<Switch checked={config.messenger.video} onChange={(e) => save({ video: e.target.checked })} />}
+            label="Videoanrufe in den Chats"
+            sx={{ mb: 2, display: 'flex' }}
+          />
           <FormGrid>
             <NumberField
               label="Größte Datei (MB)"
@@ -115,15 +121,16 @@ export default function Messenger() {
       <PageHeader
         overline="Zusammenarbeit"
         title="Messenger"
-        description="Einzel- und Gruppenchats zwischen den Nebenstellen in der Desktop-App. Nachrichten bleiben auf der Anlage gespeichert, bis der Speicher knapp wird."
+        description="Einzel- und Gruppenchats mit Videoanrufen zwischen den Nebenstellen in der Desktop-App. Nachrichten bleiben auf der Anlage gespeichert, bis der Speicher knapp wird."
       />
       <Settings />
       {data && (
         <Section title="Überblick">
-          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' } }}>
+          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(5, 1fr)' } }}>
             {[
               ['Nebenstellen mit Messenger', String(data.users)],
               ['Gerade verbunden', `${data.online.length} (${data.connections} Geräte)`],
+              ['Laufende Videoanrufe', String(data.calls)],
               ['Belegt', bytes(data.usage)],
               ['Frei auf der Anlage', data.free === null ? '–' : bytes(data.free)],
             ].map(([l, v]) => (

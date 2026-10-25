@@ -16,6 +16,11 @@ const linkArg = (argv: string[]): string | undefined => argv.find((a) => a.start
 electronApp.setName('SIP-Telefon')
 if (process.platform === 'win32') electronApp.setAppUserModelId('de.hpieper.SipTelefon')
 
+// Videoanrufe: Chromium versteckt die eigene Adresse sonst hinter „….local“. Ohne STUN
+// (Anlage nur im LAN) stünde dann 0.0.0.0 im SDP, und Asterisk hielte das für „gehalten“
+// und schickte keinen Ton.
+electronApp.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns')
+
 // Nur eine Instanz: ein zweiter Start holt das vorhandene Fenster nach vorn
 if (!electronApp.requestSingleInstanceLock()) {
   electronApp.exit(0)
