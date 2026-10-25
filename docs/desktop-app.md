@@ -1,4 +1,4 @@
-# Desktop-App SIP-Telefon
+# Desktop-App Phone4All
 
 Schlanker SIP-Softphone-Client für **Linux, macOS und Windows** mit einer Oberfläche
 in Material UI. Verbindet sich mit einer SIP-Telefonanlage (z. B. FRITZ!Box, Asterisk,
@@ -44,7 +44,7 @@ scripts/install-linux.sh
 Start meldet macOS, dass der Entwickler nicht überprüft werden kann. Dann unter
 *Systemeinstellungen → Datenschutz & Sicherheit* ganz unten *Dennoch öffnen* wählen
 (bis macOS 14 genügt im Finder Rechtsklick → *Öffnen*). Alternativ im Terminal:
-`xattr -dr com.apple.quarantine /Applications/SIP-Telefon.app`.
+`xattr -dr com.apple.quarantine /Applications/Phone4All.app`.
 Beim ersten Anruf fragt macOS nach dem Mikrofon.
 
 **Windows** – Installer starten; Windows SmartScreen warnt, weil der Installer
@@ -154,7 +154,7 @@ Datenbankbenutzer mit reinen Leserechten (`db_datareader`) verwenden. Höchstens
 | `~/.local/state/sip-telefon/baresip.log` | `logs/baresip.log` | Log der SIP-Engine |
 | `~/.local/state/sip-telefon/watchdog.json` | `logs/watchdog.json` | Ereignisse des Watchdogs |
 
-¹ macOS `~/Library/Application Support/SIP-Telefon`, Windows `%APPDATA%\SIP-Telefon`.
+¹ macOS `~/Library/Application Support/SIP-Telefon` (Ordnername von früher), Windows `%APPDATA%\SIP-Telefon`.
 Unter Linux sind es dieselben Ordner wie bei der früheren GTK-Version, Kontakte,
 Verlauf und Einstellungen werden also übernommen.
 

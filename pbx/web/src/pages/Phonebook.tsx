@@ -107,7 +107,7 @@ export default function Phonebook() {
         overline="Zusammenarbeit"
         title="Zentrale Kontakte"
         singular="Kontakt"
-        description="Das gemeinsame Telefonbuch: Die Anlage zeigt bei Anrufen den Namen, und alle SIP-Telefon-Apps übernehmen die Kontakte automatisch – Änderungen hier kommen innerhalb von zwei Minuten an."
+        description="Das gemeinsame Telefonbuch: Die Anlage zeigt bei Anrufen den Namen, und alle Phone4All-Apps übernehmen die Kontakte automatisch – Änderungen hier kommen innerhalb von zwei Minuten an."
         columns={[
           { label: 'Name', render: (e) => <b>{e.name}</b> },
           { label: 'Firma', hideOnMobile: true, render: (e) => e.company },

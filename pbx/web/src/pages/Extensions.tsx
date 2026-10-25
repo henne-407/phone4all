@@ -65,7 +65,7 @@ function Provisioning({ ext }: { ext: Extension }) {
   return (
     <Box>
       <Typography variant="subtitle1" sx={{ mb: 0.5 }}>
-        SIP-Telefon automatisch einrichten
+        Phone4All automatisch einrichten
       </Typography>
       <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
         Den Link öffnen oder in der App unter Einstellungen → Konto → „Von Telefonanlage einrichten“ die Nebenstelle
@@ -95,7 +95,7 @@ function Provisioning({ ext }: { ext: Extension }) {
           Einladung per E-Mail
         </Button>
         <Button href={info.app} variant="outlined">
-          Hier in SIP-Telefon öffnen
+          Hier in Phone4All öffnen
         </Button>
         <Button startIcon={<RefreshIcon />} onClick={() => void renew()}>
           Link erneuern
@@ -151,7 +151,7 @@ function ExtensionForm({ value, onChange, isNew }: { value: Extension; onChange:
           value={value.app_profile}
           onChange={(v) => set('app_profile', v)}
           options={[['', 'Keine Vorgaben'], ...config.appprofiles.map((p): [string, string] => [p.id, p.name])]}
-          helperText="Legt fest, welche Ansichten die SIP-Telefon-App zeigt"
+          helperText="Legt fest, welche Ansichten die Phone4All-App zeigt"
         />
         <NumberField label="Klingeldauer (Sekunden)" value={value.ring_seconds} onChange={(v) => set('ring_seconds', v)} min={5} />
         <NumberField label="Geräte gleichzeitig" value={value.max_devices} onChange={(v) => set('max_devices', v)} min={1} helperText="z. B. App am PC, Tischtelefon, Handy" />
@@ -206,7 +206,7 @@ export default function Extensions() {
       overline="Personen"
       title="Nebenstellen"
       singular="Nebenstelle"
-      description="Jede Person bekommt eine interne Rufnummer. Darauf können sich mehrere Geräte anmelden – die SIP-Telefon-App, Tischtelefone oder Softphones."
+      description="Jede Person bekommt eine interne Rufnummer. Darauf können sich mehrere Geräte anmelden – die Phone4All-App, Tischtelefone oder Softphones."
       emptyText="Noch keine Nebenstellen. Lege die erste an, z. B. 10 für dich selbst."
       emptyIcon={<PersonIcon />}
       newItem={() => ({ number: nextNumber(config.extensions) })}

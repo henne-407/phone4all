@@ -1,4 +1,4 @@
-/** App-Profile: welche Ansichten die SIP-Telefon-App einer Nebenstelle zeigt. */
+/** App-Profile: welche Ansichten die Phone4All-App einer Nebenstelle zeigt. */
 
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
 import ContactsIcon from '@mui/icons-material/Contacts'
@@ -158,7 +158,7 @@ export default function AppProfiles() {
       overline="Zusammenarbeit"
       title="App-Profile"
       singular="App-Profil"
-      description="Legt fest, was die SIP-Telefon-App zeigt: Bereiche, Startansicht, Karten der Startseite und zentrale Kalender. Ein Profil wird der Nebenstelle zugewiesen; die App übernimmt Änderungen innerhalb von zwei Minuten."
+      description="Legt fest, was die Phone4All-App zeigt: Bereiche, Startansicht, Karten der Startseite und zentrale Kalender. Ein Profil wird der Nebenstelle zugewiesen; die App übernimmt Änderungen innerhalb von zwei Minuten."
       emptyText="Ohne Profil zeigt die App alles und jede Person richtet sie selbst ein."
       emptyIcon={<PhoneAndroidIcon />}
       columns={[

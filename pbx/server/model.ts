@@ -47,7 +47,7 @@ export interface Extension {
   provision_pin: string
   /** Geheimer Teil des Einrichtungslinks */
   provision_token: string
-  /** App-Profil (Ansichten der SIP-Telefon-App), leer = ohne Vorgaben */
+  /** App-Profil (Ansichten der Phone4All-App), leer = ohne Vorgaben */
   app_profile: string
 }
 
@@ -282,7 +282,7 @@ export interface IntegrationSettings {
   token: string
 }
 
-/** Seiten und Startkarten der SIP-Telefon-App (wie dort benannt) */
+/** Seiten und Startkarten der Phone4All-App (wie dort benannt) */
 export type AppPage = 'home' | 'dial' | 'contacts' | 'calendar' | 'history'
 export type AppHomeCard = 'status' | 'today' | 'favorites' | 'recent' | 'events'
 

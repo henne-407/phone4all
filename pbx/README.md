@@ -1,6 +1,6 @@
 # Phone4all-Telefonanlage
 
-Telefonanlage für das SIP-Telefon und alle anderen SIP-Geräte: Asterisk 20 (LTS)
+Telefonanlage für die Phone4All-App und alle anderen SIP-Geräte: Asterisk 20 (LTS)
 mit einer deutschsprachigen Weboberfläche, verpackt als ein Docker-Image. Läuft auf
 jedem Linux-Server, in einer VM (Proxmox, VMware, Hyper-V, VirtualBox), auf einem
 NAS mit Docker oder einem Raspberry Pi 4/5.
@@ -64,7 +64,7 @@ von 5060/5061 und 10000–10999 im Router sowie die öffentliche Adresse unter
 - **Zentrale Kalender** mit eigenen Terminen (z. B. Betriebsferien) oder den
   Feiertagen des Bundeslandes; erscheinen in jeder App
 - **App-Profile**: legen fest, welche Bereiche, Startansicht und Startseiten-Karten
-  die SIP-Telefon-App zeigt, und können Startseite und Kontodaten sperren
+  die Phone4All-App zeigt, und können Startseite und Kontodaten sperren
 - **Anrufliste**, laufende Gespräche, Anmeldestatus aller Geräte
 - **Funktionscodes**: \*97 Voicemail, \*76 Nicht stören, \*21 Rufumleitung,
   \*8 / \*\*Nr. Heranholen, \*28 Nachtschaltung, \*31 anonym, \*43 Echo-Test
@@ -76,7 +76,7 @@ von 5060/5061 und 10000–10999 im Router sowie die öffentliche Adresse unter
 - **Online-Updates** aus der Weboberfläche (stabil oder Beta), auf Wunsch automatisch
   nachts, wenn niemand telefoniert
 
-## SIP-Telefon automatisch einrichten
+## Phone4All automatisch einrichten
 
 Jede Nebenstelle hat einen Einrichtungslink und eine Einrichtungs-PIN
 (*Nebenstellen → Bearbeiten*). Drei Wege:

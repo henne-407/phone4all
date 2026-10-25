@@ -428,7 +428,7 @@ function Access() {
           }}
         />
       </Section>
-      <Section title="Automatische Einrichtung der App" description="Die SIP-Telefon-App sucht im lokalen Netz nach der Anlage (UDP-Port 15060).">
+      <Section title="Automatische Einrichtung der App" description="Die Phone4All-App sucht im lokalen Netz nach der Anlage (UDP-Port 15060).">
         <FormControlLabel
           control={
             <Switch

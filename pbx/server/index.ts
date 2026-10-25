@@ -379,7 +379,7 @@ api.post('/api/extensions/:id/invite', async (r) => {
       '',
       `Ihre Nebenstelle ${ext.number} an der Telefonanlage ${store.config.system.name} ist eingerichtet.`,
       '',
-      'Mit der App SIP-Telefon öffnen Sie einfach diesen Link – die App richtet sich selbst ein:',
+      'Mit der App Phone4All öffnen Sie einfach diesen Link – die App richtet sich selbst ein:',
       `${base}/setup/${ext.provision_token}`,
       '',
       'Oder in der App unter Einstellungen → Konto → „Von Telefonanlage einrichten“:',

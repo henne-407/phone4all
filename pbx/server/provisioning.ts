@@ -1,5 +1,5 @@
 /**
- * Automatische Einrichtung der SIP-Telefon-App: Die App holt über einen
+ * Automatische Einrichtung der Phone4All-App: Die App holt über einen
  * Einrichtungslink (oder Nebenstelle + PIN) ihr Konto und das Telefonbuch.
  * Im LAN findet sie die Anlage per UDP-Broadcast (Port 15060).
  */
@@ -165,9 +165,9 @@ dt{opacity:.7;font-size:14px}dd{margin:0 0 12px;font-size:18px;font-family:ui-mo
 </style></head><body><main>
 <h1>Hallo ${esc(ext.name)}</h1>
 <p>Ihr Telefon an der Anlage <b>${esc(cfg.system.name)}</b> ist bereit.</p>
-<div class="card"><h2>Mit SIP-Telefon</h2>
-<p>SIP-Telefon installieren und dann auf diese Schaltfläche klicken – die App richtet sich selbst ein.</p>
-<p><a class="btn" href="${esc(link)}">In SIP-Telefon einrichten</a></p>
+<div class="card"><h2>Mit Phone4All</h2>
+<p>Phone4All installieren und dann auf diese Schaltfläche klicken – die App richtet sich selbst ein.</p>
+<p><a class="btn" href="${esc(link)}">In Phone4All einrichten</a></p>
 <p>Alternativ in der App unter Einstellungen → Konto → „Von Telefonanlage einrichten“ diese Angaben eintragen:</p>
 <dl><dt>Anlage</dt><dd>${esc(base)}</dd><dt>Nebenstelle</dt><dd>${esc(ext.number)}</dd><dt>Einrichtungs-PIN</dt><dd>${esc(ext.provision_pin)}</dd></dl>
 </div></main></body></html>`

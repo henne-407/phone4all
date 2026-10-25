@@ -239,7 +239,7 @@ export function TopBar({ compact, showTitle }: { compact: boolean; showTitle: bo
       <Box sx={{ flex: 1, textAlign: 'center', overflow: 'hidden' }}>
         {showTitle && (
           <Typography variant="subtitle1" noWrap sx={{ color: 'text.primary' }}>
-            SIP-Telefon
+            Phone4All
           </Typography>
         )}
       </Box>
@@ -329,7 +329,7 @@ export function TopBar({ compact, showTitle }: { compact: boolean; showTitle: bo
           ['Diagnose', () => emit('open-preferences', 'diagnose')],
           ['Nach Updates suchen', () => emit('open-preferences', 'general')],
           null,
-          ['Über SIP-Telefon', () => emit('about')],
+          ['Über Phone4All', () => emit('about')],
           ['Beenden', () => void api.quit()],
         ].map((item, i) =>
           item ? (

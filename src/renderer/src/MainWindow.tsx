@@ -88,7 +88,7 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
       <DialogContent>
         <Stack sx={{ alignItems: 'center', textAlign: 'center', gap: 1, pt: 2 }}>
           <Box component="img" src="./icon.png" sx={{ width: 96, height: 96 }} />
-          <Typography variant="h5">SIP-Telefon</Typography>
+          <Typography variant="h5">Phone4All</Typography>
           <Typography sx={{ color: 'text.secondary' }}>Version {state.platform.version}</Typography>
           <Typography sx={{ mt: 1 }}>Einfacher SIP-Softphone-Client für Linux, macOS und Windows.</Typography>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
