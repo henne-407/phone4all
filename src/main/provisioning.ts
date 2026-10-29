@@ -21,6 +21,7 @@ import type {
   PbxForwardChange,
   PbxFax,
   PbxFound,
+  PbxDoor,
   PbxGroup,
   PbxPermission,
   PbxPreview,
@@ -60,6 +61,7 @@ export interface PbxProfile {
   parking: { number: string; slots: string[] } | null
   crm: { url: string; auto: boolean } | null
   voicemail: boolean
+  doors: PbxDoor[]
   revision: string
 }
 
@@ -86,6 +88,13 @@ function parseParking(data: unknown): PbxProfile['parking'] {
   const p = data as { number?: unknown; slots?: unknown } | null
   if (!p || typeof p.number !== 'string' || !/^\d+$/.test(p.number) || !Array.isArray(p.slots)) return null
   return { number: p.number, slots: p.slots.map(String).filter((x) => /^\d+$/.test(x)) }
+}
+
+function parseDoors(data: unknown): PbxDoor[] {
+  if (!Array.isArray(data)) return []
+  return data
+    .filter((d): d is PbxDoor => Boolean(d) && typeof d.number === 'string' && typeof d.dtmf === 'string' && /^[0-9*#]{1,8}$/.test(d.dtmf))
+    .map((d) => ({ number: d.number, name: String(d.name ?? ''), dtmf: d.dtmf }))
 }
 
 function parseCrm(data: unknown): PbxProfile['crm'] {
@@ -234,6 +243,7 @@ export function parseProfile(data: unknown): PbxProfile {
     parking: parseParking(p.parking),
     crm: parseCrm(p.crm),
     voicemail: p.voicemail === true,
+    doors: parseDoors(p.doors),
     revision: String(p.revision ?? ''),
   }
 }
@@ -775,6 +785,7 @@ export class Provisioning {
       parking: p.parking,
       crm: p.crm,
       voicemail: p.voicemail,
+      doors: p.doors,
     }
     this.revision.profile = p.revision
     // Nur bei der Einrichtung anmelden – wer sich bewusst abgemeldet hat, bleibt es

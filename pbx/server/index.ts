@@ -45,6 +45,7 @@ import {
   extensionPlan,
   feature,
   groupPlan,
+  inboundName,
   isAvailable,
   isInternational,
   isLocalNumber,
@@ -518,7 +519,7 @@ internal.get('/internal/in', (r) => {
     did: r.query.get('did') ?? '',
     to: r.query.get('to') ?? '',
     cid: r.query.get('cid') ?? '',
-    name: r.query.get('name') ?? '',
+    name: inboundName(r.query.get('name') ?? ''),
   })
   const [target, name, from, to] = result.split('|')
   if (target === BLOCKED_TARGET) tracker.report('call.blocked', { from, from_name: name, to })

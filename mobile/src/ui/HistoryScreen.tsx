@@ -97,7 +97,11 @@ function VoicemailList() {
         <List.Item
           title={m.name || m.number || 'Unbekannt'}
           titleStyle={m.unread ? { fontWeight: '700' } : undefined}
-          description={[m.name ? m.number : '', whenLabel(m.time), formatDuration(m.duration)].filter(Boolean).join(' · ')}
+          description={
+            [m.name ? m.number : '', whenLabel(m.time), formatDuration(m.duration)].filter(Boolean).join(' · ') +
+            (m.text ? `\n„${m.text}“` : m.transcribing ? '\nWird in Text umgewandelt …' : '')
+          }
+          descriptionNumberOfLines={m.text ? 12 : 2}
           left={(p) => <List.Icon {...p} icon={m.unread ? 'voicemail' : 'email-open-outline'} color={m.unread ? theme.colors.primary : theme.colors.onSurfaceVariant} />}
           right={() => (
             <View style={styles.row}>

@@ -10,6 +10,7 @@ import CallEndIcon from '@mui/icons-material/CallEnd'
 import CallMergeIcon from '@mui/icons-material/CallMerge'
 import ConsultIcon from '@mui/icons-material/AddIcCall'
 import GroupsIcon from '@mui/icons-material/Groups'
+import DoorIcon from '@mui/icons-material/DoorFront'
 import DialpadIcon from '@mui/icons-material/Dialpad'
 import EventIcon from '@mui/icons-material/EventAvailable'
 import LocalParkingIcon from '@mui/icons-material/LocalParking'
@@ -60,6 +61,13 @@ export function CallPanel({ call, popup = false }: { call: CallInfo; popup?: boo
   // Rückfrage läuft: zwei Gespräche, die die Anlage zusammenführen kann
   const pbx = Boolean(state.settings.provisioning.pbx)
   const canJoin = pbx && established && state.calls.length === 2 && state.calls.every((c) => c.state === 'established')
+
+  const door = state.settings.provisioning.doors?.find((d) => d.number === call.number)
+  const openDoor = (dtmf: string): void => {
+    // Tasten nacheinander senden, sonst verschluckt die Gegenstelle welche
+    ;[...dtmf].forEach((d, i) => setTimeout(() => void api.sendDtmf(d, call.id), i * 250))
+    toast('Tür wird geöffnet')
+  }
 
   const join = async (mode: 'transfer' | 'conference'): Promise<void> => {
     setJoining(true)
@@ -219,6 +227,7 @@ export function CallPanel({ call, popup = false }: { call: CallInfo; popup?: boo
               disabled={!established}
               onClick={(e) => setTransferAnchor(e.currentTarget)}
             />
+            {door && <CallToggle icon={<DoorIcon />} label="Tür öffnen" disabled={!established} onClick={() => openDoor(door.dtmf)} />}
             {pbx && (
               <CallToggle
                 icon={<ConsultIcon />}

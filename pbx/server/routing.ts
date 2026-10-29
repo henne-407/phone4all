@@ -555,3 +555,8 @@ export function feature(cfg: PbxConfig, state: RuntimeState, ext: string, code: 
       return { reply: 'error' }
   }
 }
+
+/** Name eines Anrufers von außen: Am Namen erkennen die Apps Durchsagen und nehmen von selbst an – von außen nie */
+export function inboundName(name: string): string {
+  return name.replace(/^\W*(durchsage|gegensprechen)\b\W*/i, '')
+}

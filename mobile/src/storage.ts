@@ -31,9 +31,11 @@ export interface Settings {
   deviceContacts: boolean
   /** Favoriten (Rufnummern) */
   favorites: string[]
+  /** Durchsagen und Gegensprechen der Anlage ohne Klingeln annehmen */
+  autoAnswerPages: boolean
 }
 
-export const DEFAULT_SETTINGS: Settings = { background: true, deviceContacts: false, favorites: [] }
+export const DEFAULT_SETTINGS: Settings = { background: true, deviceContacts: false, favorites: [], autoAnswerPages: true }
 
 async function readJson<T>(key: string, fallback: T): Promise<T> {
   try {

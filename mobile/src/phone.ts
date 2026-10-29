@@ -10,7 +10,7 @@ import type { IncomingRTCSessionEvent, RTCSessionEvent } from 'jssip/lib/UA'
 import InCallManager from 'react-native-incall-manager'
 import { registerGlobals } from 'react-native-webrtc'
 import { cleanNumber, numberFromUri } from './numbers'
-import type { Profile } from './provisioning'
+import { type Profile, joinCalls } from './provisioning'
 
 registerGlobals()
 
@@ -36,6 +36,8 @@ export interface PhoneState {
   registration: Registration
   error: string
   call: Call | null
+  /** Gehaltenes Gespräch während einer Rückfrage */
+  other: Call | null
 }
 
 export interface CallEnd {
@@ -69,9 +71,15 @@ export function causeText(cause: string): string {
 export class Phone {
   private ua: JsSIP.UA | null = null
   private session: RTCSession | null = null
+  /** Gehaltenes Gespräch (Rückfrage) */
+  private second: RTCSession | null = null
+  /** Nach der Dreierkonferenz das gehaltene Gespräch wieder aufnehmen */
+  private joining = false
   private listeners = new Set<Listener>()
   private profile: Profile | null = null
-  state: PhoneState = { registration: 'off', error: '', call: null }
+  state: PhoneState = { registration: 'off', error: '', call: null, other: null }
+  /** Durchsagen und Gegensprechen ohne Klingeln annehmen (Einstellung) */
+  autoAnswerPages = true
   /** Für Anrufernamen; setzt die App */
   lookup: (number: string) => string = () => ''
   onIncoming: (call: Call) => void = () => undefined
@@ -92,6 +100,12 @@ export class Phone {
 
   private setCall(patch: Partial<Call>): void {
     if (this.state.call) this.set({ call: { ...this.state.call, ...patch } })
+  }
+
+  /** Gespräch anhand der Kennung ändern (laufendes oder gehaltenes) */
+  private patch(id: string, patch: Partial<Call>): void {
+    if (this.state.call?.id === id) this.set({ call: { ...this.state.call, ...patch } })
+    else if (this.state.other?.id === id) this.set({ other: { ...this.state.other, ...patch } })
   }
 
   /** Neue TURN-Zugangsdaten usw. ohne neue Anmeldung übernehmen */
@@ -135,11 +149,13 @@ export class Phone {
 
   stop(): void {
     this.session?.terminate()
+    this.second?.terminate()
     this.session = null
+    this.second = null
     const ua = this.ua
     this.ua = null
     ua?.stop()
-    this.set({ registration: 'off', error: '', call: null })
+    this.set({ registration: 'off', error: '', call: null, other: null })
   }
 
   /** Nach Rückkehr in den Vordergrund: Verbindung prüfen und neu anmelden */
@@ -177,25 +193,45 @@ export class Phone {
     this.set({ call })
     this.fastIce(session)
     session.on('progress', () => {
-      if (call.direction === 'out') this.setCall({ status: 'ringing' })
+      if (call.direction === 'out') this.patch(call.id, { status: 'ringing' })
     })
     session.on('accepted', () => {
       InCallManager.stopRingback()
       InCallManager.stopRingtone()
-      this.setCall({ status: 'active', answered: Date.now() })
-      if (this.state.call) this.onAnswered(this.state.call)
+      this.patch(call.id, { status: 'active', answered: Date.now() })
+      if (this.state.call?.id === call.id) this.onAnswered(this.state.call)
     })
     session.on('confirmed', () => {
-      if (this.state.call?.status !== 'active') this.setCall({ status: 'active', answered: Date.now() })
+      if (this.state.call?.id === call.id && this.state.call.status !== 'active') this.patch(call.id, { status: 'active', answered: Date.now() })
     })
-    session.on('hold', () => this.setCall({ held: true }))
-    session.on('unhold', () => this.setCall({ held: false }))
+    session.on('hold', () => this.patch(call.id, { held: true }))
+    session.on('unhold', () => this.patch(call.id, { held: false }))
     const end = (cause: string): void => {
+      if (this.second === session) {
+        // Das gehaltene Gespräch ist beendet (Gegenüber hat aufgelegt)
+        this.second = null
+        const o = this.state.other
+        this.set({ other: null })
+        if (o) this.onEnded({ call: { ...o, status: 'ended' }, missed: false })
+        return
+      }
       if (this.session !== session) return
       this.session = null
       InCallManager.stopRingtone()
-      InCallManager.stop()
       const c = this.state.call
+      if (this.second) {
+        // Rückfrage beendet: zurück zum gehaltenen Gespräch
+        this.session = this.second
+        this.second = null
+        this.set({ call: this.state.other, other: null })
+        if (this.joining) {
+          this.joining = false
+          this.session.unhold()
+        }
+        if (c) this.onEnded({ call: { ...c, status: 'ended' }, missed: c.direction === 'in' && !c.answered })
+        return
+      }
+      InCallManager.stop()
       if (!c) return
       const missed = c.direction === 'in' && !c.answered
       const ended: Call = { ...c, status: 'ended', reason: c.answered ? '' : causeText(cause) }
@@ -215,7 +251,7 @@ export class Phone {
     const ua = this.ua
     const r = this.profile?.remote
     if (!number || !ua || !r || this.session) return
-    InCallManager.start({ media: 'audio', ringback: '_DEFAULT_' })
+    if (!this.second) InCallManager.start({ media: 'audio', ringback: '_DEFAULT_' })
     const call: Call = {
       id: `${Date.now()}`,
       direction: 'out',
@@ -236,14 +272,69 @@ export class Phone {
       })
       this.track(session, call)
     } catch (e) {
+      if (this.second) {
+        // Rückfrage kam nicht zustande: gehaltenes Gespräch bleibt
+        this.session = this.second
+        this.second = null
+        this.set({ call: this.state.other, other: null })
+        return
+      }
       InCallManager.stop()
       this.set({ call: { ...call, status: 'ended', reason: (e as Error).message } })
     }
   }
 
+  /** Rückfrage: laufendes Gespräch halten und `input` anrufen */
+  consult(input: string): void {
+    const s = this.session
+    const c = this.state.call
+    if (!s || !c || c.status !== 'active' || this.second || !cleanNumber(input)) return
+    if (!c.held) s.hold()
+    this.second = s
+    this.session = null
+    this.set({ other: { ...c, held: true } })
+    this.dial(input)
+    if (!this.session && this.second === s) {
+      // Wählen ging nicht (keine Verbindung): beim gehaltenen Gespräch bleiben
+      this.session = s
+      this.second = null
+      this.set({ other: null })
+    }
+  }
+
+  /** Makeln: zwischen Rückfrage und gehaltenem Gespräch wechseln */
+  swap(): void {
+    const s = this.session
+    const o = this.second
+    if (!s || !o || this.state.call?.status !== 'active') return
+    s.hold()
+    o.unhold()
+    this.session = o
+    this.second = s
+    this.set({ call: this.state.other, other: this.state.call })
+  }
+
+  /** Rückfrage abschließen: Gegenüber verbinden oder Dreierkonferenz (macht die Anlage) */
+  async join(mode: 'transfer' | 'conference'): Promise<void> {
+    const p = this.profile
+    if (!p || !this.session || !this.second) return
+    this.joining = mode === 'conference'
+    try {
+      await joinCalls(p, mode)
+    } catch (e) {
+      this.joining = false
+      throw e
+    }
+    if (mode === 'transfer') {
+      // Die beiden Gegenüber sprechen jetzt miteinander, die eigenen Gespräche sind übrig
+      this.second?.terminate()
+      this.session?.terminate()
+    }
+  }
+
   private incoming(e: IncomingRTCSessionEvent): void {
     const session = e.session
-    if (this.session) {
+    if (this.session || this.second) {
       // Ein Gespräch zur Zeit: Zweitanruf ablehnen, die Anlage leitet dann z. B. zur Voicemail
       session.terminate({ status_code: 486, reason_phrase: 'Busy Here' })
       return
@@ -263,6 +354,14 @@ export class Phone {
       reason: '',
     }
     this.track(session, call)
+    // Durchsage/Gegensprechen der Anlage (Call-Info, Name von außen filtert die Anlage)
+    const page = /answer-after=0/.test(e.request.getHeader('Call-Info') ?? '') || /^(Durchsage|Gegensprechen) /.test(session.remote_identity.display_name ?? '')
+    if (page && this.autoAnswerPages) {
+      this.answer()
+      InCallManager.setForceSpeakerphoneOn(true)
+      this.setCall({ speaker: true })
+      return
+    }
     InCallManager.startRingtone('_DEFAULT_', [0, 1000, 1000], 'playback', 30)
     this.onIncoming(call)
   }

@@ -148,7 +148,16 @@ export interface Settings {
     crm?: { url: string; auto: boolean } | null
     /** Voicemail der Nebenstelle in der App */
     voicemail?: boolean
+    /** Türsprechstellen (Tür öffnen im Gespräch) */
+    doors?: PbxDoor[]
   }
+}
+
+export interface PbxDoor {
+  number: string
+  name: string
+  /** Tasten zum Öffnen */
+  dtmf: string
 }
 
 /** Zugang für Videoanrufe: SIP über WebSocket, Passwort wie das Konto */

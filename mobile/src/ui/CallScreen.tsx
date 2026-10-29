@@ -2,7 +2,7 @@
 
 import { useKeepAwake } from 'expo-keep-awake'
 import { useEffect, useState } from 'react'
-import { Linking, Modal, StyleSheet, View } from 'react-native'
+import { Alert, Linking, Modal, StyleSheet, View } from 'react-native'
 import { Button, Dialog, FAB, IconButton, Portal, Text, TextInput, useTheme } from 'react-native-paper'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { formatDuration } from '../numbers'
@@ -56,8 +56,9 @@ export function CallScreen() {
   const [now, setNow] = useState(Date.now())
   const [keypad, setKeypad] = useState(false)
   const [digits, setDigits] = useState('')
-  const [transfer, setTransfer] = useState(false)
+  const [transfer, setTransfer] = useState<'' | 'transfer' | 'consult'>('')
   const [target, setTarget] = useState('')
+  const [joining, setJoining] = useState(false)
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000)
@@ -66,6 +67,15 @@ export function CallScreen() {
   if (!call) return null
   const active = call.status === 'active'
   const ended = call.status === 'ended'
+  const other = state.other
+  const door = profile?.doors?.find((d) => d.number === call.number)
+  const join = (mode: 'transfer' | 'conference'): void => {
+    setJoining(true)
+    phone
+      .join(mode)
+      .catch((e: Error) => Alert.alert(mode === 'transfer' ? 'Verbinden' : 'Konferenz', e.message))
+      .finally(() => setJoining(false))
+  }
   return (
     <Modal visible animationType="slide" onRequestClose={() => undefined} statusBarTranslucent>
       {/* Dialoge im Modal brauchen einen eigenen Portal-Host */}
@@ -84,6 +94,24 @@ export function CallScreen() {
           <Text variant="titleMedium" style={{ color: ended && call.reason ? CALL_RED : theme.colors.primary, marginTop: 8 }}>
             {statusText(call, now)}
           </Text>
+          {other && (
+            <View style={styles.other}>
+              <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }} numberOfLines={1}>
+                Gehalten: {other.name || other.number}
+              </Text>
+              <View style={styles.otherButtons}>
+                <Button mode="outlined" compact icon="swap-horizontal" disabled={!active} onPress={() => phone.swap()}>
+                  Makeln
+                </Button>
+                <Button mode="contained-tonal" compact icon="call-merge" disabled={!active || joining} onPress={() => join('transfer')}>
+                  Verbinden
+                </Button>
+                <Button mode="contained-tonal" compact icon="account-group" disabled={!active || joining} onPress={() => join('conference')}>
+                  Konferenz
+                </Button>
+              </View>
+            </View>
+          )}
           {keypad && (
             <Text variant="headlineSmall" style={styles.digits} numberOfLines={1}>
               {digits}
@@ -116,7 +144,16 @@ export function CallScreen() {
                 <Toggle icon="dialpad" label="Tasten" onPress={() => setKeypad(true)} disabled={!active} />
                 <Toggle icon="volume-high" label="Lautsprecher" active={call.speaker} onPress={() => phone.toggleSpeaker()} disabled={ended} />
                 <Toggle icon={call.held ? 'play' : 'pause'} label={call.held ? 'Fortsetzen' : 'Halten'} active={call.held} onPress={() => phone.toggleHold()} disabled={!active} />
-                <Toggle icon="phone-forward" label="Weiterleiten" onPress={() => setTransfer(true)} disabled={!active} />
+                <Toggle icon="phone-forward" label="Weiterleiten" onPress={() => setTransfer('transfer')} disabled={!active} />
+                <Toggle icon="phone-plus" label="Rückfrage" onPress={() => setTransfer('consult')} disabled={!active || Boolean(other)} />
+                {door && (
+                  <Toggle
+                    icon="door-open"
+                    label="Tür öffnen"
+                    disabled={!active}
+                    onPress={() => [...door.dtmf].forEach((d, i) => setTimeout(() => phone.dtmf(d), i * 250))}
+                  />
+                )}
                 {profile?.parking && <Toggle icon="parking" label="Parken" onPress={() => phone.transfer(profile.parking!.number)} disabled={!active} />}
                 {profile?.crm && (
                   <Toggle icon="open-in-new" label="CRM" onPress={() => void Linking.openURL(crmUrl(profile.crm!.url, call.number, call.name)).catch(() => undefined)} />
@@ -137,21 +174,23 @@ export function CallScreen() {
           </View>
         )}
         <Portal>
-          <Dialog visible={transfer} onDismiss={() => setTransfer(false)}>
-            <Dialog.Title>Weiterleiten an</Dialog.Title>
+          <Dialog visible={Boolean(transfer)} onDismiss={() => setTransfer('')}>
+            <Dialog.Title>{transfer === 'consult' ? 'Rückfrage bei' : 'Weiterleiten an'}</Dialog.Title>
             <Dialog.Content>
               <TextInput mode="outlined" label="Nummer" value={target} onChangeText={setTarget} keyboardType="phone-pad" autoFocus />
             </Dialog.Content>
             <Dialog.Actions>
-              <Button onPress={() => setTransfer(false)}>Abbrechen</Button>
+              <Button onPress={() => setTransfer('')}>Abbrechen</Button>
               <Button
                 disabled={!target.trim()}
                 onPress={() => {
-                  setTransfer(false)
-                  phone.transfer(target)
+                  setTransfer('')
+                  if (transfer === 'consult') phone.consult(target)
+                  else phone.transfer(target)
+                  setTarget('')
                 }}
               >
-                Weiterleiten
+                {transfer === 'consult' ? 'Anrufen' : 'Weiterleiten'}
               </Button>
             </Dialog.Actions>
           </Dialog>
@@ -167,6 +206,8 @@ const styles = StyleSheet.create({
   top: { alignItems: 'center', gap: 4, marginTop: 32 },
   center: { textAlign: 'center', marginTop: 16 },
   digits: { marginTop: 12, letterSpacing: 2 },
+  other: { alignItems: 'center', gap: 8, marginTop: 16 },
+  otherButtons: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 },
   incoming: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 48 },
   bottom: { gap: 24, marginBottom: 16 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', rowGap: 16, columnGap: 24 },

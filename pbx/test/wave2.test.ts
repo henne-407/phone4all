@@ -18,6 +18,7 @@ import {
   extensionPlan,
   feature,
   groupPlan,
+  inboundName,
   isAvailable,
   keywordMatch,
   memberGroups,
@@ -156,6 +157,12 @@ describe('Handy klingelt mit', () => {
 })
 
 describe('Durchsage und Gegensprechen', () => {
+  it('lässt Anrufer von außen nicht als Durchsage durch', () => {
+    expect(inboundName('Durchsage Chef')).toBe('Chef')
+    expect(inboundName(' gegensprechen: x')).toBe('x')
+    expect(inboundName('Max Durchsage')).toBe('Max Durchsage')
+  })
+
   it('nur mit Recht, ohne Nicht stören und ohne sich selbst', () => {
     const cfg = sampleConfig()
     const s = state()

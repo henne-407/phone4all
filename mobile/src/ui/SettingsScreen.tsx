@@ -44,6 +44,13 @@ export function SettingsScreen({ onClose, onResetup }: { onClose: () => void; on
         </List.Section>
         <Divider />
         <List.Section title="Erreichbarkeit">
+          <List.Item
+            title="Durchsagen selbst annehmen"
+            description="Durchsagen und Gegensprechen der Anlage gehen ohne Klingeln auf den Lautsprecher"
+            descriptionNumberOfLines={2}
+            left={(p) => <List.Icon {...p} icon="bullhorn-outline" />}
+            right={() => <Switch value={settings.autoAnswerPages} onValueChange={(v) => updateSettings({ autoAnswerPages: v })} />}
+          />
           {Platform.OS === 'android' ? (
             <>
               <List.Item
