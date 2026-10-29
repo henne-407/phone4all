@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { compareVersions, containerIdFromMountinfo } from '../server/updates'
+import { compareVersions, containerIdFromMountinfo, demuxLogs } from '../server/updates'
 
 describe('Online-Updates', () => {
+  it('liest die Ausgabe des Hilfscontainers aus gemultiplexten Docker-Logs', () => {
+    const block = (stream: number, text: string): Buffer => {
+      const head = Buffer.alloc(8)
+      head[0] = stream
+      head.writeUInt32BE(Buffer.byteLength(text), 4)
+      return Buffer.concat([head, Buffer.from(text)])
+    }
+    expect(demuxLogs(Buffer.concat([block(1, 'Pulling …\n'), block(2, 'manifest unknown\n')]))).toBe('Pulling …\nmanifest unknown\n')
+    expect(demuxLogs(Buffer.from('nur Text'))).toBe('nur Text')
+  })
+
   it('findet die eigene Container-ID auch mit Host-Netz (TrueNAS)', () => {
     const id = 'a'.repeat(12) + '0123456789abcdef'.repeat(3) + 'b'.repeat(4)
     const mountinfo = [

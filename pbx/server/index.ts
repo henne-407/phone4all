@@ -882,6 +882,10 @@ async function main(): Promise<void> {
   watchdog.start()
   setTimeout(() => void watchdog.tick(), 15000).unref()
   sources.start()
+  void updater.collect().then(() => {
+    const last = updater.info.last
+    if (last && Date.now() - last.time < 3600000) watchdog.log(last.ok ? 'info' : 'error', 'asterisk', last.text)
+  })
 
   // Tägliche Sicherung, stündliche Update-Prüfung, automatisches Update im Zeitfenster
   let lastBackup = ''

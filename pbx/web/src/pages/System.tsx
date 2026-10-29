@@ -351,6 +351,16 @@ function Updates() {
             Prüfung fehlgeschlagen: {info.error}
           </Alert>
         )}
+        {info?.last && (
+          <Alert severity={info.last.ok ? 'success' : 'error'} variant="outlined" sx={{ mb: 2 }}>
+            {new Date(info.last.time).toLocaleString('de-DE')}: {info.last.text}
+          </Alert>
+        )}
+        {info?.note && (
+          <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
+            {info.note}
+          </Alert>
+        )}
         {info && !info.canApply && (
           <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
             Update aus der Weboberfläche nicht möglich: {info.reason || 'noch nicht geprüft.'} Die Anlage braucht den Docker-Socket (
