@@ -8,6 +8,7 @@ import { MessengerHub, MessengerStore } from '../pbx/server/messenger'
 import { blankItem, withDefaults } from '../pbx/server/model'
 import type { Extension } from '../pbx/server/model'
 import { upgrade } from '../pbx/server/websocket'
+import { isExecutable, safeFileName } from '../src/main/files'
 import { Messenger, mimeOf } from '../src/main/messenger'
 import type { ChatMessage } from '../src/shared/types'
 
@@ -83,5 +84,21 @@ describe('Messenger der App mit der Anlage', () => {
   it('kennt Dateitypen', () => {
     expect(mimeOf('/x/Foto.JPG')).toBe('image/jpeg')
     expect(mimeOf('a.unbekannt')).toBe('application/octet-stream')
+  })
+})
+
+describe('Anhänge in der Desktop-App', () => {
+  it('öffnet keine Programme und Skripte direkt', () => {
+    for (const n of ['rechnung.exe', 'Rechnung.PDF.exe', 'x.js', 'makro.docm', 'a.lnk', 'b.ps1 ', 'c.hta.', 'setup.msi', 'start.sh']) {
+      expect(isExecutable(n), n).toBe(true)
+    }
+    for (const n of ['foto.jpg', 'brief.pdf', 'tabelle.xlsx', 'notiz.txt', 'exe.png']) expect(isExecutable(n), n).toBe(false)
+  })
+
+  it('macht Dateinamen ungefährlich', () => {
+    expect(safeFileName('../../.bashrc')).toBe('bashrc')
+    expect(safeFileName('..\\..\\Windows\\evil.dll')).toBe('evil.dll')
+    expect(safeFileName('a:b*c?.txt')).toBe('a_b_c_.txt')
+    expect(safeFileName('')).toBe('Datei')
   })
 })

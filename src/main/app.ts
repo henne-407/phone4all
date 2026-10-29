@@ -271,7 +271,8 @@ export class App {
 
   private registerIpc(): void {
     ipcMain.handle('api', (_e, method: keyof Api, ...args: unknown[]) => {
-      const fn = this.api[method] as (...a: unknown[]) => unknown
+      // Nur eigene Funktionen der Schnittstelle, nichts aus der Prototypkette
+      const fn = Object.hasOwn(this.api, method) ? (this.api[method] as (...a: unknown[]) => unknown) : undefined
       if (typeof fn !== 'function') throw new Error(`Unbekannte Funktion: ${String(method)}`)
       return fn(...args)
     })
@@ -402,6 +403,12 @@ export class App {
   // -- Fenster -------------------------------------------------------------
 
   private loadRenderer(win: BrowserWindow, hash: string): void {
+    // Keine neuen Fenster und kein Wegnavigieren (etwa durch einen Link im Chat)
+    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    win.webContents.on('will-navigate', (e, url) => {
+      const page = (u: string): string => u.replace(/[?#].*$/, '')
+      if (page(url) !== page(win.webContents.getURL())) e.preventDefault()
+    })
     if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}#${hash}`)
     else void win.loadFile(path.join(__dirname, '../renderer/index.html'), { hash })
   }
@@ -455,7 +462,6 @@ export class App {
         this.quit()
       }
     })
-    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   }
 
   mainWindow(): BrowserWindow | null {
