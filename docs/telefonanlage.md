@@ -109,8 +109,23 @@ Nebenstellen direkt wählen.
 
 ### Ansagen und Musik
 
-Ansagen hochladen (WAV, MP3, …) oder direkt im Browser aufnehmen, außerdem eigene
-Wartemusik. Ansagen werden in Sprachmenüs, Gruppen und Rufabfolgen verwendet.
+Ansagen hochladen (WAV, MP3, …), direkt im Browser aufnehmen oder **aus Text sprechen
+lassen**, außerdem eigene Wartemusik. Ansagen werden in Sprachmenüs, Gruppen und
+Rufabfolgen verwendet.
+
+*Aus Text sprechen* nutzt [Piper](https://github.com/rhasspy/piper), das auf der Anlage
+selbst läuft (auch auf dem Raspberry Pi, ohne Cloud). Programm und Stimme (Thorsten,
+Kerstin oder Eva) werden beim ersten Gebrauch geladen, zusammen etwa 90 MB. Zahlen und
+Uhrzeiten klingen ausgeschrieben am besten („neun bis siebzehn Uhr“).
+
+### Anrufsperren
+
+Gesperrte Rufnummern kommen bei niemandem mehr durch, das Telefon klingelt gar nicht erst.
+Mit `*` am Ende sperrt ein Eintrag alle Nummern mit diesem Anfang (z. B. `+44*`). Anrufe
+mit unterdrückter Nummer lassen sich hier ebenfalls abweisen. Sperren geht auch direkt in
+der *Anrufliste* (Knopf neben dem Anruf) und in den Apps, wenn die Nebenstelle das Recht
+*Rufnummern sperren* hat (*System → Zugang* oder bei der Gruppe). Gesperrte Anrufe stehen
+in der Anrufliste als *Gesperrt*.
 
 ## Nach außen
 
@@ -182,7 +197,11 @@ Ein App-Profil legt fest, was Desktop- und Mobil-App zeigen:
 - mit welcher Ansicht die App startet,
 - welche Karten auf der Startseite liegen (ebenfalls per Drag & Drop),
 - welche zentralen Kalender erscheinen,
-- ob Startseite und Kontodaten in der App gesperrt sind.
+- ob Startseite und Kontodaten in der App gesperrt sind,
+- ob die App Anrufer im **CRM** öffnet: Adresse mit den Platzhaltern `{nummer}`,
+  `{e164}` und `{name}`, z. B. `https://crm.example.de/suche?telefon={e164}`. Die App
+  zeigt dann im Gespräch einen Knopf *CRM*; auf Wunsch öffnet sie die Seite beim
+  Annehmen von selbst.
 
 Die Vorschau zeigt, wie die App aussieht. Zugewiesen wird das Profil bei der Nebenstelle;
 die Apps übernehmen Änderungen innerhalb von zwei Minuten.
@@ -220,7 +239,7 @@ laufen. Für Anrufe von unterwegs gelten dieselben Voraussetzungen wie für die 
 ### Anrufliste
 
 Alle Gespräche, neueste zuerst: eingehend, ausgehend, intern, mit Dauer. Aufnahmen
-lassen sich hier anhören.
+lassen sich hier anhören, lästige Anrufer mit einem Klick sperren.
 
 ### System
 
@@ -230,15 +249,44 @@ Geänderte Einstellungen werden erst mit *Anwenden* in der Leiste am unteren Ran
 | Reiter | Inhalt |
 | --- | --- |
 | Allgemein | Name, Adresse für Telefone, Länder-/Ortsvorwahl, Bundesland, Zeitzone, Ports, öffentliche Adresse (NAT), lokale Netze, Codecs |
+| Funktionen | Gespräche parken, Benachrichtigung bei Notrufen (siehe unten) |
 | E-Mail | SMTP-Server für Voicemail und Einladungen, Testmail |
 | Sicherheit | Sperre nach Fehlanmeldungen, nie sperren, Nebenstellen nur aus bestimmten Netzen, gesperrte Adressen |
-| Sicherung | Export, Import, automatische Sicherungen wiederherstellen |
+| Sicherung | Export, Import, automatische Sicherungen wiederherstellen, tägliche Sicherung auf WebDAV (Nextcloud, NAS) oder S3, auf Wunsch verschlüsselt |
 | Aktualisierung | neue Version installieren, Kanal stabil/Beta, automatisch nachts |
 | Zugang | Passwort der Weboberfläche, Suche der App im lokalen Netz, Rechte aller Nebenstellen in der App |
 | Fernzugriff | öffentliche HTTPS-Adresse für Mobil-App und Einrichtungslinks ([Anleitung](fernzugriff.md)) |
 | Diagnose | Zustand, Watchdog-Einstellungen, Ereignisprotokoll |
-| Home Assistant | Schnittstelle einschalten, Zugriffsschlüssel ([Anleitung](home-assistant.md)) |
+| Schnittstellen | Home Assistant und Zugriffsschlüssel ([Anleitung](home-assistant.md)), Anrufe über die Schnittstelle auslösen, Webhooks |
 | Protokoll | Warnungen und Fehler von Asterisk, Neustart der Anlage |
+
+### Gespräche parken
+
+Ein Gespräch an die Parknummer (Standard `700`) weiterleiten legt es auf den nächsten
+freien Parkplatz (`701` bis `708`). Wer den Parkplatz wählt, übernimmt das Gespräch.
+Holt es niemand ab, klingelt es nach der eingestellten Zeit wieder bei dem, der geparkt hat.
+Desktop- und Mobil-App haben dafür einen Knopf *Parken* im Gespräch und zeigen geparkte
+Gespräche auf der Karte *Kollegen*. Abschaltbar unter *System → Funktionen*; überschneidet
+sich die Parknummer bei einem Update mit vorhandenen Nummern, bleibt Parken aus.
+
+### Benachrichtigung bei Notrufen
+
+Wählt jemand 110 oder 112, erfahren es die eingetragenen Personen sofort per E-Mail und
+Messenger, außerdem Home Assistant (`phone4all_emergency_call`) und Webhooks. Am Notruf
+selbst ändert sich nichts. Gemeldet wird auch, wenn der Notruf nicht rausging (z. B. kein
+SIP-Konto angemeldet).
+
+### Webhooks und Anruf-Schnittstelle
+
+Unter *System → Schnittstellen*:
+
+- **Webhooks** schicken Ereignisse als JSON per POST an eine Adresse: `call.ringing`,
+  `call.answered`, `call.ended`, `call.missed`, `voicemail.new`, `call.blocked`,
+  `emergency`. Die Kopfzeile `X-Phone4all-Signature: sha256=…` ist ein HMAC-SHA256 über
+  den Body mit dem Schlüssel des Webhooks – so prüft der Empfänger die Herkunft.
+- **Anrufe über die Schnittstelle**: `POST /api/integration/call` mit dem Zugriffsschlüssel
+  und `{"extension":"10","number":"030123456"}`. Erst klingelt die Nebenstelle, nach dem
+  Abheben wählt die Anlage die Nummer.
 
 ## Funktionscodes am Telefon
 
@@ -249,6 +297,7 @@ Geänderte Einstellungen werden erst mit *Anwenden* in der Leiste am unteren Ran
 | \*76 | Nicht stören ein/aus |
 | \*21 + Nummer | alle Anrufe weiterleiten (\*21 allein: aus) |
 | \*8 | Anruf in der eigenen Gruppe heranholen |
+| 700 (weiterleiten) | Gespräch parken; 701–708 übernimmt es |
 | \*\* + Nebenstelle | Anruf einer Nebenstelle heranholen |
 | \*31 + Nummer | anonym anrufen |
 | \*28 + Nummer | Zeitsteuerung umschalten (Nachtschaltung) |

@@ -77,7 +77,7 @@ class Phone4allCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self._set_problems({p["key"]: p["message"] for p in data.get("problems", [])})
         self._check_missed(data.get("missed", {}).get("calls", []))
-        # Ab Telefonanlage 0.9: Notrufe (110/112) von Nebenstellen
+        # Notrufe (110/112) von Nebenstellen; ältere Anlagen liefern keine
         self._check_emergency(data.get("emergency", []))
         return data
 
