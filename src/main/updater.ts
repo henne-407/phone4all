@@ -7,6 +7,7 @@
 
 import { app as electronApp, net } from 'electron'
 import { execFile, execFileSync, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -194,12 +195,14 @@ export class Updater {
       const r = await net.fetch(asset.browser_download_url)
       if (!r.ok || !r.body) throw new Error(`Download fehlgeschlagen (${r.status})`)
       const out = fs.createWriteStream(file)
+      const hash = createHash('sha256')
       const reader = r.body.getReader()
       let done = 0
       let shown = 0
       for (;;) {
         const { value, done: end } = await reader.read()
         if (end) break
+        hash.update(value)
         if (!out.write(value)) await new Promise((res) => out.once('drain', res))
         done += value.length
         const progress = asset.size ? done / asset.size : 0
@@ -210,6 +213,12 @@ export class Updater {
       }
       await new Promise<void>((res, rej) => out.end((e?: Error) => (e ? rej(e) : res())))
       if (asset.size && fs.statSync(file).size !== asset.size) throw new Error('Download unvollständig')
+      // Gegen die Prüfsumme aus dem Release prüfen (manipulierte oder beschädigte Datei)
+      const expected = /^sha256:([0-9a-f]{64})$/i.exec(asset.digest ?? '')?.[1]
+      if (expected && hash.digest('hex') !== expected.toLowerCase()) {
+        fs.rmSync(file, { force: true })
+        throw new Error('Prüfsumme des Updates stimmt nicht – Update verworfen')
+      }
       this.file = file
       this.set({ status: 'ready', progress: 1 })
     } catch (e) {

@@ -1,0 +1,34 @@
+# Wöchentliche Updates für Abhängigkeiten und gepinnte GitHub Actions
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /pbx
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  # Expo legt die Versionen fest (npx expo install --fix): hier nur Sicherheitsupdates
+  - package-ecosystem: npm
+    directory: /mobile
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+  - package-ecosystem: pip
+    directory: /tests
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /pbx
+    schedule:
+      interval: weekly
