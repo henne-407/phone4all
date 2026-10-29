@@ -91,6 +91,8 @@ export interface UpdateInfo {
   project: string
   checked: number
   error: string
+  last: { ok: boolean; time: number; text: string } | null
+  note: string
 }
 
 export interface CallRecord {

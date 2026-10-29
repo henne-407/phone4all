@@ -58,7 +58,7 @@ export function useApp(): Ctx {
 /** Das aktuelle Gespräch (nicht klingelnd), sonst ein klingelnder Anruf. */
 export function activeCall(calls: CallInfo[], exclude?: string): CallInfo | null {
   const list = calls.filter((c) => c.id !== exclude)
-  list.sort((a, b) => Number(a.state === 'incoming') - Number(b.state === 'incoming') || b.created - a.created)
+  list.sort((a, b) => Number(a.state === 'incoming') - Number(b.state === 'incoming') || Number(a.held) - Number(b.held) || b.created - a.created)
   return list[0] ?? null
 }
 

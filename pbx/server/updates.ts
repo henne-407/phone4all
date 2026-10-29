@@ -33,6 +33,29 @@ export interface UpdateInfo {
   project: string
   checked: number
   error: string
+  /** Ergebnis des letzten Updates über den Hilfscontainer (null = keins bekannt) */
+  last: { ok: boolean; time: number; text: string } | null
+  /** Hinweis zur Installation (z. B. TrueNAS: Kanal nur über das Image-Tag der App) */
+  note: string
+}
+
+/** Ein Update gilt nach so langer Zeit ohne Neustart als gescheitert */
+const APPLY_TIMEOUT = 15 * 60000
+const HELPER_LABEL = 'phone4all.updater'
+
+/**
+ * Docker-Logs ohne Terminal sind gemultiplext: je Block 8 Byte Kopf (Strom, Länge).
+ * Gibt den reinen Text zurück.
+ */
+export function demuxLogs(buf: Buffer): string {
+  const parts: Buffer[] = []
+  let i = 0
+  while (i + 8 <= buf.length && buf[i] <= 2 && buf[i + 1] === 0 && buf[i + 2] === 0 && buf[i + 3] === 0) {
+    const len = buf.readUInt32BE(i + 4)
+    parts.push(buf.subarray(i + 8, i + 8 + len))
+    i += 8 + len
+  }
+  return (i === 0 ? buf : Buffer.concat(parts)).toString('utf8')
 }
 
 /** „pbx-v1.2.3“ / „1.2.3-beta.1“ vergleichen; dev ist immer älter. */
@@ -73,6 +96,18 @@ function docker<T>(method: string, path: string, body?: unknown): Promise<T> {
     )
     req.on('error', reject)
     req.end(body ? JSON.stringify(body) : undefined)
+  })
+}
+
+function dockerRaw(path: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ socketPath: SOCKET, method: 'GET', path }, (res) => {
+      const chunks: Buffer[] = []
+      res.on('data', (c: Buffer) => chunks.push(c))
+      res.on('end', () => ((res.statusCode ?? 500) >= 400 ? reject(new Error(`Docker: ${res.statusCode}`)) : resolve(Buffer.concat(chunks))))
+    })
+    req.on('error', reject)
+    req.end()
   })
 }
 
@@ -147,8 +182,37 @@ export class Updater {
     project: '',
     checked: 0,
     error: '',
+    last: null,
+    note: '',
   }
   running = false
+  private started = 0
+
+  /**
+   * Beendete Hilfscontainer auswerten (Exit-Code und Ausgabe) und entfernen. Läuft beim
+   * Start der neuen Version – so erfährt die Oberfläche, ob das Update geklappt hat.
+   */
+  async collect(): Promise<void> {
+    if (!fs.existsSync(SOCKET)) return
+    const filters = encodeURIComponent(JSON.stringify({ label: [HELPER_LABEL] }))
+    const list = await docker<{ Id: string; State: string; Created: number }[]>('GET', `/containers/json?all=1&filters=${filters}`).catch(() => [])
+    for (const c of (Array.isArray(list) ? list : []).sort((a, b) => a.Created - b.Created)) {
+      if (c.State === 'running' || c.State === 'created') continue
+      try {
+        const info = await docker<{ State?: { ExitCode?: number; FinishedAt?: string } }>('GET', `/containers/${c.Id}/json`)
+        const log = demuxLogs(await dockerRaw(`/containers/${c.Id}/logs?stdout=1&stderr=1&tail=20`)).trim()
+        const ok = info.State?.ExitCode === 0
+        this.info.last = {
+          ok,
+          time: Date.parse(info.State?.FinishedAt ?? '') || c.Created * 1000,
+          text: ok ? 'Update eingespielt.' : `Update fehlgeschlagen (Code ${info.State?.ExitCode ?? '?'}): ${log.split('\n').slice(-5).join(' · ') || 'keine Ausgabe'}`,
+        }
+        await docker('DELETE', `/containers/${c.Id}`)
+      } catch {
+        // nächster Versuch beim nächsten Start
+      }
+    }
+  }
 
   async check(channel: 'stable' | 'beta'): Promise<UpdateInfo> {
     const info: UpdateInfo = { ...this.info, checked: Date.now(), error: '' }
@@ -187,8 +251,13 @@ export class Updater {
     }
     try {
       info.project = (await composeInfo()).project
+      // Beim Start lief der Hilfscontainer evtl. noch: jetzt auswerten
+      await this.collect().catch(() => undefined)
+      info.last = this.info.last
       info.canApply = true
       info.reason = ''
+      // TrueNAS-Apps (Projekt „ix-…“) lesen keine .env: Der Kanal folgt dem Image-Tag der App
+      info.note = info.project.startsWith('ix-') ? 'TrueNAS: Der Kanal (Stabil/Beta) richtet sich nach dem Image-Tag in der App-Konfiguration, nicht nach dieser Einstellung.' : ''
     } catch (e) {
       info.canApply = false
       info.project = ''
@@ -200,9 +269,12 @@ export class Updater {
 
   /** Startet den Hilfscontainer; danach wird dieser Container ersetzt. */
   async apply(channel: 'stable' | 'beta'): Promise<void> {
-    if (this.running) throw new Error('Das Update läuft bereits.')
+    // Ohne Neustart nach 15 Minuten: Das Update ist gescheitert (siehe collect)
+    if (this.running && Date.now() - this.started < APPLY_TIMEOUT) throw new Error('Das Update läuft bereits.')
+    if (this.running) await this.collect()
     const compose = await composeInfo()
     this.running = true
+    this.started = Date.now()
     try {
       const [repo, digest] = HELPER_IMAGE.split('@')
       await docker('POST', `/images/create?fromImage=${encodeURIComponent(repo)}&tag=${encodeURIComponent(digest)}`)
@@ -221,8 +293,9 @@ export class Updater {
         Cmd: ['sh', '-c', script],
         WorkingDir: compose.workdir,
         Env: [`PBX_TAG=${pbxTag}`],
+        // Nicht selbst löschen: Die neue Version liest Exit-Code und Ausgabe (collect)
+        Labels: { [HELPER_LABEL]: '1' },
         HostConfig: {
-          AutoRemove: true,
           Binds: [`${SOCKET}:${SOCKET}`, `${compose.workdir}:${compose.workdir}`],
         },
       })

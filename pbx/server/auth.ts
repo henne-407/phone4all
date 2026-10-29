@@ -114,6 +114,12 @@ export class Auth {
     this.sessions.set(token, Date.now() + SESSION_HOURS * 3600000)
     return true
   }
+
+  /** Abgelaufene Sitzungen und alte Fehlversuche vergessen (sonst wächst beides ewig) */
+  prune(now = Date.now()): void {
+    for (const [token, until] of this.sessions) if (until < now) this.sessions.delete(token)
+    for (const [ip, list] of this.failures) if (!list.some((f) => f.time > now - FAILURE_WINDOW)) this.failures.delete(ip)
+  }
 }
 
 export const SESSION_COOKIE = 'p4a_session'

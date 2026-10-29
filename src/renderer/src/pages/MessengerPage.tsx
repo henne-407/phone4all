@@ -306,7 +306,12 @@ function GroupDialog({ s, room, onClose, onOpen }: { s: MessengerState; room: Ch
   const [members, setMembers] = useState<string[]>(room ? room.members.filter((m) => m !== s.me) : [])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const toggle = (n: string): void => setMembers((l) => (l.includes(n) ? l.filter((x) => x !== n) : [...l, n]))
+  // Andere entfernen darf nur, wer die Gruppe angelegt hat (oder jeder, wenn er nicht mehr dabei ist)
+  const admin = !room || room.created_by === s.me || !room.members.includes(room.created_by)
+  const fixed = (n: string): boolean => !admin && Boolean(room?.members.includes(n))
+  const toggle = (n: string): void => {
+    if (!fixed(n)) setMembers((l) => (l.includes(n) ? l.filter((x) => x !== n) : [...l, n]))
+  }
   const save = async (): Promise<void> => {
     setBusy(true)
     const r = room
@@ -326,11 +331,16 @@ function GroupDialog({ s, room, onClose, onOpen }: { s: MessengerState; room: Ch
           Mitglieder ({members.length + 1})
         </Typography>
         {error && <Alert severity="error">{error}</Alert>}
+        {!admin && (
+          <Typography variant="body2" color="text.secondary">
+            Hinzufügen kann jedes Mitglied, entfernen nur, wer die Gruppe angelegt hat.
+          </Typography>
+        )}
         <List dense>
           {s.users
             .filter((u) => u.number !== s.me)
             .map((u) => (
-              <ListItemButton key={u.number} onClick={() => toggle(u.number)} sx={{ borderRadius: 2 }}>
+              <ListItemButton key={u.number} onClick={() => toggle(u.number)} disabled={fixed(u.number)} sx={{ borderRadius: 2 }}>
                 <ListItemIcon>
                   <Checkbox edge="start" checked={members.includes(u.number)} tabIndex={-1} disableRipple />
                 </ListItemIcon>

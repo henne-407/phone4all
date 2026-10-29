@@ -15,6 +15,7 @@ import { readCalls, tailLog } from './cdr'
 import { describeAgent, gigasetFile, requestMac } from './dect'
 import { loadJson, saveJson } from './files'
 import { type ForwardChange, ForwardError, applyCfu, applyRules, check as checkForward, forwardInfo } from './forwarding'
+import { localTime } from './holidays'
 import { integrationReport, validToken } from './integration'
 import { LdapServer } from './ldap'
 import { HttpError, type Request, Router, clientIp, makeRequest, proxyHints, sendFile, sendJson, sendText, serveStatic, setTrustedProxies, socketIp } from './http'
@@ -41,6 +42,7 @@ import {
 import { Guard, inList } from './security'
 import { SourceSync } from './sources/sync'
 import { listSounds, saveSound, soundDir, soundFile, type SoundKind } from './sounds'
+import { expire, moveMailbox, recordingFile, removeMailbox, report as storageReport } from './storage'
 import {
   ConfigStore,
   type EncryptedExport,
@@ -59,7 +61,7 @@ import {
   renewLink,
   renewPin,
 } from './store'
-import type { DectBase } from './model'
+import type { DectBase, PbxConfig } from './model'
 import { Updater } from './updates'
 import { type WatchEvent, Watchdog } from './watchdog'
 import { reject, upgrade } from './websocket'
@@ -80,11 +82,22 @@ const sources = new SourceSync(
 )
 external.entries = () => sources.entries()
 const audit = new AuditLog(PATHS.audit)
+external.revision = () => sources.revision
 const ldap = new LdapServer(() => store.config)
 ldap.isBlocked = (ip) => isBlocked(ip)
 ldap.onFailure = (ip) => auth.failed(ip, 'Falsches Kennwort am LDAP-Telefonbuch')
 const messenger = new MessengerHub(new MessengerStore(PATHS.messenger), () => store.config)
 auth.init()
+store.hooks = {
+  renumbered: (from, to) => {
+    messenger.store.renumber(from, to)
+    moveMailbox(from, to)
+  },
+  removed: (number) => {
+    messenger.forgotten(number)
+    removeMailbox(number)
+  },
+}
 
 function freeBytes(): number | null {
   try {
@@ -95,11 +108,12 @@ function freeBytes(): number | null {
   }
 }
 
-/** Speicher knapp: älteste Chatnachrichten löschen (sonst bleibt alles erhalten) */
+/** Kontingent überschritten oder Platte knapp: älteste Chatnachrichten löschen */
 function messengerCleanup(): void {
-  const removed = messenger.store.cleanup(freeBytes, store.config.messenger.min_free_mb * 1024 * 1024)
+  const m = store.config.messenger
+  const removed = messenger.store.cleanup({ freeBytes, minFree: m.min_free_mb * 1024 * 1024, maxUsage: m.max_storage_mb * 1024 * 1024 })
   if (!removed) return
-  watchdog.log('warning', 'disk', `Speicher knapp: ${removed} alte Chatnachrichten gelöscht`)
+  watchdog.log('warning', 'disk', `Messenger aufgeräumt: ${removed} alte Chatnachrichten gelöscht`)
   messenger.reloadAll()
 }
 
@@ -283,10 +297,25 @@ function requestBase(r: Request): string {
   return baseUrl(host, store.config, (r.raw.headers['x-forwarded-proto'] as string | undefined) ?? direct)
 }
 
+// Jede App fragt minütlich nach der Profil-Revision. Das Profil hängt nur an Konfiguration,
+// Kontaktquellen, Adresse, Geräte-Token und TURN-Zugang (wechselt täglich) – bis sich davon
+// etwas ändert, reicht das zuletzt gebaute.
+const profiles = new WeakMap<PbxConfig, Map<string, { key: string; profile: ReturnType<typeof profile> }>>()
+
 /** Profil der Nebenstelle für ein Gerät, mit Zugangsdaten für den TURN-Server */
 function extProfile(r: Request, ext: Extension, token: string) {
+  const cfg = store.config
   const base = requestBase(r)
-  return profile(store.config, ext, base, turn.iceServers(store.config, linkBase(store.config, base), appEndpoint(ext.number)), token)
+  const ice = turn.iceServers(cfg, linkBase(cfg, base), appEndpoint(ext.number))
+  const key = `${base}|${sources.revision}|${JSON.stringify(ice)}`
+  let cache = profiles.get(cfg)
+  if (!cache) profiles.set(cfg, (cache = new Map()))
+  const id = `${ext.id}|${token}`
+  const hit = cache.get(id)
+  if (hit?.key === key) return hit.profile
+  const result = profile(cfg, ext, base, ice, token)
+  cache.set(id, { key, profile: result })
+  return result
 }
 
 /** Name eines neuen Geräts: von der App mitgeschickt, sonst aus der Kennung geraten */
@@ -875,8 +904,11 @@ api.delete('/api/watchdog/events', () => {
 })
 
 api.put('/api/state/:ext', async (r) => {
-  const { dnd, cfu } = await r.json<{ dnd?: boolean; cfu?: string }>()
+  const { dnd, cfu } = await r.json<{ dnd?: unknown; cfu?: unknown }>()
   const n = r.params.ext
+  if ((dnd !== undefined && typeof dnd !== 'boolean') || (cfu !== undefined && typeof cfu !== 'string')) {
+    throw new HttpError(400, 'dnd muss true/false, cfu eine Rufnummer sein.')
+  }
   if (!store.config.extensions.some((e) => e.number === n)) throw new HttpError(404, 'Nebenstelle nicht gefunden.')
   if (dnd !== undefined) {
     if (dnd) store.state.dnd[n] = true
@@ -905,12 +937,25 @@ api.post('/api/unban', async (r) => {
 
 api.get('/api/calls', (r) => readCalls(Number(r.query.get('limit')) || 200))
 
-api.get('/api/recordings/:name', (r) => {
-  const name = r.params.name
-  if (!/^[\w.-]+\.wav$/.test(name)) throw new HttpError(400, 'Ungültiger Name.')
-  const file = path.join(PATHS.recordings, name)
+function recording(name: string): string {
+  const file = recordingFile(name)
+  if (!file) throw new HttpError(400, 'Ungültiger Name.')
   if (!fs.existsSync(file)) throw new HttpError(404, 'Aufnahme nicht gefunden.')
-  sendFile(r.res, file, r.query.has('download') ? name : undefined)
+  return file
+}
+
+api.get('/api/recordings/:name', (r) => sendFile(r.res, recording(r.params.name), r.query.has('download') ? r.params.name : undefined))
+api.delete('/api/recordings/:name', (r) => {
+  fs.rmSync(recording(r.params.name))
+  return { ok: true }
+})
+
+/** Belegung je Bereich und alle Aufnahmen (System → Speicher) */
+api.get('/api/storage', () => storageReport(freeBytes()))
+api.post('/api/storage/cleanup', () => {
+  const result = expire(store.config.storage)
+  messengerCleanup()
+  return { ...result, report: storageReport(freeBytes()) }
 })
 
 api.get('/api/log', () => tailLog())
@@ -1113,23 +1158,35 @@ async function main(): Promise<void> {
   startDiscovery(() => store.config)
   asterisk.start()
   watchdog.log('info', 'asterisk', `Verwaltungsdienst gestartet (Version ${SETTINGS.version})`)
+  if (store.recovered) watchdog.log('error', 'disk', store.recovered)
   watchdog.start()
   setTimeout(() => void watchdog.tick(), 15000).unref()
   sources.start()
+  void updater.collect().then(() => {
+    const last = updater.info.last
+    if (last && Date.now() - last.time < 3600000) watchdog.log(last.ok ? 'info' : 'error', 'asterisk', last.text)
+  })
 
   // Tägliche Sicherung, stündliche Update-Prüfung, automatisches Update im Zeitfenster
   let lastBackup = ''
   let lastAutoUpdate = ''
   const tick = async (): Promise<void> => {
-    const today = new Date().toISOString().slice(0, 10)
+    // Tag und Stunde in der Zeitzone der Anlage (der Container läuft meist in UTC)
+    const local = localTime(new Date(), store.config.system.timezone)
+    const today = local.date
+    auth.prune()
     if (lastBackup !== today) {
       lastBackup = today
       store.backup('taeglich')
     }
+    const expired = expire(store.config.storage)
+    if (expired.recordings || expired.voicemail) {
+      watchdog.log('info', 'disk', `Aufbewahrungsfrist: ${expired.recordings} Aufnahmen und ${expired.voicemail} Voicemails gelöscht`)
+    }
     messengerCleanup()
     const u = store.config.updates
     const info = await updater.check(u.channel)
-    if (u.auto && info.available && info.canApply && new Date().getHours() === u.hour && lastAutoUpdate !== today) {
+    if (u.auto && info.available && info.canApply && Math.floor(local.minutes / 60) === u.hour && lastAutoUpdate !== today) {
       if ((await asterisk.activeCalls()) === 0) {
         lastAutoUpdate = today
         store.backup('vor-update')
@@ -1139,6 +1196,9 @@ async function main(): Promise<void> {
   }
   setTimeout(() => void tick().catch(() => undefined), 10000)
   setInterval(() => void tick().catch(() => undefined), 3600000)
+  // Der TURN-Server erlaubt nur die eigenen Adressen als Ziel – nach einem Adresswechsel
+  // (DHCP, neues VLAN) die Konfiguration nachziehen, nicht erst bei der nächsten Änderung
+  setInterval(() => turn.apply(store.config), 5 * 60000).unref()
 
   const shutdown = async (): Promise<void> => {
     watchdog.stop()

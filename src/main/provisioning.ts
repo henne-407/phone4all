@@ -251,6 +251,13 @@ export function discover(timeout = 1500): Promise<PbxFound[]> {
   })
 }
 
+/** Die Anlage kennt den Einrichtungslink nicht (mehr): erneuert oder Nebenstelle gelöscht */
+export class LinkInvalidError extends Error {
+  constructor() {
+    super('Der Einrichtungslink ist ungültig oder wurde erneuert.')
+  }
+}
+
 async function request(url: string, body?: unknown): Promise<PbxProfile> {
   let r: Response
   try {
@@ -266,7 +273,7 @@ async function request(url: string, body?: unknown): Promise<PbxProfile> {
   }
   const data = (await r.json().catch(() => null)) as { error?: string } | null
   if (!r.ok) {
-    if (r.status === 404) throw new Error('Der Einrichtungslink ist ungültig, wurde erneuert oder das Gerät wurde abgemeldet.')
+    if (r.status === 404) throw new LinkInvalidError()
     throw new Error(data?.error || `Die Telefonanlage antwortet mit Fehler ${r.status}.`)
   }
   return parseProfile(data)
@@ -304,6 +311,9 @@ export class Provisioning {
   phonebook: Omit<Contact, 'id'>[]
   /** Umleitungen der Nebenstelle (null = Anlage kennt sie nicht oder nicht erreichbar) */
   forward: PbxForward | null = null
+  /** Die Anlage kennt den Link nicht mehr (zweimal hintereinander 404): neu einrichten */
+  invalid = false
+  private notFound = 0
 
   constructor(
     private host: ProvisioningHost,
@@ -334,13 +344,29 @@ export class Provisioning {
     return this.active ? this.host.store.getSecret(URL_SECRET) : ''
   }
 
+  /** Adresse für Dienste, die mit ungültigem Link nur Fehlversuche erzeugen (Messenger) */
+  get usableUrl(): string {
+    return this.invalid ? '' : this.url
+  }
+
+  /** Antwort der Anlage auf Link-Abfragen auswerten; meldet Wechsel an die Oberfläche */
+  private linkStatus(found: boolean): void {
+    this.notFound = found ? 0 : this.notFound + 1
+    const invalid = this.notFound >= 2
+    if (invalid === this.invalid) return
+    this.invalid = invalid
+    this.host.stateChanged()
+  }
+
   /** Fragt nur den Änderungsstand ab und lädt bei Bedarf Profil oder Termine nach. */
   async poll(): Promise<void> {
     const url = this.url
     if (!url) return
     try {
       const r = await fetch(`${url}/revision`, { signal: AbortSignal.timeout(10000) })
+      if (r.status === 404) return this.linkStatus(false)
       if (!r.ok) return
+      this.linkStatus(true)
       const rev = (await r.json()) as { profile?: string; events?: string }
       if (rev.profile && rev.profile !== this.revision.profile) await this.refresh()
       if (rev.events && this.revision.events && rev.events !== this.revision.events) this.host.eventsChanged()
@@ -444,6 +470,8 @@ export class Provisioning {
     if (!this.pending) throw new Error('Kein Profil zum Übernehmen.')
     const secure = this.applyProfile(this.pending, true)
     this.pending = null
+    this.notFound = 0
+    this.invalid = false
     void this.loadForward()
     return secure
   }
@@ -457,6 +485,8 @@ export class Provisioning {
     store.saveSettings()
     this.revision = { profile: '', events: '' }
     this.forward = null
+    this.notFound = 0
+    this.invalid = false
     this.setPhonebook([])
     this.host.calendarsChanged()
     this.host.stateChanged()
@@ -468,10 +498,12 @@ export class Provisioning {
     if (!this.active || !url) return
     try {
       const p = await request(url)
+      this.linkStatus(true)
       this.applyProfile(p, false)
       await this.loadForward()
-    } catch {
-      // Anlage gerade nicht erreichbar: beim nächsten Mal wieder versuchen
+    } catch (e) {
+      // Link erneuert: melden; sonst ist die Anlage gerade nicht erreichbar
+      if (e instanceof LinkInvalidError) this.linkStatus(false)
     }
   }
 
@@ -495,7 +527,8 @@ export class Provisioning {
       video: p.video,
     }
     this.revision.profile = p.revision
-    store.settings.registered = true
+    // Nur bei der Einrichtung anmelden – wer sich bewusst abgemeldet hat, bleibt es
+    if (initial) store.settings.registered = true
     store.saveSettings()
     if (JSON.stringify(p.phonebook) !== JSON.stringify(this.phonebook)) this.setPhonebook(p.phonebook)
     if (calendarsChanged || initial) this.host.calendarsChanged()

@@ -19,9 +19,13 @@ import {
 } from './model'
 import { cleanNumber, isInternalNumber } from './numbers'
 import { PATHS, SETTINGS } from './paths'
+import { forget, renumber } from './references'
 import type { RuntimeState } from './routing'
 
-const BACKUP_KEEP = 30
+// Je Anlass getrennt aufheben, damit die täglichen Sicherungen die vor Import oder Update
+// nicht verdrängen
+const BACKUP_KEEP: Record<string, number> = { taeglich: 14 }
+const BACKUP_KEEP_OTHER = 10
 
 export class ValidationError extends Error {}
 
@@ -277,6 +281,11 @@ export function validate(cfg: PbxConfig): void {
   if (!(m.max_file_mb >= 1 && m.max_file_mb <= 1024)) throw new ValidationError('Größte Datei im Messenger: 1 bis 1024 MB.')
   if (!(m.min_free_mb >= 100)) throw new ValidationError('Freier Speicher für den Messenger: mindestens 100 MB.')
   if (!(m.quota_mb >= 0)) throw new ValidationError('Speicher je Nebenstelle im Messenger: 0 (unbegrenzt) oder mehr.')
+  const st = cfg.storage
+  for (const d of [st.recordings_days, st.voicemail_days]) {
+    if (!(Number.isInteger(d) && d >= 0 && d <= 3650)) throw new ValidationError('Aufbewahrung: 0 (unbegrenzt) bis 3650 Tage.')
+  }
+  if (!(m.max_storage_mb >= 100)) throw new ValidationError('Speicher für den Messenger: mindestens 100 MB.')
 }
 
 export interface ExportFile {
@@ -288,6 +297,24 @@ export interface ExportFile {
   files?: Record<string, string>
   /** Termine der zentralen Kalender (Kalender-ID → Termine) */
   calendars?: Record<string, unknown[]>
+  /** Nicht stören und Sofort-Umleitungen der Nebenstellen */
+  state?: RuntimeState
+}
+
+/** Anlass einer Sicherung aus dem Dateinamen (2026-10-29T05-30-00-taeglich.json → taeglich) */
+export function backupReason(name: string): string {
+  return /^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-(.*)\.json$/.exec(name)?.[1] ?? ''
+}
+
+/** Nur gültige Einträge aus einem eingelesenen Zustand übernehmen */
+function cleanState(raw: unknown): RuntimeState {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<Record<keyof RuntimeState, unknown>>
+  const pick = <T>(v: unknown, ok: (x: unknown) => x is T): Record<string, T> =>
+    Object.fromEntries(Object.entries(v && typeof v === 'object' ? v : {}).filter(([k, x]) => /^[\w*#+-]+$/.test(k) && ok(x)))
+  return {
+    dnd: pick(r.dnd, (x): x is boolean => x === true),
+    cfu: pick(r.cfu, (x): x is string => typeof x === 'string' && x.trim() !== ''),
+  }
 }
 
 /** Export mit Passwörtern: AES-256-GCM, Schlüssel per scrypt aus dem Passwort */
@@ -362,18 +389,50 @@ export function stripSecrets(cfg: PbxConfig): PbxConfig {
 export class ConfigStore {
   config: PbxConfig
   state: RuntimeState
+  /** Daten außerhalb der Konfiguration mitziehen (Chats, Voicemail) */
+  hooks = { renumbered: (_from: string, _to: string): void => undefined, removed: (_number: string): void => undefined }
+
+  /** Meldung, wenn die Konfiguration beim Start beschädigt war (für den Watchdog) */
+  recovered = ''
 
   constructor() {
     const fresh = !fs.existsSync(PATHS.config)
-    const raw = loadJson<Partial<PbxConfig>>(PATHS.config, structuredClone(DEFAULT_CONFIG))
+    const raw = fresh ? structuredClone(DEFAULT_CONFIG) : this.loadConfig()
     this.config = withDefaults(raw)
     const before = JSON.stringify(this.config)
     migrateDevices(raw.extensions, this.config.extensions)
     for (const e of this.config.extensions) fillSecrets(e)
     for (const b of this.config.dect) fillDectSecrets(b)
-    this.state = { dnd: {}, cfu: {}, ...loadJson<Partial<RuntimeState>>(PATHS.state, {}) }
+    this.state = cleanState(loadJson<unknown>(PATHS.state, {}))
     // Neu vergebene Geheimnisse sofort speichern, sonst ändern sie sich beim nächsten Start
-    if (fresh || JSON.stringify(this.config) !== before) this.save()
+    if (fresh || this.recovered || JSON.stringify(this.config) !== before) this.save()
+  }
+
+  /**
+   * config.json lesen. Ist sie unlesbar (Platte voll, Stromausfall, Handarbeit), nicht
+   * mit leerer Anlage weitermachen: Datei beiseitelegen und die neueste Sicherung laden.
+   */
+  private loadConfig(): Partial<PbxConfig> {
+    try {
+      const data = JSON.parse(fs.readFileSync(PATHS.config, 'utf8')) as Partial<PbxConfig>
+      if (data && typeof data === 'object' && !Array.isArray(data)) return data
+      throw new Error('kein JSON-Objekt')
+    } catch (e) {
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+      const broken = `${PATHS.config}.defekt-${stamp}`
+      fs.copyFileSync(PATHS.config, broken)
+      for (const b of this.backups()) {
+        const data = loadJson<ExportFile | null>(path.join(PATHS.backups, b.name), null)
+        if (data?.format === 'phone4all-pbx' && data.config && typeof data.config === 'object') {
+          this.recovered = `Die Konfiguration war beschädigt (${(e as Error).message}) und wurde aus der Sicherung ${b.name} wiederhergestellt. Die beschädigte Datei liegt unter ${path.basename(broken)}.`
+          console.error(this.recovered)
+          return data.config
+        }
+      }
+      this.recovered = `Die Konfiguration war beschädigt (${(e as Error).message}) und es gibt keine Sicherung. Die Anlage startet leer; die beschädigte Datei liegt unter ${path.basename(broken)}.`
+      console.error(this.recovered)
+      return structuredClone(DEFAULT_CONFIG)
+    }
   }
 
   save(): void {
@@ -399,6 +458,7 @@ export class ConfigStore {
 
   upsert(kind: CollectionName, item: Record<string, unknown>): Record<string, unknown> {
     let saved: Record<string, unknown> = item
+    let moved: [string, string] | null = null
     this.update((draft) => {
       const list = draft[kind] as unknown as Record<string, unknown>[]
       if (!item.id) {
@@ -424,14 +484,37 @@ export class ConfigStore {
           if (!item.admin_password) saved.admin_password = list[i].admin_password
         }
         list[i] = saved
+        // Neue Nummer: Gruppen, Mobilteile, Regeln und Weiterleitungen gehen mit
+        if (kind === 'extensions') {
+          const from = String(this.config.extensions.find((e) => e.id === item.id)?.number ?? '')
+          const to = String(saved.number ?? '')
+          if (from && to && from !== to) {
+            renumber(draft, from, to)
+            moved = [from, to]
+          }
+        }
       }
       Object.assign(draft, withDefaults(draft))
     })
+    if (moved) this.renumberState(...(moved as [string, string]))
     const list = this.config[kind] as unknown as Record<string, unknown>[]
     return list.find((x) => x.id === saved.id) ?? saved
   }
 
+  /** Nicht stören und Umleitungen auf die neue Nummer übertragen */
+  private renumberState(from: string, to: string): void {
+    const { dnd, cfu } = this.state
+    if (dnd[from]) dnd[to] = true
+    delete dnd[from]
+    if (cfu[from]) cfu[to] = cfu[from]
+    delete cfu[from]
+    for (const [n, target] of Object.entries(cfu)) if (target === from) cfu[n] = to
+    this.saveState()
+    this.hooks.renumbered(from, to)
+  }
+
   remove(kind: CollectionName, id: string): void {
+    const removed = kind === 'extensions' ? this.config.extensions.find((e) => e.id === id)?.number : undefined
     this.update((draft) => {
       const list = draft[kind] as unknown as { id: string }[]
       const i = list.findIndex((x) => x.id === id)
@@ -443,8 +526,7 @@ export class ConfigStore {
           for (const g of draft.groups) g.members = g.members.filter((m) => m !== ext.number)
           // Platz des Mobilteils bleibt frei, damit die übrigen ihre Nummer behalten
           for (const b of draft.dect) b.handsets = b.handsets.map((n) => (n === ext.number ? '' : n))
-          delete this.state.dnd[ext.number]
-          delete this.state.cfu[ext.number]
+          forget(draft, ext.number)
         }
       }
       if (kind === 'trunks') {
@@ -454,6 +536,13 @@ export class ConfigStore {
       if (kind === 'appprofiles') for (const e of draft.extensions) if (e.app_profile === id) e.app_profile = ''
       if (kind === 'calendars') for (const p of draft.appprofiles) p.calendars = p.calendars.filter((c) => c !== id)
     })
+    if (removed) {
+      delete this.state.dnd[removed]
+      delete this.state.cfu[removed]
+      for (const [n, target] of Object.entries(this.state.cfu)) if (target === removed) delete this.state.cfu[n]
+      this.saveState()
+      this.hooks.removed(removed)
+    }
   }
 
   // -- Sicherungen -------------------------------------------------------
@@ -463,8 +552,12 @@ export class ConfigStore {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
     const file = path.join(PATHS.backups, `${stamp}-${reason.replace(/[^a-z0-9-]/gi, '')}.json`)
     saveJson(file, this.exportData(true, false, 'backup'))
-    const all = this.backups()
-    for (const old of all.slice(BACKUP_KEEP)) fs.rmSync(path.join(PATHS.backups, old.name), { force: true })
+    const seen: Record<string, number> = {}
+    for (const old of this.backups()) {
+      const kind = backupReason(old.name)
+      seen[kind] = (seen[kind] ?? 0) + 1
+      if (seen[kind] > (BACKUP_KEEP[kind] ?? BACKUP_KEEP_OTHER)) fs.rmSync(path.join(PATHS.backups, old.name), { force: true })
+    }
     return path.basename(file)
   }
 
@@ -477,7 +570,7 @@ export class ConfigStore {
           const st = fs.statSync(path.join(PATHS.backups, name))
           return { name, size: st.size, time: st.mtimeMs }
         })
-        .sort((a, b) => b.name.localeCompare(a.name))
+        .sort((a, b) => b.time - a.time || b.name.localeCompare(a.name))
     } catch {
       return []
     }
@@ -489,6 +582,7 @@ export class ConfigStore {
       exported: new Date().toISOString(),
       version,
       config: secrets ? structuredClone(this.config) : stripSecrets(this.config),
+      state: structuredClone(this.state),
       calendars: Object.fromEntries(
         this.config.calendars.filter((c) => c.kind === 'events').map((c) => [c.id, loadJson<unknown[]>(path.join(PATHS.calendars, `${c.id}.json`), [])]),
       ),
@@ -542,6 +636,14 @@ export class ConfigStore {
     incoming.ldap.password ||= this.config.ldap.password
     this.backup('vor-import')
     this.update((draft) => Object.assign(draft, incoming))
+    if (data.state) {
+      // Nur für Nebenstellen, die es nach dem Import gibt
+      const known = new Set(this.config.extensions.map((e) => e.number))
+      const state = cleanState(data.state)
+      this.state.dnd = Object.fromEntries(Object.entries(state.dnd).filter(([n]) => known.has(n)))
+      this.state.cfu = Object.fromEntries(Object.entries(state.cfu).filter(([n]) => known.has(n)))
+      this.saveState()
+    }
     for (const [id, events] of Object.entries(data.calendars ?? {})) {
       if (/^[\w-]+$/.test(id) && Array.isArray(events) && this.config.calendars.some((c) => c.id === id)) {
         saveJson(path.join(PATHS.calendars, `${id}.json`), events, 0o644)

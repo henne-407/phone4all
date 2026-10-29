@@ -50,6 +50,7 @@ export function createApi(app: App) {
     hangup: (id?: string) => phone.hangup(id),
     setMute: (muted: boolean, id?: string) => phone.setMute(muted, id),
     setHold: (held: boolean, id?: string) => phone.setHold(held, id),
+    switchCall: (id: string) => phone.switchTo(id),
     sendDtmf: (digit: string, id?: string) => phone.sendDtmf(digit, id),
     stopRinging: () => phone.stopRinging(),
     transfer: (id: string, target: string) => phone.transfer(id, target),

@@ -286,8 +286,8 @@ export class Watchdog extends EventEmitter {
   private checkDisk(): void {
     const free = this.target.freeBytes()
     if (free === null) return
-    if (free < DISK_ERROR) this.set('disk', 'error', `Nur noch ${mb(free)} frei – Aufnahmen und Voicemail löschen`)
-    else if (free < DISK_WARN) this.set('disk', 'warning', `Nur noch ${mb(free)} frei`)
+    if (free < DISK_ERROR) this.set('disk', 'error', `Nur noch ${mb(free)} frei – unter System → Speicher aufräumen`)
+    else if (free < DISK_WARN) this.set('disk', 'warning', `Nur noch ${mb(free)} frei – unter System → Speicher aufräumen`)
     else this.set('disk', 'ok', `${mb(free)} frei`)
   }
 }

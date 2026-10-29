@@ -1,11 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import { generate } from '../server/generate'
-import { EMPTY_STATE, extensionPlan, feature, groupPlan, routeInbound, routeOutbound, type RuntimeState } from '../server/routing'
+import { EMPTY_STATE, extensionPlan, feature, groupPlan, lookupName, routeInbound, routeOutbound, type RuntimeState } from '../server/routing'
 import { gen, sampleConfig, to } from './helpers'
 
 const state = (): RuntimeState => structuredClone(EMPTY_STATE)
 
 describe('Eingehende Anrufe', () => {
+  it('findet Namen über alle Nummernformate und auch kurze Einträge', () => {
+    const cfg = sampleConfig()
+    const base = cfg.phonebook[0]
+    cfg.phonebook = [
+      { ...base, id: 'a', name: 'Kurz', company: '', phone: '5550', mobile: '' },
+      { ...base, id: 'b', name: 'Erster', company: '', phone: '', mobile: '0171 5551234' },
+      { ...base, id: 'c', name: 'Zweiter', company: '', phone: '+49 171 5551234', mobile: '' },
+    ]
+    expect(lookupName(cfg, '+491715551234')).toBe('Erster')
+    expect(lookupName(cfg, '00491715551234')).toBe('Erster')
+    expect(lookupName(cfg, '1715551234')).toBe('Erster')
+    expect(lookupName(cfg, '0305550')).toBe('Kurz')
+    expect(lookupName(cfg, '0309999')).toBe('')
+  })
+
   it('nimmt das Standardziel des Kontos und sucht den Namen im Telefonbuch', () => {
     const cfg = sampleConfig()
     const r = routeInbound(cfg, { trunk: 't1', did: '+49301234567', to: '', cid: '+49301111111', name: '' }).split('|')
@@ -52,6 +67,13 @@ describe('Nebenstellen und Gruppen', () => {
     const s = state()
     s.dnd['11'] = true
     expect(groupPlan(cfg, s, 'g1', 'Max', '/snd')).toBe('all|30|10|p4a-vmu^10|Zentrale: Max||15')
+  })
+
+  it('lässt auch umgeleitete Mitglieder aus', () => {
+    const cfg = sampleConfig()
+    const s = state()
+    s.cfu['11'] = '0171555'
+    expect(groupPlan(cfg, s, 'g1', 'Max', '/snd').split('|')[2]).toBe('10')
   })
 })
 

@@ -4,7 +4,7 @@
  * Asterisk-Konfigurationsdateien erzeugt. Wird auch von der Weboberfläche importiert.
  */
 
-export const CONFIG_VERSION = 1
+export const CONFIG_VERSION = 2
 
 /** Wohin ein Anruf geht (Ziel in Anrufabläufen, Fallbacks, Sprachmenüs …). */
 export type DestinationType =
@@ -336,6 +336,12 @@ export interface WatchdogSettings {
   notify_email: string
 }
 
+/** Speicher: wie lange Aufnahmen und Voicemails aufbewahrt werden (0 = unbegrenzt) */
+export interface StorageSettings {
+  recordings_days: number
+  voicemail_days: number
+}
+
 // Zustand und Ereignisse des Watchdogs (server/watchdog.ts), auch für die Weboberfläche
 
 /** ok: wieder in Ordnung, info: Maßnahme, warning/error: Störung */
@@ -380,7 +386,9 @@ export interface MessengerSettings {
   enabled: boolean
   /** Größte Datei, die man verschicken kann (MB) */
   max_file_mb: number
-  /** Alte Nachrichten werden nur gelöscht, wenn weniger Speicher frei ist (MB) */
+  /** Kontingent: Belegen Nachrichten und Anhänge mehr, werden die ältesten gelöscht (MB) */
+  max_storage_mb: number
+  /** Notbremse: Ist weniger frei, wird höchstens die Hälfte des Messengers gelöscht (MB) */
   min_free_mb: number
   /** Videoanrufe in den Chats (WebRTC über /ws, Konferenzraum je Unterhaltung) */
   video: boolean
@@ -559,6 +567,7 @@ export interface PbxConfig {
   integration: IntegrationSettings
   ldap: LdapSettings
   messenger: MessengerSettings
+  storage: StorageSettings
 }
 
 export const HANGUP: Destination = { type: 'hangup', target: '' }
@@ -620,9 +629,10 @@ export const DEFAULT_CONFIG: PbxConfig = {
   provisioning: { discovery: true, permissions: ['forward', 'forward_rules', 'calendar_edit'], pin_remote: false },
   remote: { enabled: true, public_url: '', turn: true, turn_port: 3478, turn_host: '' },
   watchdog: { auto_repair: true, trunk_grace: 3, notify_email: '' },
+  storage: { recordings_days: 0, voicemail_days: 0 },
   integration: { enabled: false, token: '' },
   ldap: { enabled: false, port: 389, password: '' },
-  messenger: { enabled: true, max_file_mb: 25, min_free_mb: 2048, video: true, quota_mb: 500 },
+  messenger: { enabled: true, max_file_mb: 25, max_storage_mb: 5120, min_free_mb: 200, video: true, quota_mb: 500 },
 }
 
 /** Listen der Konfiguration, die die Weboberfläche einheitlich bearbeitet. */
@@ -644,7 +654,7 @@ export const COLLECTIONS = [
 ] as const
 export type CollectionName = (typeof COLLECTIONS)[number]
 
-export const SECTIONS = ['system', 'mail', 'security', 'updates', 'provisioning', 'remote', 'watchdog', 'integration', 'ldap', 'messenger'] as const
+export const SECTIONS = ['system', 'mail', 'security', 'updates', 'provisioning', 'remote', 'watchdog', 'integration', 'ldap', 'messenger', 'storage'] as const
 export type SectionName = (typeof SECTIONS)[number]
 
 export const DESTINATION_LABELS: Record<DestinationType, string> = {
@@ -843,6 +853,8 @@ export function withDefaults(raw: Partial<PbxConfig>): PbxConfig {
       return merged
     }) as never
   }
+  // Version 1: Der Messenger löschte schon unter 2 GB freiem Speicher (alter Standard)
+  if ((raw.version ?? 1) < 2 && cfg.messenger.min_free_mb === 2048) cfg.messenger.min_free_mb = 200
   cfg.version = CONFIG_VERSION
   return cfg
 }

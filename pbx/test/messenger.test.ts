@@ -91,23 +91,70 @@ describe('Messenger-Ablage', () => {
     expect(older.complete).toBe(true)
   })
 
-  it('löscht nur bei knappem Speicher, älteste Nachrichten samt Anhang zuerst', () => {
+  it('löscht über dem Kontingent, älteste Nachrichten samt Anhang zuerst', () => {
     const s = new MessengerStore(dir)
     const r = s.direct('10', '11')
     const file = s.saveFile(r.id, 'bild.png', 'image/png', Buffer.from('x'))
     const old = s.post(r, '10', '', file)
     old.time = 1000
     for (let i = 0; i < 19; i++) s.post(r, '11', `Neu ${i}`)
-    expect(s.cleanup(() => 10_000_000, 1000)).toBe(0)
+    const roomy = { freeBytes: () => 10_000_000, minFree: 1000, maxUsage: 10_000_000 }
+    expect(s.cleanup(roomy)).toBe(0)
     expect(s.messages(r.id)).toHaveLength(20)
 
-    let free = 0
-    const removed = s.cleanup(() => (free += 600), 1000)
+    const quota = s.usage() - 200
+    const removed = s.cleanup({ ...roomy, maxUsage: quota })
+    expect(s.usage()).toBeLessThanOrEqual(quota)
     expect(removed).toBeGreaterThan(0)
     expect(s.messages(r.id).some((m) => m.file)).toBe(false)
     expect(fs.existsSync(s.filePath(r.id, file.id))).toBe(false)
     // Nach dem Neustart sind die gelöschten Nachrichten weg
     expect(new MessengerStore(dir).messages(r.id)).toHaveLength(20 - removed)
+  })
+
+  it('hält nur begrenzt Verlauf im Speicher und liest verdrängte Räume neu', () => {
+    const s = new MessengerStore(dir, 400)
+    const rooms = ['11', '12', '13'].map((n) => s.direct('10', n))
+    for (const r of rooms) for (let i = 0; i < 5; i++) s.post(r, '10', `Nachricht ${i} an ${r.members.join('+')}`)
+    for (const r of rooms) expect(s.messages(r.id).map((m) => m.seq)).toEqual([1, 2, 3, 4, 5])
+    // Aufräumen kommt auch dann zum Ende, wenn Räume unterwegs neu gelesen werden
+    const removed = s.cleanup({ freeBytes: () => 10_000_000, minFree: 1000, maxUsage: s.usage() - 100 })
+    expect(removed).toBeGreaterThan(0)
+    expect(rooms.reduce((n, r) => n + s.messages(r.id).length, 0)).toBe(15 - removed)
+  })
+
+  it('lässt nur die Verwaltung der Gruppe andere entfernen', () => {
+    const s = new MessengerStore(dir)
+    const g = s.createGroup('10', 'Team', ['11', '12'])
+    expect(() => s.updateGroup(g, { members: ['10', '11'] }, '11')).toThrow(/angelegt/)
+    s.updateGroup(g, { name: 'Team 2', members: ['10', '11', '12', '13'] }, '11')
+    expect(g.members).toEqual(['10', '11', '12', '13'])
+    s.updateGroup(g, { members: ['10', '11', '12'] }, '10')
+    // Verlässt die Verwaltung die Gruppe, dürfen alle übrigen
+    s.leave(g, '10')
+    s.updateGroup(g, { members: ['11'] }, '11')
+    expect(g.members).toEqual(['11'])
+  })
+
+  it('vergibt nach einem Absturz keine Nummern doppelt', () => {
+    const s = new MessengerStore(dir)
+    const r = s.direct('10', '11')
+    s.post(r, '10', 'eins')
+    s.flush()
+    s.post(r, '10', 'zwei') // Zähler noch nicht gespeichert, dann Absturz
+    const again = new MessengerStore(dir)
+    const room = again.rooms.get(r.id)!
+    expect(again.post(room, '11', 'drei').seq).toBe(3)
+  })
+
+  it('löscht bei voller Platte höchstens die Hälfte des Verlaufs', () => {
+    const s = new MessengerStore(dir)
+    const r = s.direct('10', '11')
+    for (let i = 0; i < 50; i++) s.post(r, '10', `Nachricht ${i}`)
+    // Die Platte bleibt voll (z. B. durch Aufnahmen), Löschen hilft nicht
+    const removed = s.cleanup({ freeBytes: () => 0, minFree: 1000, maxUsage: 10_000_000 })
+    expect(removed).toBeGreaterThan(0)
+    expect(s.messages(r.id).length).toBeGreaterThanOrEqual(20)
   })
 
   it('nimmt nur Nebenstellen, deren App-Profil den Messenger zeigt', () => {

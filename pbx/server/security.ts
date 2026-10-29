@@ -106,6 +106,8 @@ export class Guard extends EventEmitter {
 
   private expire(): void {
     const now = Date.now()
+    const window = this.settings().ban_window * 60000
+    for (const [ip, list] of this.failures) if (!list.some((t) => t > now - window)) this.failures.delete(ip)
     if (this.bans.some((b) => b.until <= now)) {
       this.bans = this.bans.filter((b) => b.until > now)
       this.persist()

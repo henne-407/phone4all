@@ -11,6 +11,7 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events, async_fire_time_changed
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
+from custom_components.phone4all.api import normalize_url
 from custom_components.phone4all.const import CONF_TOKEN, DOMAIN
 
 URL = "https://pbx.example.de"
@@ -136,6 +137,33 @@ async def test_events(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) 
     await refresh(hass, aioclient_mock, REPORT)
     assert sorted(e.data["key"] for e in resolved) == ["connection", "trunk:t1"]
     assert hass.states.get("binary_sensor.buro_problem").state == STATE_OFF
+
+
+async def test_missed_after_restart(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, hass_storage) -> None:
+    """Was verpasst wurde, während Home Assistant aus war, wird nachgemeldet – Älteres nicht."""
+    key = f"{DOMAIN}.e1.seen"
+    hass_storage[key] = {"version": 1, "minor_version": 1, "key": key, "data": {"seen": ["c0"], "time": "2026-10-24T09:00:00+00:00"}}
+    report = deepcopy(REPORT)
+    report["missed"]["calls"].insert(
+        0, {"id": "c3", "time": "2026-10-24T10:00:00.000Z", "from": "0173333", "from_name": "", "to": "0301234567", "voicemail": False}
+    )
+    missed = async_capture_events(hass, "phone4all_missed_call")
+    aioclient_mock.get(STATUS, json=report, headers=JSON)
+    entry = MockConfigEntry(
+        domain=DOMAIN, entry_id="e1", title="Büro", unique_id=URL, data={CONF_URL: URL, CONF_TOKEN: "geheim", CONF_VERIFY_SSL: True}
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    # c1 (07:15) lag schon über eine Stunde vor dem letzten gespeicherten Stand
+    assert [e.data["call_id"] for e in missed] == ["c3"]
+
+
+def test_normalize_url() -> None:
+    assert normalize_url("pbx.example.de/") == "https://pbx.example.de"
+    assert normalize_url("192.168.1.10:8080") == "http://192.168.1.10:8080"
+    assert normalize_url("truenas:8080") == "http://truenas:8080"
+    assert normalize_url("https://10.0.0.1") == "https://10.0.0.1"
 
 
 async def test_reauth_on_401(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) -> None:
