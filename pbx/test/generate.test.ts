@@ -27,6 +27,14 @@ describe('Asterisk-Konfiguration', () => {
     expect(strict).not.toContain('Goto(join)')
   })
 
+  it('leitet eingehende Anrufe ohne Antwort des Verwaltungsdienstes zum Standardziel', () => {
+    const ext = files['extensions.conf']
+    expect(ext).toContain('n(fail),Goto(p4a-trunk-fallback,${P4A_TRUNK},1)')
+    const fallback = ext.split('[p4a-trunk-fallback]')[1].split('\n[')[0]
+    expect(fallback).toMatch(/exten => t1,1,NoOp/)
+    expect(fallback).toContain('exten => i,1,Hangup(34)')
+  })
+
   it('erzeugt Wählplan, Hinweise und Gruppen', () => {
     const ext = files['extensions.conf']
     expect(ext).toContain('[p4a-local]')

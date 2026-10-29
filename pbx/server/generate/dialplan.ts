@@ -85,7 +85,8 @@ function genericContexts(app: boolean): string[] {
         'Set(CDR(p4a_to)=${CUT(R,|,4)})',
         'Set(CDR(userfield)=in)',
         goTo('T'),
-        '(fail)Hangup(34)',
+        // Verwaltungsdienst antwortet nicht: Standardziel des SIP-Kontos (fest im Wählplan)
+        '(fail)Goto(p4a-trunk-fallback,${P4A_TRUNK},1)',
       ]),
     ),
     ctx(
@@ -311,6 +312,11 @@ export function extensionsConf(cfg: PbxConfig, gen: GenContext): string {
   parts.push(ctx('p4a-local', ...local))
 
   parts.push(
+    ctx(
+      'p4a-trunk-fallback',
+      ...cfg.trunks.map((t) => exten(t.id, ['NoOp(Verwaltungsdienst antwortet nicht)', `Goto(${gotoArgs(destTarget(cfg, t.inbound_default))})`])),
+      exten('i', ['Hangup(34)']),
+    ),
     ctx('p4a-group', ...cfg.groups.map((g) => exten(g.id, [`Set(P4A_GID=${g.id})`, 'Goto(p4a-group-run,s,1)']))),
     ctx(
       'p4a-tc',
