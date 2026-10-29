@@ -13,7 +13,60 @@ import { HistoryRow } from './HistoryScreen'
 import { registrationLabel } from './common'
 import { CALL_GREEN, CALL_RED } from './theme'
 
-const DEFAULT_CARDS: AppHomeCard[] = ['status', 'today', 'favorites', 'recent', 'events']
+const DEFAULT_CARDS: AppHomeCard[] = ['status', 'today', 'team', 'favorites', 'recent', 'events']
+
+const LINE: Record<string, [string, string]> = {
+  idle: ['Frei', CALL_GREEN],
+  ringing: ['Klingelt', '#e8a200'],
+  busy: ['Im Gespräch', CALL_RED],
+  offline: ['Nicht erreichbar', '#9e9e9e'],
+}
+
+/** Kollegen mit Besetztanzeige und geparkte Gespräche */
+function TeamCard() {
+  const { presence, profile, phone: state } = useStore()
+  const theme = useTheme()
+  if (!presence) return null
+  const ready = state.registration === 'registered' && !state.call
+  const name = (n: string): string => presence.extensions.find((e) => e.number === n)?.name || n
+  const others = presence.extensions.filter((e) => e.number !== profile?.extension)
+  return (
+    <Card mode="contained" style={styles.card}>
+      <Card.Title title="Kollegen" />
+      {presence.parked.map((c) => (
+        <List.Item
+          key={c.slot}
+          title={`${c.name || c.number || 'Unbekannt'} auf ${c.slot}`}
+          description={[c.name && c.number, c.by && `geparkt von ${name(c.by)}`].filter(Boolean).join(' · ')}
+          left={(p) => <List.Icon {...p} icon="parking" color={theme.colors.primary} />}
+          right={() => (
+            <Button mode="contained-tonal" disabled={!ready} onPress={() => phone.dial(c.slot)}>
+              Übernehmen
+            </Button>
+          )}
+        />
+      ))}
+      {others.map((e) => {
+        const [label, color] = LINE[e.state] ?? LINE.offline
+        const detail = e.dnd ? 'Nicht stören' : e.forward ? `Umgeleitet${e.forward === 'extern' ? '' : ` an ${name(e.forward)}`}` : label
+        return (
+          <List.Item
+            key={e.number}
+            title={e.name || e.number}
+            description={`${e.number} · ${detail}`}
+            left={() => <View style={[styles.dot, { backgroundColor: e.dnd ? CALL_RED : color, marginTop: 16 }]} />}
+            onPress={ready ? () => phone.dial(e.number) : undefined}
+          />
+        )
+      })}
+      {!others.length && (
+        <Card.Content>
+          <Text>Keine weiteren Nebenstellen.</Text>
+        </Card.Content>
+      )}
+    </Card>
+  )
+}
 
 function StatusCard() {
   const { phone: state, profile } = useStore()
@@ -135,13 +188,13 @@ function EventsCard({ go, groups }: { go: (p: AppPage) => void; groups: ReturnTy
 }
 
 export function HomeScreen({ go }: { go: (p: AppPage) => void }) {
-  const { profile } = useStore()
+  const { profile, presence } = useStore()
   const { events } = useEvents(14)
   const groups = groupByDay(events, new Date(), 14)
   const today = groups[0]?.label.startsWith('Heute') ? groups[0].events.length : 0
   const hasCalendars = Boolean(profile?.calendars.length)
   const cards = (profile?.app?.home_cards.length ? profile.app.home_cards : DEFAULT_CARDS).filter(
-    (c) => hasCalendars || (c !== 'events' && c !== 'today'),
+    (c) => (hasCalendars || (c !== 'events' && c !== 'today')) && (c !== 'team' || presence),
   )
   return (
     <ScrollView contentContainerStyle={styles.content}>
@@ -157,6 +210,8 @@ export function HomeScreen({ go }: { go: (p: AppPage) => void }) {
             return <RecentCard key={c} go={go} />
           case 'events':
             return <EventsCard key={c} go={go} groups={groups} />
+          case 'team':
+            return <TeamCard key={c} />
         }
       })}
       <IconButton icon="dialpad" mode="contained" size={32} style={styles.dial} onPress={() => go('dial')} accessibilityLabel="Wählen" />

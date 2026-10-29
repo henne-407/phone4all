@@ -76,6 +76,8 @@ export class Phone {
   lookup: (number: string) => string = () => ''
   onIncoming: (call: Call) => void = () => undefined
   onEnded: (end: CallEnd) => void = () => undefined
+  /** Gespräch angenommen (z. B. Anrufer im CRM öffnen) */
+  onAnswered: (call: Call) => void = () => undefined
 
   subscribe(l: Listener): () => void {
     this.listeners.add(l)
@@ -181,6 +183,7 @@ export class Phone {
       InCallManager.stopRingback()
       InCallManager.stopRingtone()
       this.setCall({ status: 'active', answered: Date.now() })
+      if (this.state.call) this.onAnswered(this.state.call)
     })
     session.on('confirmed', () => {
       if (this.state.call?.status !== 'active') this.setCall({ status: 'active', answered: Date.now() })
