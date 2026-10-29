@@ -338,6 +338,8 @@ function transcriptionChanged(): void {
   if (tr.enabled && tr.engine === 'local' && !transcriber.status().models.includes(tr.model) && !transcriber.downloading) {
     transcriber.install(tr.model).catch((e: Error) => console.error('Spracherkennung laden:', e.message))
   }
+  // Gerade eingeschaltet: Nachrichten der letzten Tage gleich umwandeln
+  if (tr.enabled) scanVoicemail()
 }
 
 function freeBytes(): number | null {
@@ -1479,7 +1481,7 @@ api.put('/api/config/:section', async (r) => {
     ;(draft as unknown as Record<string, unknown>)[section] = merged
   })
   applySoon()
-  return store.config[section]
+  return configFor(r.user?.role ?? 'viewer')[section]
 })
 
 for (const kind of COLLECTIONS) {
@@ -2007,7 +2009,7 @@ api.post('/api/transcription/install', async (r) => {
 })
 /** Probe: kurzer Satz über die Sprachausgabe gesprochen und wieder erkannt (oder hochgeladene WAV) */
 api.post('/api/transcription/test', async (r) => {
-  // Ungespeicherte Einstellungen aus dem Formular; der API-Schlüssel kommt nie zurück in die Oberfläche
+  // Ungespeicherte Einstellungen aus dem Formular; ohne Schlüssel gilt der gespeicherte
   const draft = await r.json<Partial<TranscriptionSettings>>().catch(() => ({}))
   const cfg: TranscriptionSettings = { ...store.config.transcription, ...draft }
   cfg.api_key ||= store.config.transcription.api_key

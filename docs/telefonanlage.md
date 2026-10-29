@@ -34,7 +34,9 @@ anmelden: Desktop-App, Mobil-App, Tischtelefon, DECT-Mobilteil. Ein Anruf klinge
 | Darf anrufen | intern, Deutschland oder weltweit; Sonderrufnummern getrennt |
 | Klingeldauer | danach greift *Ohne Antwort weiterleiten an* bzw. die Voicemail |
 | Bei besetzt / ohne Antwort weiterleiten an | andere Nebenstelle, Gruppe, Voicemail oder externe Nummer |
-| Automatisch umleiten | Regeln: *zu bestimmten Zeiten* (Wochentage, von–bis, auch über Mitternacht), *nach Zeitsteuerung* (geöffnet/geschlossen) oder *bei „Nicht stören“*; die erste greifende Regel leitet alle Anrufe um |
+| Automatisch umleiten | Regeln: *zu bestimmten Zeiten* (Wochentage, von–bis, auch über Mitternacht), *nach Zeitsteuerung* (geöffnet/geschlossen), *bei einem Termin im Kalender* (zentraler Kalender, optional nur Termine mit einem Stichwort wie „Urlaub Anna“) oder *bei „Nicht stören“*; die Regel leitet um oder schaltet *Nicht stören* ein; die erste greifende Regel gilt |
+| Handy klingelt mit | Handynummer, nach wie vielen Sekunden es dazukommt und ob man mit Taste 1 annehmen muss (sonst nimmt die Mailbox des Handys jeden Anruf an); ein- und ausschalten auch in den Apps und unter `/me` |
+| Türsprechstelle | die Nebenstelle ist eine Tür: Klingeln meldet die Anlage an Home Assistant (`phone4all_door_ring`) und Webhooks (`door.ring`), die Apps zeigen im Gespräch *Tür öffnen* und senden die eingetragenen Tasten (z. B. `*9`) |
 | Voicemail, Voicemail-PIN | Anrufbeantworter; *Nachricht als Anhang per E-Mail* |
 | Gespräche aufzeichnen | Aufnahmen erscheinen in der Anrufliste |
 | App-Profil | was die Apps zeigen (siehe [App-Profile](#app-profile)) |
@@ -44,6 +46,9 @@ anmelden: Desktop-App, Mobil-App, Tischtelefon, DECT-Mobilteil. Ein Anruf klinge
 Die Liste zeigt, welche Geräte angemeldet sind und ob *Nicht stören* oder eine
 Rufumleitung aktiv ist (beides lässt sich hier auch ausschalten). Eine Sofort-Umleitung
 (\*21 am Telefon oder in der Phone4All-App) geht den Regeln immer vor.
+
+**Status aus dem Kalender:** Greift eine Kalender-Regel, sehen die Kollegen in den Apps
+den Termin samt Ende neben dem Namen, z. B. „Urlaub bis 7.11.“.
 
 ### Gruppen
 
@@ -59,6 +64,16 @@ Mehrere Nebenstellen unter einer Nummer:
 setzen* zeigt am Telefon z. B. „Vertrieb: Anna Müller“, damit man weiß, über welche
 Nummer der Anruf kam. \*8 holt einen klingelnden Anruf der eigenen Gruppe heran.
 
+**An- und abmelden:** Wer gerade nicht mitklingeln soll (Pause, Außentermin), meldet sich
+aus der Gruppe ab: \*45 schaltet alle eigenen Gruppen um, \*45 + Gruppennummer nur eine;
+in den Apps und unter `/me` gibt es je Gruppe einen Schalter. Abgemeldete bekommen auch
+keine Durchsagen an die Gruppe.
+
+**Verpasste Anrufe gemeinsam abarbeiten:** Mit *Verpasste Anrufe als gemeinsame Liste*
+sehen alle Mitglieder in den Apps dieselbe Liste. Wer zurückruft, übernimmt den Eintrag
+(„Anna kümmert sich“), damit nicht drei Leute denselben Kunden anrufen. Ruft jemand die
+Nummer zurück oder kommt der Anrufer später durch, hakt die Anlage den Eintrag selbst ab.
+
 *Rechte der Mitglieder in der App* gibt allen Mitgliedern zusätzliche Rechte in der
 Phone4All-App, z. B. dem Empfang das Bearbeiten des Telefonbuchs. Die Grundrechte aller
 Nebenstellen stehen unter *System → Zugang*:
@@ -70,11 +85,43 @@ Nebenstellen stehen unter *System → Zugang*:
 | Umleitungsregeln bearbeiten | Weiterleitung bei besetzt/keine Antwort und Regeln nach Zeit |
 | Zentrale Kalender bearbeiten | Termine in beschreibbaren zentralen Kalendern |
 | Telefonbuch bearbeiten | Einträge im zentralen Telefonbuch |
+| Fremde Voicemail abhören | \*98 mit der PIN der anderen Mailbox |
+| Rufnummern sperren | Anrufer aus dem Verlauf auf die Sperrliste der Anlage setzen |
+| Durchsage und Gegensprechen | \*80 + Nebenstelle, \*81 + Gruppe, \*81 an alle (siehe unten) |
+| Faxe senden | PDF aus der Desktop-App als Fax verschicken |
+
+### Tischtelefone
+
+Yealink (T3x, T4x, T5x) und Snom (D1xx, D3xx, D7xx) richten sich selbst ein: Telefon mit
+Hersteller, MAC-Adresse und Nebenstelle anlegen, *Einrichten* zeigt die
+Provisioning-Adresse. Die trägt man am Telefon ein (Yealink: *Einstellungen → Auto
+Provision*, Snom: *Setting URL*) oder verteilt sie per DHCP-Option 66.
+
+Das Telefon holt sich SIP-Konto, deutsche Sprache, Zeitzone, Voicemail-Taste, das
+Telefonbuch (LDAP, falls eingeschaltet) und die **Funktionstasten**: Besetztanzeige mit
+Heranholen (BLF), Kurzwahl, Parkplatz und *Nicht stören*. Durchsagen nimmt es von selbst
+an. Optional setzt die Anlage das Passwort der Weboberfläche des Telefons.
+
+Die Adresse ist geheim und gehört zu genau einem Telefon: Fragt ein Gerät mit anderer MAC
+an, bekommt es nichts. *Neuen Link erzeugen* macht die alte Adresse ungültig. Die Liste zeigt, wann
+das Telefon zuletzt abgerufen hat und ob es angemeldet ist.
 
 ### DECT-Telefone
 
 Gigaset N610/N670/N870 IP PRO: Basis mit MAC-Adresse anlegen, Mobilteilen Nebenstellen
 zuordnen, Provisioning-Adresse in der Basis eintragen. Anleitung: [DECT-Telefone](dect.md).
+
+### Durchsage und Gegensprechen
+
+Mit dem Recht *Durchsage und Gegensprechen* (unter *System → Zugang* oder je Gruppe):
+
+- \*80 + Nebenstelle: **Gegensprechen**, beide hören und sprechen sofort,
+- \*81 + Gruppennummer: **Durchsage** an alle angemeldeten Mitglieder (nur hören),
+- \*81 allein: Durchsage an alle Nebenstellen.
+
+Tischtelefone und die Phone4All-Apps nehmen von selbst auf dem Lautsprecher an (in den
+Apps abschaltbar). Wer *Nicht stören* hat, wird ausgelassen. Anrufer von außen können sich
+nicht als Durchsage ausgeben.
 
 ## Eingehende Anrufe
 
@@ -208,6 +255,15 @@ Ein App-Profil legt fest, was Desktop- und Mobil-App zeigen:
 Die Vorschau zeigt, wie die App aussieht. Zugewiesen wird das Profil bei der Nebenstelle;
 die Apps übernehmen Änderungen innerhalb von zwei Minuten.
 
+### Fax
+
+Faxe ohne Faxgerät: Ein *Fax* (Name, E-Mail-Adressen, Kennung, Kopfzeile, Absendernummer)
+ist Ziel in einer Rufabfolge. Empfangene Faxe kommen als PDF per E-Mail und stehen in der
+Liste darunter. Gesendet wird ein PDF über *Fax senden* oder aus der Desktop-App (Recht
+*Faxe senden*); die Anlage versucht es bis zu dreimal und schickt einen Sendebericht per
+E-Mail. Für SIP-Konten, die T.38 können, lässt sich das beim Konto einschalten; sonst geht
+das Fax als Ton über G.711. Faxe werden 30 Tage aufbewahrt.
+
 ### Konferenzräume
 
 Telefonkonferenzen mit beliebig vielen Teilnehmern, optional mit PIN. Intern über die
@@ -243,6 +299,27 @@ laufen. Für Anrufe von unterwegs gelten dieselben Voraussetzungen wie für die 
 Alle Gespräche, neueste zuerst: eingehend, ausgehend, intern, mit Dauer. Aufnahmen
 lassen sich hier anhören, lästige Anrufer mit einem Klick sperren.
 
+### Auswertungen
+
+Für einen Zeitraum (7 Tage, 30 Tage, ein Jahr oder frei gewählt): Anrufe von außen,
+angenommen, nicht angenommen und wie viele davon auf der Voicemail landeten, mittlere
+Gesprächsdauer; Anrufe je Uhrzeit und Wochentag, je angerufener Nummer, je Nebenstelle
+und Wartezeiten der Warteschlangen. Die Diagramme gibt es auch als Tabelle, alles als CSV.
+
+### Voicemail als Text
+
+Unter *System → Funktionen*: Neue Nachrichten schreibt die Anlage als Text mit. Der Text
+steht in den Apps, unter `/me`, im Webhook `voicemail.transcribed` und – statt der
+bisherigen Mail von Asterisk – in der Voicemail-Mail samt Aufnahme.
+
+- **Auf der Anlage** (whisper.cpp, nichts verlässt das Haus): Modell wählen und laden.
+  *Klein* (rund 190 MB) ist der gute Mittelweg, *Groß* genauer, aber deutlich langsamer;
+  auf einem Raspberry Pi dauert das Umwandeln spürbar länger als auf einem PC.
+- **Über einen Dienst** mit OpenAI-kompatibler Schnittstelle (OpenAI, Groq, ein eigener
+  Whisper-Server …): Adresse, Schlüssel, Modell. Die Aufnahme geht dafür an diesen Dienst.
+
+*Probe* spricht einen Satz über die Sprachausgabe und zeigt, was erkannt wurde.
+
 ### System
 
 Geänderte Einstellungen werden erst mit *Anwenden* in der Leiste am unteren Rand
@@ -251,16 +328,35 @@ Geänderte Einstellungen werden erst mit *Anwenden* in der Leiste am unteren Ran
 | Reiter | Inhalt |
 | --- | --- |
 | Allgemein | Name, Adresse für Telefone, Länder-/Ortsvorwahl, Bundesland, Zeitzone, Ports, öffentliche Adresse (NAT), lokale Netze, verschlüsselte Sprache (SRTP; sinnvoll nur mit SIP über TLS am Telefon), Codecs |
-| Funktionen | Gespräche parken, Benachrichtigung bei Notrufen (siehe unten) |
+| Funktionen | Gespräche parken, Benachrichtigung bei Notrufen, Voicemail als Text (siehe oben und unten) |
 | E-Mail | SMTP-Server für Voicemail und Einladungen, Testmail |
 | Sicherheit | Sperre nach Fehlanmeldungen, nie sperren, Nebenstellen nur aus bestimmten Netzen, gesperrte Adressen |
 | Sicherung | Export (mit Passwörtern nur verschlüsselt, mit eigenem Passwort), Import, automatische Sicherungen wiederherstellen, tägliche Sicherung auf WebDAV (Nextcloud, NAS) oder S3, auf Wunsch verschlüsselt |
 | Aktualisierung | neue Version installieren, Kanal stabil/Beta, automatisch nachts |
-| Zugang | Passwort der Weboberfläche, Suche der App im lokalen Netz, Rechte aller Nebenstellen in der App |
+| Zugang | weitere Zugänge mit Rollen, Selbstbedienung, Passwort, Suche der App im lokalen Netz, Rechte aller Nebenstellen in der App (siehe unten) |
 | Fernzugriff | öffentliche HTTPS-Adresse für Mobil-App und Einrichtungslinks ([Anleitung](fernzugriff.md)) |
 | Diagnose | Zustand, Watchdog-Einstellungen, Ereignisprotokoll |
 | Schnittstellen | Home Assistant und Zugriffsschlüssel ([Anleitung](home-assistant.md)), Anrufe über die Schnittstelle auslösen, Webhooks |
 | Protokoll | Warnungen und Fehler von Asterisk, Neustart der Anlage |
+
+### Zugänge und Selbstbedienung
+
+Unter *System → Zugang* bekommen weitere Personen eine eigene Anmeldung (Anmeldename und
+Passwort, mindestens 10 Zeichen):
+
+| Rolle | darf |
+| --- | --- |
+| Verwaltung | alles |
+| Personen und Anrufe | Nebenstellen, Gruppen, Tisch- und DECT-Telefone, Kontakte, Sperren, Konferenzen, Fax, Anrufliste und Auswertungen; nicht Rufabfolgen, SIP-Konten und System |
+| Nur ansehen | alles ansehen, nichts ändern; Passwörter und Einrichtungslinks bleiben verborgen |
+
+Der eingebaute Zugang heißt `admin`. Jede Änderung steht mit dem Anmeldenamen im
+Änderungsprotokoll; jede Person ändert ihr Passwort selbst über das Menü links unten.
+
+**Selbstbedienung** (`/me`): Jede Person meldet sich mit Nebenstelle und Voicemail-PIN an
+und stellt selbst ein: Umleitung, *Nicht stören*, Handy klingelt mit, Gruppen an/ab,
+Voicemail abhören und löschen, PIN ändern. Standardmäßig nur aus den lokalen Netzen
+erreichbar; nach fünf falschen PINs ist die Nebenstelle 15 Minuten gesperrt.
 
 ### Gespräche parken
 
@@ -283,8 +379,8 @@ SIP-Konto angemeldet).
 Unter *System → Schnittstellen*:
 
 - **Webhooks** schicken Ereignisse als JSON per POST an eine Adresse: `call.ringing`,
-  `call.answered`, `call.ended`, `call.missed`, `voicemail.new`, `call.blocked`,
-  `emergency`. Die Kopfzeile `X-Phone4all-Signature: sha256=…` ist ein HMAC-SHA256 über
+  `call.answered`, `call.ended`, `call.missed`, `voicemail.new`, `voicemail.transcribed`,
+  `call.blocked`, `emergency`, `door.ring`. Die Kopfzeile `X-Phone4all-Signature: sha256=…` ist ein HMAC-SHA256 über
   den Body mit dem Schlüssel des Webhooks – so prüft der Empfänger die Herkunft.
 - **Anrufe über die Schnittstelle**: `POST /api/integration/call` mit dem Zugriffsschlüssel
   und `{"extension":"10","number":"030123456"}`. Erst klingelt die Nebenstelle, nach dem
@@ -299,6 +395,9 @@ Unter *System → Schnittstellen*:
 | \*76 | Nicht stören ein/aus |
 | \*21 + Nummer | alle Anrufe weiterleiten (\*21 allein: aus) |
 | \*8 | Anruf in der eigenen Gruppe heranholen |
+| \*45 | aus allen eigenen Gruppen ab- bzw. wieder anmelden; \*45 + Gruppe nur diese |
+| \*80 + Nebenstelle | Gegensprechen |
+| \*81 + Gruppe | Durchsage an die Gruppe; \*81 allein an alle |
 | 700 (weiterleiten) | Gespräch parken; 701–708 übernimmt es |
 | \*\* + Nebenstelle | Anruf einer Nebenstelle heranholen |
 | \*31 + Nummer | anonym anrufen |

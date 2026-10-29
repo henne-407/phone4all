@@ -118,7 +118,8 @@ audio{width:100%;margin-top:6px;height:36px}
     <div class="row"><div class="grow">Nicht stören<div class="muted">Anrufe gehen sofort zur Voicemail bzw. Umleitung</div></div><input type="checkbox" class="switch" id="dnd"></div>
     <div class="row hidden" id="mobileRow"><div class="grow">Handy klingelt mit<div class="muted" id="mobileNumber"></div></div><input type="checkbox" class="switch" id="mobile"></div>
     <label for="cfu">Sofort umleiten an</label>
-    <input id="cfu" type="tel" placeholder="Nebenstelle oder Rufnummer, leer = aus" list="targets">
+    <input id="cfu" type="tel" placeholder="Nebenstelle oder Rufnummer" list="targets">
+    <div class="muted">Leer lassen und speichern schaltet die Umleitung aus.</div>
     <datalist id="targets"></datalist>
     <button id="saveCfu">Umleitung speichern</button>
     <div class="muted" id="active"></div>

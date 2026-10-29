@@ -78,10 +78,20 @@ den Proxy. `X-Forwarded-For` gilt nur von *vertrauenswürdigen Proxys* (Einstell
 ## Funktionen
 
 - **Nebenstellen** mit mehreren Geräten gleichzeitig, Voicemail (auch per E-Mail),
-  Weiterleitung bei besetzt / nach Zeit, Umleitungsregeln (Zeitplan, Zeitsteuerung, Nicht stören), Berechtigungen (intern, Deutschland, weltweit),
-  Sperre für Sonderrufnummern, Gesprächsaufzeichnung
+  Weiterleitung bei besetzt / nach Zeit, Umleitungsregeln (Zeitplan, Zeitsteuerung, Termin im Kalender, Nicht stören), Berechtigungen (intern, Deutschland, weltweit),
+  Sperre für Sonderrufnummern, Gesprächsaufzeichnung, **Handy klingelt mit**, Status aus dem Kalender
 - **Gruppen**: alle gleichzeitig, reihum oder Warteschlange mit Wartemusik,
-  Ausweichziel und Namensvorsatz („Vertrieb: …“)
+  Ausweichziel und Namensvorsatz („Vertrieb: …“); an- und abmelden (\*45, Apps, `/me`),
+  verpasste Anrufe als gemeinsame Liste
+- **Rückfrage** in den Apps mit Makeln, Verbinden und Dreierkonferenz (die Anlage führt
+  die Gespräche zusammen)
+- **Durchsage und Gegensprechen** (\*81, \*80): Telefone und Apps nehmen selbst an
+- **Voicemail als Text** (whisper.cpp auf der Anlage oder ein OpenAI-kompatibler Dienst)
+- **Fax per E-Mail**: Empfang als PDF, Senden aus Weboberfläche und Desktop-App, T.38
+- **Tischtelefone** von Yealink und Snom richten sich selbst ein, mit Funktionstasten
+- **Auswertungen**: Anrufe je Uhrzeit, Wochentag, Nummer und Nebenstelle, Warteschlangen, CSV
+- **Mehrere Zugänge** mit Rollen (Verwaltung, Personen und Anrufe, Nur ansehen) und
+  **Selbstbedienung** unter `/me` mit Nebenstelle und Voicemail-PIN
 - **Rufabfolgen** als Ablaufdiagramm: Rufnummer → Zeitsteuerung (Öffnungszeiten,
   Feiertage je Bundesland, Betriebsferien, Nachtschaltung) → Sprachmenü → Gruppe →
   Voicemail; jeder Schritt ist anklickbar, Zweige lassen sich per Auswahlmenü oder
@@ -112,13 +122,15 @@ den Proxy. `X-Forwarded-For` gilt nur von *vertrauenswürdigen Proxys* (Einstell
 - **Benachrichtigung bei Notrufen** (110/112) per E-Mail, Messenger, Home Assistant und Webhooks
 - **Webhooks** (signiert) und **Anrufe über die Schnittstelle** für CRM und Automationen
 - **Funktionscodes**: \*97 Voicemail, \*76 Nicht stören, \*21 Rufumleitung,
-  \*8 / \*\*Nr. Heranholen, \*28 Nachtschaltung, \*31 anonym, \*43 Echo-Test
+  \*8 / \*\*Nr. Heranholen, \*28 Nachtschaltung, \*31 anonym, \*43 Echo-Test,
+  \*45 Gruppen an/ab, \*80 Gegensprechen, \*81 Durchsage
 - **Sicherheit**: Sperre nach Fehlanmeldungen, erlaubte Netze, TLS/SRTP
 - **Konfiguration als Datei** exportieren und importieren (wahlweise mit Passwörtern
   und Ansagen), tägliche automatische Sicherung (14 Tage, Sicherungen vor Import und Update getrennt davon),
   zusätzlich auf WebDAV oder S3 (auf Wunsch mit AES-256 verschlüsselt)
 - **Home Assistant**: verpasste Anrufe, abgemeldete SIP-Konten und andere Störungen als
-  Sensoren und Ereignisse, auch über HTTPS hinter einem Reverse-Proxy
+  Sensoren und Ereignisse, Türklingel, Schalter für *Nicht stören* und Zeitsteuerungen,
+  Aktionen für Anrufe, Ansagen und Umleitungen; auch über HTTPS hinter einem Reverse-Proxy
 - **Online-Updates** aus der Weboberfläche (stabil oder Beta), auf Wunsch automatisch
   nachts, wenn niemand telefoniert
 
@@ -153,7 +165,7 @@ antwortet mit 410, ein abgemeldetes Gerät mit 404.
 
 | Anfrage | Ergebnis |
 | --- | --- |
-| `GET /provision/<token>` | Profil (auch zum Auffrischen): Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `permissions`, `messenger`, `remote`, `video`, `parking` (`{ number, slots }` oder `null`), `crm` (`{ url, auto }` oder `null`), `voicemail`, `revision` |
+| `GET /provision/<token>` | Profil (auch zum Auffrischen): Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `permissions`, `messenger`, `remote`, `video`, `parking` (`{ number, slots }` oder `null`), `crm` (`{ url, auto }` oder `null`), `voicemail`, `doors` (`{ number, name, dtmf }`: Türsprechstellen, `dtmf` öffnet im Gespräch), `revision` |
 | `GET /provision/<token>/revision` | `{ profile, events }` – ändert sich, sobald Profil oder Termine sich ändern |
 | `GET /provision/<token>/events?start=…&end=…&calendar=…` | Termine im Zeitraum (höchstens 400 Tage) |
 | `PUT /provision/<token>/events/<kalender>/<uid>` | Termin anlegen oder ändern (nur beschreibbare Kalender) |
@@ -161,10 +173,15 @@ antwortet mit 410, ein abgemeldetes Gerät mit 404.
 | `GET /provision/<token>/chat` (WebSocket) | Messenger, Nachrichten als JSON (siehe unten) |
 | `POST /provision/<token>/chat/files?room=…&name=…` | Datei senden (Inhalt als Body, `Content-Type` setzen) |
 | `GET /provision/<token>/chat/files/<raum>/<id>` | Datei abrufen (nur Mitglieder des Raums) |
-| `GET /provision/<token>/forward` | Umleitungen: `cfu`, `active`, `busy`, `noanswer`, `rules`, `permissions`, interne `targets`, `timeconditions` |
+| `GET /provision/<token>/forward` | Umleitungen: `cfu`, `active`, `busy`, `noanswer`, `rules` (`when` = `schedule`/`timecondition`/`dnd`/`calendar`, `action` = `forward`/`dnd`, bei Kalender `calendar` und `keyword`), `permissions`, interne `targets`, `timeconditions`, `calendars`, `mobile` (`{ enabled, number }` oder `null`) |
 | `POST /provision/<token>/phonebook`, `PUT`/`DELETE …/phonebook/<id>` | Telefonbuch bearbeiten (Recht `phonebook_edit`; bearbeitbare Einträge haben im Profil eine `id`) |
-| `GET /provision/<token>/presence` | Besetztanzeige: `extensions` (`number`, `name`, `state` = `idle`/`ringing`/`busy`/`offline`, `dnd`, `forward` = interne Nummer oder `extern`), `parked` (`slot`, `number`, `name`, `by`, `since`, `until`), `voicemail` (`{ unread, revision }` oder `null`), `revision` – die Apps fragen alle paar Sekunden |
-| `GET /provision/<token>/voicemail` | Nachrichten: `id`, `folder` (`INBOX`/`Old`), `unread`, `time` (ms), `number`, `name`, `duration` |
+| `GET /provision/<token>/presence` | Besetztanzeige: `extensions` (`number`, `name`, `state` = `idle`/`ringing`/`busy`/`offline`, `dnd`, `forward` = interne Nummer oder `extern`, `note` = Status aus dem Kalender), `parked` (`slot`, `number`, `name`, `by`, `since`, `until`), `voicemail` (`{ unread, revision }` oder `null`), `groups` (eigene Gruppen: `id`, `number`, `name`, `active`), `missed` (`{ open, revision }` oder `null` ohne gemeinsame Liste), `revision` – die Apps fragen alle paar Sekunden |
+| `GET /provision/<token>/groups`, `PUT …/groups/<id>` | eigene Gruppen; `{ active }` meldet an bzw. ab (wie \*45) |
+| `GET /provision/<token>/missed` | verpasste Gruppenanrufe: `id`, `group`, `group_name`, `time`, `number`, `name`, `claimed_by`, `done_by`, `done_how` (`callback`/`answered`/`manual`) |
+| `PUT /provision/<token>/missed/<gruppe>/<id>` | `{ action }` = `claim`, `release`, `done` oder `reopen`; Antwort ist die neue Liste |
+| `POST /provision/<token>/calls/join` | Rückfrage abschließen: `{ mode }` = `transfer` (die beiden Gegenüber verbinden) oder `conference` (Dreierkonferenz); braucht genau zwei Gespräche der Nebenstelle, sonst 409 |
+| `GET /provision/<token>/fax`, `POST …/fax?box=…&number=…` | Faxgeräte und eigene gesendete Faxe bzw. PDF (Body) senden (Recht `fax_send`) |
+| `GET /provision/<token>/voicemail` | Nachrichten: `id`, `folder` (`INBOX`/`Old`), `unread`, `time` (ms), `number`, `name`, `duration`, mit *Voicemail als Text* auch `text` oder `transcribing` |
 | `GET /provision/<token>/voicemail/<id>` | Nachricht als WAV (8 kHz) |
 | `PUT /provision/<token>/voicemail/<id>`, `DELETE …` | als gehört markieren bzw. löschen, Antwort ist die neue Liste |
 | `POST /provision/<token>/blocklist`, `DELETE …/blocklist/<nummer>` | Nummer sperren (`{ number, note }`) bzw. freigeben (Recht `block_numbers`) |
@@ -193,8 +210,35 @@ rooms }`. Die App sendet `history` (`room`, `before`), `send` (`room`, `text`), 
 `null` am Ende), `declined` (`room`, `ext`) und `error`; `init` enthält zusätzlich die
 laufenden `calls`. Nachrichten tragen eine je Raum fortlaufende `seq`.
 
-Andere Telefone (Tischtelefone, Softphones) werden mit Nebenstelle als Benutzer,
-SIP-Passwort und der Adresse der Anlage als Server angemeldet.
+Durchsagen und Gegensprechen kommen mit `Call-Info: <sip:phone4all>;answer-after=0` und
+einem Anrufernamen, der mit „Durchsage “ bzw. „Gegensprechen “ beginnt; die Apps nehmen
+solche Anrufe selbst an. Bei Anrufen von außen entfernt die Anlage diesen Vorsatz.
+
+Andere Telefone (Softphones) werden mit Nebenstelle als Benutzer, SIP-Passwort und der
+Adresse der Anlage als Server angemeldet; Yealink- und Snom-Tischtelefone richten sich
+selbst ein (siehe unten).
+
+## Tischtelefone (Yealink, Snom)
+
+Unter *Tischtelefone* anlegen (Hersteller, MAC, Nebenstelle, Funktionstasten). Die
+Provisioning-Adresse `http://<anlage>:8080/desk/<token>` kommt ins Telefon (Yealink: *Auto
+Provision → Server URL*, Snom: *Setting URL*) oder per DHCP-Option 66:
+
+| Datei | Inhalt |
+| --- | --- |
+| Yealink `y000000000000.cfg` (allgemein) | nur `#!version:1.0.0.1`, alles Weitere in der eigenen Datei |
+| Yealink `<mac>.cfg` | Konto, Sprache, Zeitzone, LDAP, Intercom, Heranholen (`**`, `*8`), Leitungstasten ab Taste 2 |
+| Snom `snom.xml` bzw. `…<MAC>.xml` | `phone-settings` und `functionKeys` |
+
+Die MAC steht im Dateinamen bzw. im User-Agent; passt sie nicht zum angelegten Telefon,
+antwortet die Anlage mit 404. Das Telefon fragt täglich neu nach.
+
+## Selbstbedienung (`/me`)
+
+Anmeldung mit Nebenstelle und Voicemail-PIN (Cookie `p4a_me`, gilt nur für `/me`),
+standardmäßig nur aus den lokalen Netzen (*System → Zugang → Selbstbedienung*). Nach fünf
+falschen PINs ist die Nebenstelle 15 Minuten gesperrt; schwache PINs (`1234`, `0000`,
+die eigene Nebenstelle) lehnt die Anlage beim Ändern ab.
 
 ## DECT-Telefone (Gigaset N610 IP PRO)
 
@@ -280,7 +324,9 @@ Zugriffsschlüssel, alles andere bleibt hinter der Anmeldung des Proxys.
 | `sensor.<anlage>_verpasste_anrufe_heute` | verpasste Anrufe seit Mitternacht (auch auf die Voicemail gelaufene); Attribut `calls` mit den letzten zehn |
 | `sensor.<anlage>_letzter_verpasster_anruf` | Zeitpunkt, Anrufer als Attribute `caller`, `caller_name`, `called`, `voicemail` |
 | `sensor.<anlage>_laufende_gesprache` | laufende Gespräche |
-| `event.<anlage>_verpasster_anruf`, `event.<anlage>_notruf`, `event.<anlage>_storungsmeldung` | letztes Ereignis für Verlauf und Automationen |
+| `event.<anlage>_verpasster_anruf`, `event.<anlage>_notruf`, `event.<anlage>_storungsmeldung`, `event.<anlage>_turklingel` | letztes Ereignis für Verlauf und Automationen |
+| `switch.<anlage>_nicht_storen_<nebenstelle>` | *Nicht stören* je Nebenstelle (braucht *Schalten über die Schnittstelle*) |
+| `select.<anlage>_zeitsteuerung_<name>` | `auto`, `open`, `closed` je Zeitsteuerung (ebenso) |
 | `binary_sensor.<anlage>_asterisk`, `binary_sensor.<anlage>_update` | Diagnose: Asterisk läuft, neue Version verfügbar |
 
 Für Automationen löst die Integration Ereignisse aus:
@@ -291,6 +337,11 @@ Für Automationen löst die Integration Ereignisse aus:
 | `phone4all_emergency_call` | `extension`, `name`, `number` (110 oder 112), `time`, `pbx` |
 | `phone4all_problem` | `key` (`trunk:<id>`, `asterisk` oder `connection` = Anlage nicht erreichbar), `message`, `pbx` |
 | `phone4all_problem_resolved` | wie oben, sobald das Problem behoben ist |
+| `phone4all_door_ring` | `call_id`, `extension`, `name`, `time`, `pbx` – eine Türsprechstelle klingelt |
+
+Aktionen: `phone4all.call` (`extension`, `number`), `phone4all.announce` (`target`,
+`message`, `voice`) und `phone4all.set_forward` (`extension`, `target`, leer = aus); bei
+mehreren Anlagen zusätzlich `config_entry_id`.
 
 Fertige Automation als Blueprint (Benachrichtigung aufs Handy, kurze Aussetzer werden
 übergangen):
@@ -305,7 +356,21 @@ aktuellen Probleme als JSON, außerdem `emergency` (die letzten zehn Notrufe sei
 
 `POST /api/integration/call` mit demselben Schlüssel und `{ "extension": "10", "number": "030123456" }`
 löst einen Anruf aus (erst klingelt die Nebenstelle, dann wählt die Anlage); dafür unter
-*System → Schnittstellen* *Anrufe über die Schnittstelle erlauben* einschalten.
+*System → Schnittstellen* *Anrufe und Ansagen über die Schnittstelle erlauben* einschalten.
+Ebenso `POST /api/integration/announce` mit `{ target, text, voice }`: ruft die Nebenstelle
+oder die angemeldeten Mitglieder einer Gruppe an und spricht den Text.
+
+Mit *Schalten über die Schnittstelle erlauben*:
+
+| Anfrage | Body |
+| --- | --- |
+| `POST /api/integration/dnd` | `{ extension, enabled }` |
+| `POST /api/integration/forward` | `{ extension, target }` (leer = aus) |
+| `POST /api/integration/timecondition` | `{ id, mode }` mit `auto`, `open` oder `closed` |
+
+Der Status enthält dafür je Nebenstelle `dnd`, `forward` und `door`, die
+`timeconditions` (`id`, `name`, `override`, `open`) und `door` (die letzten Klingeln an
+Türsprechstellen).
 
 ### Webhooks
 
@@ -321,8 +386,10 @@ Zeitlimit 5 Sekunden, keine Wiederholung, Umleitungen werden nicht verfolgt.
 | `call.ended` | `call`, `direction`, `from`, `from_name`, `answered`, `answered_by`, `duration` |
 | `call.missed` | `call`, `from`, `from_name`, `extensions` (bei wem es geklingelt hat) |
 | `voicemail.new` | `extension`, `new` (Anzahl neuer Nachrichten) |
+| `voicemail.transcribed` | `extension`, `from`, `from_name`, `text`, `error` |
 | `call.blocked` | `from`, `from_name`, `to` |
 | `emergency` | `extension`, `name`, `number`, `time` |
+| `door.ring` | `extension`, `name` |
 
 ## Daten
 
@@ -339,6 +406,10 @@ Alles liegt im Ordner `data/` neben der `docker-compose.yml`:
 | `log/` | Anrufliste (CDR) und Protokoll |
 | `watchdog.json` | Ereignisse des Watchdogs |
 | `tts/` | Sprachausgabe (Piper und Stimmen, erst nach dem ersten Gebrauch) |
+| `whisper/`, `transcripts/` | Modelle der Spracherkennung und Voicemail als Text |
+| `fax/` | empfangene und gesendete Faxe als PDF (30 Tage) |
+| `missed.json` | verpasste Gruppenanrufe |
+| `users.json` | weitere Zugänge der Weboberfläche (Passwörter als scrypt-Hash) |
 
 Umziehen: `data/` kopieren und auf dem neuen Rechner `docker compose up -d` – oder
 die Konfiguration unter *System → Sicherung* exportieren und dort importieren.

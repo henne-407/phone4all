@@ -32,7 +32,19 @@ Voraussetzung ist Home Assistant 2025.2 oder neuer. Die Integration fragt die An
 | *Problem* | an, solange die Anlage ein Problem meldet; Attribut `problems` |
 | *SIP-Konto …* | je SIP-Konto: an = beim Anbieter angemeldet |
 | *Asterisk*, *Update* | Diagnose: Asterisk läuft, neue Version verfügbar |
-| *Verpasster Anruf*, *Notruf*, *Störungsmeldung* | Ereignis-Entitäten für den Verlauf |
+| *Verpasster Anruf*, *Notruf*, *Störungsmeldung*, *Türklingel* | Ereignis-Entitäten für den Verlauf |
+| *Nicht stören …* | je Nebenstelle ein Schalter (nicht für Türsprechstellen) |
+| *Zeitsteuerung …* | je Zeitsteuerung eine Auswahl: Automatisch, Immer geöffnet, Immer geschlossen |
+
+Schalter, Auswahl und `phone4all.set_forward` brauchen unter *System → Schnittstellen*
+„Schalten über die Schnittstelle erlauben“, die Aktionen `phone4all.call` und `phone4all.announce` „Anrufe und
+Ansagen über die Schnittstelle erlauben“:
+
+| Aktion | Felder |
+| --- | --- |
+| `phone4all.call` | `extension`, `number`: erst klingelt die Nebenstelle, nach dem Abheben wählt die Anlage |
+| `phone4all.announce` | `target` (Nebenstelle oder Gruppe), `message`, optional `voice`: ruft an und spricht den Text |
+| `phone4all.set_forward` | `extension`, `target` (leer = aus): Sofort-Umleitung |
 
 Die genauen Entitäts-IDs und Ereignisdaten stehen in der
 [Referenz](../pbx/README.md#home-assistant).
@@ -85,6 +97,39 @@ actions:
       message: >-
         Notruf {{ trigger.event.data.number }} von
         {{ trigger.event.data.name or trigger.event.data.extension }}
+```
+
+Türsprechstelle: Bei Klingeln eine Nachricht aufs Handy schicken und im Wohnzimmer
+ansagen (die Nebenstelle muss als Türsprechstelle markiert sein):
+
+```yaml
+triggers:
+  - trigger: event
+    event_type: phone4all_door_ring
+actions:
+  - action: notify.mobile_app_handy
+    data:
+      message: "Es klingelt an der {{ trigger.event.data.name }}"
+  - action: phone4all.announce
+    data:
+      target: "20"
+      message: Es hat an der Tür geklingelt.
+```
+
+Die Anlage auf „geschlossen“ schalten, sobald alle das Haus verlassen haben
+(Entitäts-ID anpassen):
+
+```yaml
+triggers:
+  - trigger: state
+    entity_id: zone.home
+    to: "0"
+actions:
+  - action: select.select_option
+    target:
+      entity_id: select.phone4all_zeitsteuerung_buro
+    data:
+      option: closed
 ```
 
 Licht rot färben, solange die Anlage eine Störung hat (Entitäts-ID an die eigene Anlage
