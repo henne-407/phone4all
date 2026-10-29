@@ -99,7 +99,7 @@ export interface CallRecord {
   fromName: string
   to: string
   answeredBy: string
-  status: 'answered' | 'missed' | 'busy' | 'failed'
+  status: 'answered' | 'missed' | 'busy' | 'failed' | 'blocked'
   duration: number
   recordings: string[]
 }

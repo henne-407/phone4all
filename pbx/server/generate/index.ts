@@ -37,7 +37,7 @@ const MODULES = [
   'app_dial', 'app_playback', 'app_stack', 'app_voicemail', 'app_queue', 'app_confbridge',
   'app_directed_pickup', 'app_echo', 'app_mixmonitor', 'app_read', 'app_exec', 'app_verbose',
   'app_senddtmf', 'app_playtones', 'app_transfer', 'app_blind_transfer', 'app_sayunixtime',
-  'app_softhangup', 'app_chanspy',
+  'app_softhangup', 'app_chanspy', 'res_parking',
   // Funktionen
   'func_curl', 'func_cut', 'func_strings', 'func_logic', 'func_uri', 'func_callerid', 'func_cdr',
   'func_timeout', 'func_channel', 'func_global', 'func_db', 'func_devstate', 'func_hangupcause',
@@ -97,7 +97,7 @@ secret = ${gen.ami.secret}
 deny = 0.0.0.0/0.0.0.0
 permit = 127.0.0.1/255.255.255.255
 read = system,call,security,agent,user,reporting,dialplan
-write = system,call,command,agent,reporting,originate
+write = system,call,command,agent,user,reporting,originate
 writetimeout = 5000
 `
 }
@@ -304,6 +304,28 @@ stutter = 425+400
 `
 }
 
+/** Parkplätze: Weiterleiten auf die Parknummer parkt, die Nummern danach holen zurück */
+export function parkingConf(cfg: PbxConfig): string {
+  const p = cfg.parking
+  if (!p.enabled) return '[general]\n'
+  const first = Number(p.number) + 1
+  return `[general]
+
+[default]
+parkext => ${p.number}
+parkpos => ${first}-${first + Math.max(1, p.slots) - 1}
+context => p4a-park
+parkingtime => ${Math.max(15, p.seconds)}
+comebacktoorigin => yes
+comebackdialtime => 30
+findslot => next
+parkedmusicclass => default
+parkinghints => yes
+parkedcalltransfers => caller
+parkedcallreparking => caller
+`
+}
+
 function featuresConf(): string {
   return `[general]
 transferdigittimeout => 3
@@ -331,6 +353,7 @@ export function generate(cfg: PbxConfig, gen: GenContext): Record<string, string
     'cdr_custom.conf': cdrCustomConf(),
     'indications.conf': indicationsConf(),
     'features.conf': featuresConf(),
+    'res_parking.conf': parkingConf(cfg),
     'ccss.conf': '[general]\n',
     'udptl.conf': '[general]\n',
     'acl.conf': '',

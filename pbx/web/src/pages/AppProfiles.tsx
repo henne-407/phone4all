@@ -6,6 +6,7 @@ import DialpadIcon from '@mui/icons-material/Dialpad'
 import DoNotDisturbOnIcon from '@mui/icons-material/DoNotDisturbOn'
 import ChatIcon from '@mui/icons-material/Chat'
 import EventIcon from '@mui/icons-material/Event'
+import GroupsIcon from '@mui/icons-material/Groups'
 import HistoryIcon from '@mui/icons-material/History'
 import HomeIcon from '@mui/icons-material/Home'
 import LockIcon from '@mui/icons-material/Lock'
@@ -34,6 +35,7 @@ const CARD_ICONS: Record<AppHomeCard, ReactNode> = {
   favorites: <StarIcon fontSize="small" />,
   recent: <HistoryIcon fontSize="small" />,
   events: <EventIcon fontSize="small" />,
+  team: <GroupsIcon fontSize="small" />,
 }
 
 const label = (list: [string, string][], key: string): string => list.find(([k]) => k === key)?.[1] ?? key
@@ -119,6 +121,24 @@ function ProfileForm({ value, onChange }: { value: AppProfile; onChange: (v: App
           <FormControlLabel control={<Switch checked={value.lock_layout} onChange={(e) => set('lock_layout', e.target.checked)} />} label="Startseite in der App nicht anpassbar" />
           <br />
           <FormControlLabel control={<Switch checked={value.lock_account} onChange={(e) => set('lock_account', e.target.checked)} />} label="Kontodaten (Server, Nebenstelle, Passwort) nicht änderbar" />
+        </Full>
+        <Full>
+          <FormHeading hint="Bei Anrufen von außen öffnet die App den Anrufer in Ihrem Kundenverwaltungs- oder Ticketsystem">Anrufer im CRM öffnen</FormHeading>
+          <TextField
+            fullWidth
+            label="Adresse"
+            value={value.crm_url}
+            onChange={(e) => set('crm_url', e.target.value.trim())}
+            placeholder="https://crm.example.de/suche?telefon={e164}"
+            helperText="Platzhalter: {nummer} (wie angezeigt, z. B. 030123456), {e164} (z. B. +4930123456), {name}. Leer = aus."
+          />
+          {value.crm_url && (
+            <FormControlLabel
+              sx={{ mt: 1 }}
+              control={<Switch checked={value.crm_auto} onChange={(e) => set('crm_auto', e.target.checked)} />}
+              label="Beim Annehmen automatisch öffnen (sonst über einen Knopf im Gespräch)"
+            />
+          )}
         </Full>
         <Full>
           <FormHeading hint="Nichts ausgewählt = alle zentralen Kalender">Zentrale Kalender</FormHeading>

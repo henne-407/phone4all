@@ -71,7 +71,7 @@ describe('Home-Assistant-Schnittstelle', () => {
 
   it('prüft den Zugriffsschlüssel', () => {
     const cfg = sampleConfig()
-    cfg.integration = { enabled: true, token: 'abc123' }
+    cfg.integration = { enabled: true, token: 'abc123', call_api: false }
     expect(validToken(cfg, 'Bearer abc123')).toBe(true)
     expect(validToken(cfg, 'Bearer abc124')).toBe(false)
     expect(validToken(cfg, 'abc123')).toBe(false)

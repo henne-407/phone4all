@@ -12,7 +12,7 @@ export interface CallRecord {
   fromName: string
   to: string
   answeredBy: string
-  status: 'answered' | 'missed' | 'busy' | 'failed'
+  status: 'answered' | 'missed' | 'busy' | 'failed' | 'blocked'
   duration: number
   recordings: string[]
 }
@@ -82,8 +82,9 @@ export function groupCalls(rows: Row[], recordings: string[]): CallRecord[] {
   for (const [id, legs] of calls) {
     const first = legs[0]
     const answered = legs.find((l) => l.disposition === 'ANSWERED' && l.dstchannel) ?? legs.find((l) => l.disposition === 'ANSWERED')
-    const direction = legs.some((l) => l.userfield === 'in') ? 'in' : legs.some((l) => l.userfield === 'out') ? 'out' : 'internal'
-    const status = answered ? 'answered' : legs.some((l) => l.disposition === 'BUSY') ? 'busy' : direction === 'out' && legs.some((l) => l.disposition === 'FAILED') ? 'failed' : 'missed'
+    const direction = legs.some((l) => l.userfield === 'in' || l.userfield === 'blocked') ? 'in' : legs.some((l) => l.userfield === 'out') ? 'out' : 'internal'
+    const blocked = legs.some((l) => l.userfield === 'blocked')
+    const status = blocked ? 'blocked' : answered ? 'answered' : legs.some((l) => l.disposition === 'BUSY') ? 'busy' : direction === 'out' && legs.some((l) => l.disposition === 'FAILED') ? 'failed' : 'missed'
     result.push({
       id,
       start: first.start,
