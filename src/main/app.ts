@@ -198,7 +198,7 @@ export class App {
       () => this.store.settings.auto_update,
     )
     this.messenger = new Messenger({
-      url: () => this.provisioning.url,
+      url: () => this.provisioning.usableUrl,
       enabled: () => Boolean(this.store.settings.provisioning.messenger),
     })
     this.messenger.on('changed', () => {
@@ -297,7 +297,9 @@ export class App {
         secureStorage: this.store.secureStorage,
       },
       reg: this.phone.reg,
-      banner: this.phone.banner,
+      banner: this.provisioning.invalid
+        ? { text: `Die Telefonanlage „${s.provisioning.pbx}“ kennt den Einrichtungslink nicht mehr (erneuert oder Nebenstelle gelöscht).`, button: 'Neu einrichten', action: 'preferences' }
+        : this.phone.banner,
       calls: [...this.phone.calls.values()].map(({ declined: _d, pendingTransfer: _p, ...info }) => info),
       settings: s,
       hasPassword: Boolean(this.store.getPassword()),
