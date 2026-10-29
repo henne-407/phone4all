@@ -334,13 +334,14 @@ services:
     restart: unless-stopped
     volumes:
       - /mnt/POOL/apps/phone4all/data:/data         # absoluter Pfad auf einem Dataset
-      - /var/run/docker.sock:/var/run/docker.sock   # für Updates aus der Weboberfläche
+      # - /var/run/docker.sock:/var/run/docker.sock # optional: Updates per Knopf
     environment:
       TZ: Europe/Berlin
 ```
 
-Dann funktionieren beide Wege: der Knopf in der Weboberfläche und „Update“ in
-der TrueNAS-App-Übersicht.
+Aktualisiert wird über „Update“ in der TrueNAS-App-Übersicht. Mit eingebundenem
+Docker-Socket geht auch der Knopf in der Weboberfläche; der Socket gibt der Anlage
+aber volle Kontrolle über den Rechner (siehe [Installation](../docs/installation.md)).
 
 ## Entwicklung
 

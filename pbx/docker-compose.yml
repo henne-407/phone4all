@@ -11,8 +11,10 @@ services:
     restart: unless-stopped
     volumes:
       - ./data:/data
-      # Für Online-Updates aus der Weboberfläche; ohne diese Zeile manuell aktualisieren
-      - /var/run/docker.sock:/var/run/docker.sock
+      # Optional für Updates per Knopf in der Weboberfläche. Der Docker-Socket gibt der Anlage
+      # volle Kontrolle über den Rechner; ohne ihn mit „docker compose pull && docker compose up -d“
+      # aktualisieren.
+      # - /var/run/docker.sock:/var/run/docker.sock
     environment:
       TZ: Europe/Berlin
       # PBX_HTTP_PORT: 8080
