@@ -17,6 +17,7 @@ import {
 } from './model'
 import { cleanNumber, isInternalNumber } from './numbers'
 import { PATHS, SETTINGS } from './paths'
+import { forget, renumber } from './references'
 import type { RuntimeState } from './routing'
 
 const BACKUP_KEEP = 30
@@ -209,6 +210,8 @@ export function stripSecrets(cfg: PbxConfig): PbxConfig {
 export class ConfigStore {
   config: PbxConfig
   state: RuntimeState
+  /** Daten außerhalb der Konfiguration mitziehen (Chats, Voicemail) */
+  hooks = { renumbered: (_from: string, _to: string): void => undefined, removed: (_number: string): void => undefined }
 
   constructor() {
     const fresh = !fs.existsSync(PATHS.config)
@@ -244,6 +247,7 @@ export class ConfigStore {
 
   upsert(kind: CollectionName, item: Record<string, unknown>): Record<string, unknown> {
     let saved: Record<string, unknown> = item
+    let moved: [string, string] | null = null
     this.update((draft) => {
       const list = draft[kind] as unknown as Record<string, unknown>[]
       if (!item.id) {
@@ -263,14 +267,37 @@ export class ConfigStore {
           if (!item.admin_password) saved.admin_password = list[i].admin_password
         }
         list[i] = saved
+        // Neue Nummer: Gruppen, Mobilteile, Regeln und Weiterleitungen gehen mit
+        if (kind === 'extensions') {
+          const from = String(this.config.extensions.find((e) => e.id === item.id)?.number ?? '')
+          const to = String(saved.number ?? '')
+          if (from && to && from !== to) {
+            renumber(draft, from, to)
+            moved = [from, to]
+          }
+        }
       }
       Object.assign(draft, withDefaults(draft))
     })
+    if (moved) this.renumberState(...(moved as [string, string]))
     const list = this.config[kind] as unknown as Record<string, unknown>[]
     return list.find((x) => x.id === saved.id) ?? saved
   }
 
+  /** Nicht stören und Umleitungen auf die neue Nummer übertragen */
+  private renumberState(from: string, to: string): void {
+    const { dnd, cfu } = this.state
+    if (dnd[from]) dnd[to] = true
+    delete dnd[from]
+    if (cfu[from]) cfu[to] = cfu[from]
+    delete cfu[from]
+    for (const [n, target] of Object.entries(cfu)) if (target === from) cfu[n] = to
+    this.saveState()
+    this.hooks.renumbered(from, to)
+  }
+
   remove(kind: CollectionName, id: string): void {
+    const removed = kind === 'extensions' ? this.config.extensions.find((e) => e.id === id)?.number : undefined
     this.update((draft) => {
       const list = draft[kind] as unknown as { id: string }[]
       const i = list.findIndex((x) => x.id === id)
@@ -282,8 +309,7 @@ export class ConfigStore {
           for (const g of draft.groups) g.members = g.members.filter((m) => m !== ext.number)
           // Platz des Mobilteils bleibt frei, damit die übrigen ihre Nummer behalten
           for (const b of draft.dect) b.handsets = b.handsets.map((n) => (n === ext.number ? '' : n))
-          delete this.state.dnd[ext.number]
-          delete this.state.cfu[ext.number]
+          forget(draft, ext.number)
         }
       }
       if (kind === 'trunks') {
@@ -293,6 +319,13 @@ export class ConfigStore {
       if (kind === 'appprofiles') for (const e of draft.extensions) if (e.app_profile === id) e.app_profile = ''
       if (kind === 'calendars') for (const p of draft.appprofiles) p.calendars = p.calendars.filter((c) => c !== id)
     })
+    if (removed) {
+      delete this.state.dnd[removed]
+      delete this.state.cfu[removed]
+      for (const [n, target] of Object.entries(this.state.cfu)) if (target === removed) delete this.state.cfu[n]
+      this.saveState()
+      this.hooks.removed(removed)
+    }
   }
 
   // -- Sicherungen -------------------------------------------------------

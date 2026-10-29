@@ -34,7 +34,7 @@ import {
 import { Guard } from './security'
 import { SourceSync } from './sources/sync'
 import { listSounds, saveSound, soundDir, soundFile, type SoundKind } from './sounds'
-import { expire, recordingFile, report as storageReport } from './storage'
+import { expire, moveMailbox, recordingFile, removeMailbox, report as storageReport } from './storage'
 import { ConfigStore, type ExportFile, ValidationError, fillSecrets, newPin, newSecret } from './store'
 import type { DectBase } from './model'
 import { Updater } from './updates'
@@ -58,6 +58,16 @@ external.entries = () => sources.entries()
 const ldap = new LdapServer(() => store.config)
 const messenger = new MessengerHub(new MessengerStore(PATHS.messenger), () => store.config)
 auth.init()
+store.hooks = {
+  renumbered: (from, to) => {
+    messenger.store.renumber(from, to)
+    moveMailbox(from, to)
+  },
+  removed: (number) => {
+    messenger.forgotten(number)
+    removeMailbox(number)
+  },
+}
 
 function freeBytes(): number | null {
   try {

@@ -42,6 +42,7 @@ import {
 } from '@mui/material'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { APP_PERMISSIONS, type AppPermission, type CollectionName, DESTINATION_LABELS, type Destination, type DestinationType, blankItem } from '../../../server/model'
+import { usages } from '../../../server/references'
 import { takeEditRequest } from '../router'
 import { usePbx } from '../state'
 
@@ -444,7 +445,7 @@ export function useEditor<T extends { id: string }>(kind: CollectionName, singul
       <ConfirmDialog
         open={confirm}
         title={`${singular} löschen?`}
-        text="Das lässt sich nicht rückgängig machen. Verweise darauf führen danach zum Auflegen."
+        text={<DeleteWarning kind={kind} id={editing?.id ?? ''} />}
         confirm="Löschen"
         onClose={() => setConfirm(false)}
         onConfirm={() => void remove()}
@@ -657,6 +658,29 @@ export function CollectionPage<T extends { id: string }>({
   )
 }
 
+/** Hinweis vor dem Löschen: wo der Eintrag noch verwendet wird */
+function DeleteWarning({ kind, id }: { kind: CollectionName; id: string }) {
+  const { config } = usePbx()
+  const used = id ? usages(config, kind, id) : []
+  return (
+    <>
+      Das lässt sich nicht rückgängig machen.
+      {kind === 'extensions' && ' Voicemails der Nebenstelle werden gelöscht, aus ihren Chats wird sie entfernt.'}
+      {used.length > 0 && (
+        <>
+          {' '}Noch verwendet in:
+          <Box component="ul" sx={{ m: 0, mt: 1, pl: 2.5 }}>
+            {used.map((u) => (
+              <li key={u}>{u}</li>
+            ))}
+          </Box>
+          Anrufe dorthin werden danach aufgelegt, bis ein neues Ziel eingetragen ist.
+        </>
+      )}
+    </>
+  )
+}
+
 export function ConfirmDialog({
   open,
   title,
@@ -667,7 +691,7 @@ export function ConfirmDialog({
 }: {
   open: boolean
   title: string
-  text: string
+  text: ReactNode
   confirm: string
   onClose: () => void
   onConfirm: () => void
@@ -676,7 +700,7 @@ export function ConfirmDialog({
     <Dialog open={open} onClose={onClose} maxWidth="xs">
       <DialogTitle>{title}</DialogTitle>
       <DialogContent>
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+        <Typography variant="body2" component="div" sx={{ color: 'text.secondary' }}>
           {text}
         </Typography>
       </DialogContent>

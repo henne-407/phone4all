@@ -128,8 +128,11 @@ export class MessengerStore {
   direct(a: string, b: string): ChatRoom {
     if (a === b) throw new ChatError('Ein Chat mit sich selbst ist nicht möglich.')
     const pair = [a, b].sort()
-    const id = `d-${pair[0]}-${pair[1]}`.replace(/[^\w-]/g, '_')
-    let r = this.rooms.get(id)
+    // Nach dem Umnummerieren passt die ID nicht mehr zu den Mitgliedern: nach Mitgliedern suchen
+    let r = [...this.rooms.values()].find((x) => x.kind === 'direct' && x.members.length === 2 && pair.every((m) => x.members.includes(m)))
+    let id = `d-${pair[0]}-${pair[1]}`.replace(/[^\w-]/g, '_')
+    // Die ID gehört einem früheren Chat (z. B. einer gelöschten Nebenstelle): neue ID
+    if (!r && this.rooms.has(id)) id = `${id}-${newId()}`
     if (!r) {
       r = { id, kind: 'direct', name: '', members: pair, created: Date.now(), created_by: a, seq: 0, read: {} }
       this.rooms.set(id, r)
@@ -174,6 +177,38 @@ export class MessengerStore {
     delete r.read[ext]
     if (!r.members.length) this.removeRoom(r.id)
     else this.flush()
+  }
+
+  /** Nebenstelle hat eine neue Nummer: Ihre Chats gehen mit */
+  renumber(from: string, to: string): void {
+    let changed = false
+    for (const r of this.rooms.values()) {
+      if (!r.members.includes(from)) continue
+      r.members = r.members.map((m) => (m === from ? to : m))
+      if (from in r.read) {
+        r.read[to] = r.read[from]
+        delete r.read[from]
+      }
+      changed = true
+    }
+    if (changed) this.flush()
+  }
+
+  /**
+   * Nebenstelle gelöscht: Sie verlässt alle Unterhaltungen, damit eine spätere
+   * Nebenstelle mit derselben Nummer die alten Chats nicht sieht.
+   */
+  forget(number: string): string[] {
+    const affected: string[] = []
+    for (const r of [...this.rooms.values()]) {
+      if (!r.members.includes(number)) continue
+      affected.push(r.id)
+      r.members = r.members.filter((m) => m !== number)
+      delete r.read[number]
+      if (!r.members.length) this.removeRoom(r.id)
+    }
+    if (affected.length) this.flush()
+    return affected
   }
 
   removeRoom(id: string): void {
@@ -580,6 +615,14 @@ export class MessengerHub {
     const rooms = [...this.calls.keys()]
     this.calls.clear()
     for (const room of rooms) this.publishCall(room)
+  }
+
+  /** Nebenstelle gelöscht: aus allen Unterhaltungen nehmen und die übrigen Mitglieder informieren */
+  forgotten(number: string): void {
+    for (const id of this.store.forget(number)) {
+      const r = this.store.rooms.get(id)
+      if (r) this.publishRoom(r)
+    }
   }
 
   /** Unterhaltung wurde in der Verwaltung gelöscht */

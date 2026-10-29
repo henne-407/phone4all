@@ -134,3 +134,16 @@ export function expireVoicemail(days: number, now = Date.now(), dir = voicemailD
 export function expire(settings: StorageSettings, now = Date.now()): { recordings: number; voicemail: number } {
   return { recordings: expireRecordings(settings.recordings_days, now), voicemail: expireVoicemail(settings.voicemail_days, now) }
 }
+
+/** Voicemail-Box einer Nebenstelle zur neuen Nummer mitnehmen */
+export function moveMailbox(from: string, to: string, dir = voicemailDir()): void {
+  const src = path.join(dir, from)
+  const dst = path.join(dir, to)
+  if (!/^\d+$/.test(from) || !/^\d+$/.test(to) || !fs.existsSync(src) || fs.existsSync(dst)) return
+  fs.renameSync(src, dst)
+}
+
+/** Voicemail-Box einer gelöschten Nebenstelle entfernen (eine neue mit derselben Nummer beginnt leer) */
+export function removeMailbox(number: string, dir = voicemailDir()): void {
+  if (/^\d+$/.test(number)) fs.rmSync(path.join(dir, number), { recursive: true, force: true })
+}
