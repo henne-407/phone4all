@@ -217,7 +217,8 @@ export function isAvailable(state: RuntimeState, num: string, cfg?: PbxConfig): 
 export function groupPlan(cfg: PbxConfig, state: RuntimeState, id: string, callerName: string, soundDir: string): string {
   const g = cfg.groups.find((x) => x.id === id)
   if (!g) return ''
-  const members = g.members.filter((n) => cfg.extensions.some((e) => e.number === n) && !state.dnd[n])
+  // Wie im Warteschlangen-Modus (p4a-qmember): Wer nicht stören will oder umgeleitet hat, klingelt nicht mit
+  const members = g.members.filter((n) => cfg.extensions.some((e) => e.number === n) && isAvailable(state, n, cfg))
   const ann = cfg.announcements.find((a) => a.id === g.announcement)
   return reply(
     g.mode,

@@ -64,6 +64,13 @@ describe('Nebenstellen und Gruppen', () => {
     s.dnd['11'] = true
     expect(groupPlan(cfg, s, 'g1', 'Max', '/snd')).toBe('all|30|10|p4a-vmu^10|Zentrale: Max||15')
   })
+
+  it('lässt auch umgeleitete Mitglieder aus', () => {
+    const cfg = sampleConfig()
+    const s = state()
+    s.cfu['11'] = '0171555'
+    expect(groupPlan(cfg, s, 'g1', 'Max', '/snd').split('|')[2]).toBe('10')
+  })
 })
 
 describe('Ausgehende Anrufe', () => {
