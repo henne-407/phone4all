@@ -283,7 +283,7 @@ export interface OffsiteSettings {
   folder: string
   /** So viele Sicherungen bleiben am Ziel */
   keep: number
-  /** Verschlüsseln mit diesem Kennwort (leer = unverschlüsselt) */
+  /** Verschlüsseln mit diesem Kennwort (Pflicht, mindestens 10 Zeichen) */
   passphrase: string
 }
 

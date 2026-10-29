@@ -84,6 +84,7 @@ Weitere Hinweise je Teil: [Desktop-App](desktop-app.md#entwicklung),
 | `build.yml` | jedem Push, PRs, Tags `v*` | Tests der Desktop-App, Pakete für Linux, macOS, Windows; Release bei Tag |
 | `pbx.yml` | Änderungen in `pbx/`, Tags `pbx-v*` | Tests der Anlage, Docker-Image (amd64, arm64) nach `ghcr.io`; Release bei Tag |
 | `mobile.yml` | Änderungen in `mobile/`, Tags `mobile-v*` | Tests, Android-APK, unsignierte iOS-IPA; Release bei Tag |
+| `release.yml` | neue Version in einer `package.json` auf `main` | setzt die fehlenden Tags und startet die Workflows darauf |
 | `homeassistant.yml` | Änderungen an Integration, Tests, Blueprint | pytest, HACS- und hassfest-Prüfung |
 
 ## Releases
@@ -97,7 +98,8 @@ Jeder Teil hat eine eigene Version:
 | Mobil-App | `mobile/package.json` und `mobile/app.json` | `mobile-v1.2.3` |
 | Home-Assistant-Integration | `custom_components/phone4all/manifest.json` | – (HACS nimmt den Stand von `main`) |
 
-Ablauf: Version mit `npm version <x> --no-git-tag-version` erhöhen, per Pull Request nach
-`main` bringen, danach den annotierten Tag auf dem Merge-Commit pushen. Die Workflows
-bauen und veröffentlichen das Release. Die Telefonanlage findet neue Versionen über die
+Ablauf: Version mit `npm version <x> --no-git-tag-version` erhöhen und per Pull Request nach
+`main` bringen. `release.yml` setzt danach den annotierten Tag auf dem Merge-Commit (nur für
+Teile, deren Version noch keinen Tag hat) und startet die Workflows, die das Release bauen
+und veröffentlichen. Von Hand gepushte Tags funktionieren weiterhin. Die Telefonanlage findet neue Versionen über die
 GitHub-Releases (stabil) bzw. Beta-Tags selbst.

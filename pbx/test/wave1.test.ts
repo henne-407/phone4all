@@ -327,6 +327,8 @@ describe('Externe Sicherung', () => {
     cfg.offsite = settings({ type: 's3', url: 'https://s3.example.com', bucket: '' })
     expect(() => validate(cfg)).toThrow()
     cfg.offsite = settings({ type: 's3', url: 'https://s3.example.com', bucket: 'meine-sicherung' })
+    expect(() => validate(cfg)).toThrow(/Kennwort/)
+    cfg.offsite = settings({ type: 's3', url: 'https://s3.example.com', bucket: 'meine-sicherung', passphrase: 'lang-genug-1' })
     expect(() => validate(cfg)).not.toThrow()
   })
 })
