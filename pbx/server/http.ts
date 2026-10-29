@@ -24,6 +24,8 @@ export interface Request {
   params: Record<string, string>
   ip: string
   cookies: Record<string, string>
+  /** Angemeldeter Zugang der Weboberfläche (nur unter /api/) */
+  user?: { login: string; role: 'admin' | 'operator' | 'viewer' }
   body(): Promise<Buffer>
   json<T>(): Promise<T>
 }

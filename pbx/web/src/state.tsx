@@ -4,10 +4,11 @@ import { Alert, Snackbar } from '@mui/material'
 import { type ReactNode, createContext, useCallback, useContext, useEffect, useState } from 'react'
 import type { CollectionName, PbxConfig, SectionName } from '../../server/model'
 import type { ProviderTemplate } from '../../server/providers'
-import { type ConfigResponse, api } from './api'
+import { type ConfigResponse, type SessionUser, api } from './api'
 
 interface Pbx {
   config: PbxConfig
+  user: SessionUser
   providers: ProviderTemplate[]
   states: Record<string, string>
   version: string

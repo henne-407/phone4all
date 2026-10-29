@@ -50,8 +50,15 @@ export const api = {
   del: <T>(url: string) => request<T>('DELETE', url),
 }
 
+export interface SessionUser {
+  login: string
+  name: string
+  role: 'admin' | 'operator' | 'viewer'
+}
+
 export interface ConfigResponse {
   config: PbxConfig
+  user: SessionUser
   providers: ProviderTemplate[]
   states: Record<string, string>
   version: string

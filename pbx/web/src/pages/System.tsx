@@ -1,3 +1,4 @@
+import AddIcon from '@mui/icons-material/Add'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import DownloadIcon from '@mui/icons-material/Download'
 import ErrorIcon from '@mui/icons-material/Error'
@@ -12,6 +13,10 @@ import {
   Button,
   Checkbox,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControlLabel,
   IconButton,
   List,
@@ -28,7 +33,7 @@ import {
   Typography,
 } from '@mui/material'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { MailSettings, RemoteSettings, SecuritySettings, StorageSettings, SystemSettings, UpdateSettings, WatchdogSettings } from '../../../server/model'
+import type { MailSettings, PortalSettings, RemoteSettings, SecuritySettings, StorageSettings, SystemSettings, UpdateSettings, WatchdogSettings } from '../../../server/model'
 import type { StorageReport } from '../../../server/storage'
 import { type UpdateInfo, type WatchEvent, type WatchdogResponse, api } from '../api'
 import { bytes, ChangesBar, ChipsInput, ConfirmDialog, confirmDiscard, FormGrid, Full, NumberField, PageHeader, PermissionChecks, Section, Select, useDraft } from '../components/common'
@@ -533,6 +538,156 @@ function Updates() {
   )
 }
 
+interface WebUser {
+  id: string
+  login: string
+  name: string
+  role: 'admin' | 'operator' | 'viewer'
+  created: number
+  last: number
+}
+
+/** Weitere Zugänge zur Weboberfläche mit eigener Rolle */
+function Users() {
+  const { toast } = usePbx()
+  const [data, setData] = useState<{ users: WebUser[]; roles: [WebUser['role'], string, string][] } | null>(null)
+  const [edit, setEdit] = useState<(Partial<WebUser> & { password?: string }) | null>(null)
+  const [remove, setRemove] = useState<WebUser | null>(null)
+  const load = (): void => void api.get<typeof data>('/api/users').then(setData).catch(() => undefined)
+  useEffect(load, [])
+  const roleName = (r: string): string => data?.roles.find(([id]) => id === r)?.[1] ?? r
+  const save = (): void => {
+    if (!edit) return
+    const req = edit.id ? api.put(`/api/users/${edit.id}`, edit) : api.post('/api/users', edit)
+    void req
+      .then(() => {
+        toast(edit.id ? 'Zugang geändert' : 'Zugang angelegt')
+        setEdit(null)
+        load()
+      })
+      .catch((e: Error) => toast(e.message, 'error'))
+  }
+  return (
+    <Section
+      title="Weitere Zugänge"
+      description="Eigene Anmeldung für Kolleginnen und Kollegen – etwa fürs Sekretariat, das Nebenstellen und Gruppen pflegt, ohne an SIP-Konten oder System zu kommen. Jede Änderung steht mit dem Anmeldenamen im Änderungsprotokoll."
+      action={
+        <Button startIcon={<AddIcon />} onClick={() => setEdit({ login: '', name: '', role: 'operator', password: '' })}>
+          Zugang anlegen
+        </Button>
+      }
+    >
+      <List dense disablePadding>
+        <ListItem disableGutters>
+          <ListItemText primary="admin" secondary="Verwaltung · eingebaut, Passwort unten" />
+        </ListItem>
+        {data?.users.map((u) => (
+          <ListItem
+            key={u.id}
+            disableGutters
+            secondaryAction={
+              <Stack direction="row" spacing={1}>
+                <Button size="small" onClick={() => setEdit({ ...u, password: '' })}>
+                  Bearbeiten
+                </Button>
+                <Button size="small" color="error" onClick={() => setRemove(u)}>
+                  Löschen
+                </Button>
+              </Stack>
+            }
+          >
+            <ListItemText
+              primary={`${u.login}${u.name ? ` · ${u.name}` : ''}`}
+              secondary={`${roleName(u.role)} · ${u.last ? `zuletzt angemeldet ${new Date(u.last).toLocaleString('de-DE')}` : 'noch nie angemeldet'}`}
+            />
+          </ListItem>
+        ))}
+      </List>
+      <Dialog open={Boolean(edit)} onClose={() => setEdit(null)} fullWidth maxWidth="sm">
+        <DialogTitle>{edit?.id ? 'Zugang bearbeiten' : 'Zugang anlegen'}</DialogTitle>
+        <DialogContent>
+          {edit && (
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <TextField label="Anmeldename" value={edit.login} onChange={(e) => setEdit({ ...edit, login: e.target.value.toLowerCase() })} autoFocus helperText="z. B. sekretariat oder vorname.nachname" />
+              <TextField label="Name" value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} />
+              <Select
+                label="Rolle"
+                value={edit.role ?? 'operator'}
+                onChange={(role) => setEdit({ ...edit, role })}
+                options={(data?.roles ?? []).map(([id, label]) => [id, label] as [WebUser['role'], string])}
+                helperText={data?.roles.find(([id]) => id === edit.role)?.[2]}
+              />
+              <TextField
+                type="password"
+                label={edit.id ? 'Neues Passwort (leer = unverändert)' : 'Passwort'}
+                value={edit.password}
+                onChange={(e) => setEdit({ ...edit, password: e.target.value })}
+                autoComplete="new-password"
+                helperText="Mindestens 10 Zeichen. Die Person kann es nach der Anmeldung selbst ändern."
+              />
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEdit(null)}>Abbrechen</Button>
+          <Button variant="contained" onClick={save}>
+            Speichern
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <ConfirmDialog
+        open={Boolean(remove)}
+        title={`Zugang ${remove?.login} löschen?`}
+        text="Die Person wird sofort abgemeldet und kann sich nicht mehr anmelden."
+        confirm="Löschen"
+        onClose={() => setRemove(null)}
+        onConfirm={() => {
+          const u = remove
+          setRemove(null)
+          if (u)
+            void api
+              .del(`/api/users/${u.id}`)
+              .then(load)
+              .catch((e: Error) => toast(e.message, 'error'))
+        }}
+      />
+    </Section>
+  )
+}
+
+/** Selbstbedienung: jede Person stellt unter /me Umleitung, Nicht stören, Gruppen und Voicemail-PIN selbst ein */
+function Portal() {
+  const { config, saveSection } = usePbx()
+  const d = useDraft<PortalSettings>(config.portal)
+  const url = `${window.location.origin}/me`
+  return (
+    <>
+      <Section
+        title="Selbstbedienung"
+        description="Unter einer eigenen Adresse meldet sich jede Person mit Nebenstelle und Voicemail-PIN an und stellt selbst ein: Umleitungen, Nicht stören, Handy klingelt mit, Gruppen an- und abmelden, Voicemail abhören und die PIN ändern – ohne App und ohne Zugang zur Verwaltung."
+      >
+        <FormControlLabel control={<Switch checked={d.draft.enabled} onChange={(e) => d.set({ enabled: e.target.checked })} />} label="Selbstbedienung einschalten" />
+        {d.draft.enabled && (
+          <>
+            <FormControlLabel
+              control={<Switch checked={d.draft.remote} onChange={(e) => d.set({ remote: e.target.checked })} />}
+              label="Auch von außerhalb der lokalen Netze (z. B. über den Fernzugriff)"
+              sx={{ display: 'flex' }}
+            />
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              Adresse: <b>{url}</b>
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              Wer keine Voicemail-PIN hat, bekommt sie unter Nebenstellen. Nach fünf falschen PINs ist die Anmeldung für diese Nebenstelle 15 Minuten gesperrt.
+            </Typography>
+          </>
+        )}
+      </Section>
+      <ChangesBar dirty={d.dirty} onApply={() => saveSection('portal', d.draft)} onDiscard={d.reset} text="Selbstbedienung: ungespeicherte Änderungen" />
+    </>
+  )
+}
+
 function Access() {
   const { config, saveSection, toast } = usePbx()
   const d = useDraft(config.provisioning)
@@ -542,7 +697,9 @@ function Access() {
   const [pw2, setPw2] = useState('')
   return (
     <>
-      <Section title="Passwort der Weboberfläche">
+      <Users />
+      <Portal />
+      <Section title="Passwort von admin">
         <FormGrid columns={3}>
           <TextField type="password" label="Bisheriges Passwort" value={old} onChange={(e) => setOld(e.target.value)} />
           <TextField type="password" label="Neues Passwort" value={pw} onChange={(e) => setPw(e.target.value)} helperText="Mindestens 10 Zeichen" />
@@ -813,7 +970,7 @@ function Diagnose() {
   const d = useDraft<WatchdogSettings>(config.watchdog)
   const { draft: w, set } = d
   const [data, setData] = useState<WatchdogResponse | null>(null)
-  const [changes, setChanges] = useState<{ time: number; ip: string; action: string }[]>([])
+  const [changes, setChanges] = useState<{ time: number; ip: string; action: string; user?: string }[]>([])
   const [busy, setBusy] = useState(false)
   const load = (): void => {
     void api.get<WatchdogResponse>('/api/watchdog').then(setData).catch(() => undefined)
@@ -906,7 +1063,7 @@ function Diagnose() {
           <List dense disablePadding sx={{ maxHeight: 420, overflow: 'auto' }}>
             {changes.map((c, i) => (
               <ListItem key={i} disableGutters>
-                <ListItemText primary={c.action} secondary={`${new Date(c.time).toLocaleString('de-DE')} · ${c.ip}`} />
+                <ListItemText primary={c.action} secondary={`${new Date(c.time).toLocaleString('de-DE')} · ${c.ip}${c.user ? ` · ${c.user}` : ''}`} />
               </ListItem>
             ))}
           </List>

@@ -12,6 +12,7 @@ import { CalendarStore } from './calendars'
 import { external } from './directory'
 import { AuditLog, auditText } from './audit'
 import { Auth, SESSION_COOKIE, SESSION_MAX_AGE } from './auth'
+import { PASSWORD_MIN, ROLES, type Role, UserError, UserStore, forbidden } from './users'
 import { readAllCalls, readCalls, readQueueLog, tailLog } from './cdr'
 import { describeAgent, gigasetFile, requestMac } from './dect'
 import { agentMac, describeDesk, deskRequestMac, isYealinkCommon, snomFile, yealinkFile } from './deskphone'
@@ -26,6 +27,7 @@ import { integrationReport, validToken } from './integration'
 import { LdapServer } from './ldap'
 import { HttpError, type Request, Router, clientIp, makeRequest, proxyHints, sendFile, sendJson, sendText, serveStatic, setTrustedProxies, socketIp } from './http'
 import { type MailAttachment, sendMail } from './mail'
+import { PORTAL_COOKIE, PORTAL_JS, PORTAL_MAX_AGE, PortalSessions, portalPage } from './portal'
 import { ChatError, MessengerHub, MessengerStore, messengerUsers } from './messenger'
 import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, type PhonebookEntry, SECTIONS, type SectionName, type TranscriptionSettings, WEBHOOK_EVENTS } from './model'
 import { cleanNumber } from './numbers'
@@ -73,6 +75,7 @@ import {
   linkValid,
   newPin,
   newSecret,
+  stripSecrets,
   pinValid,
   renewLink,
   renewPin,
@@ -89,6 +92,7 @@ import { reject, upgrade } from './websocket'
 const store = new ConfigStore()
 setTrustedProxies(() => store.config.security.trusted_proxies)
 const auth = new Auth()
+const users = new UserStore(PATHS.users)
 const asterisk = new Asterisk()
 const turn = new Turn()
 const ws = new WsProxy(() => webrtcEnabled(store.config), (ip) => guard.isBanned(ip))
@@ -126,11 +130,13 @@ store.hooks = {
     moveMailbox(from, to)
     missed.renumber(from, to)
     moveTranscripts(from, to)
+    portal.logoutExt(from)
   },
   removed: (number) => {
     messenger.forgotten(number)
     removeMailbox(number)
     fs.rmSync(path.join(PATHS.transcripts, number), { recursive: true, force: true })
+    portal.logoutExt(number)
   },
 }
 
@@ -667,22 +673,34 @@ function touchDevice(token: string, ip: string): void {
   })
 }
 
+/** Zugang zur Sitzung mit Rolle; null, wenn nicht (mehr) angemeldet */
+function sessionUser(token: string | undefined): { login: string; name: string; role: Role } | null {
+  const login = auth.user(token)
+  if (!login) return null
+  if (login === 'admin') return { login, name: 'Verwaltung', role: 'admin' }
+  const u = users.find(login)
+  return u ? { login, name: u.name, role: u.role } : null
+}
+
 pub.get('/api/session', (r) => {
-  const authenticated = auth.valid(r.cookies[SESSION_COOKIE])
+  const user = sessionUser(r.cookies[SESSION_COOKIE])
   // Version nur nach Anmeldung (verrät sonst, welche Lücken offen sein könnten)
-  return { authenticated, name: store.config.system.name, ...(authenticated ? { version: SETTINGS.version } : {}) }
+  return { authenticated: Boolean(user), name: store.config.system.name, ...(user ? { version: SETTINGS.version, user } : {}), users: users.list().length > 0 }
 })
 
 pub.post('/api/login', async (r) => {
   if (isBlocked(r.ip)) throw new HttpError(429, TOO_MANY)
-  const { password } = await r.json<{ password: string }>()
-  if (!auth.check(String(password ?? ''))) {
+  const body = await r.json<{ user?: string; password: string }>()
+  const login = String(body.user ?? '').trim().toLowerCase() || 'admin'
+  const password = String(body.password ?? '')
+  const ok = login === 'admin' ? auth.check(password) : Boolean(users.check(login, password))
+  if (!ok) {
     auth.failed(r.ip, 'Falsches Passwort der Weboberfläche')
-    audit.add(r.ip, 'Anmeldung fehlgeschlagen')
-    throw new HttpError(401, 'Das Passwort ist falsch.')
+    audit.add(r.ip, `Anmeldung fehlgeschlagen (${login.slice(0, 32)})`)
+    throw new HttpError(401, login === 'admin' ? 'Das Passwort ist falsch.' : 'Anmeldename oder Passwort ist falsch.')
   }
-  const token = auth.login()
-  audit.add(r.ip, 'Angemeldet')
+  const token = auth.login(login)
+  audit.add(r.ip, `Angemeldet (${login})`)
   r.res.setHeader('Set-Cookie', sessionCookie(r, token, SESSION_MAX_AGE))
   return { ok: true }
 })
@@ -865,7 +883,12 @@ pub.get('/provision/:token/forward', (r) => forwardInfo(store.config, store.stat
 
 pub.put('/provision/:token/forward', async (r) => {
   const ext = tokenExtension(r.params.token)
-  const change = await r.json<ForwardChange>()
+  changeForward(ext, await r.json<ForwardChange>())
+  return forwardInfo(store.config, store.state, tokenExtension(r.params.token))
+})
+
+/** Umleitungen ändern (App und Selbstbedienung) */
+function changeForward(ext: Extension, change: ForwardChange): void {
   const rules = change.busy !== undefined || change.noanswer !== undefined || change.rules !== undefined
   try {
     // Erst die Sofort-Umleitung prüfen – sonst wären bei einem Fehler die Regeln schon gespeichert
@@ -881,8 +904,7 @@ pub.put('/provision/:token/forward', async (r) => {
     if (e instanceof ForwardError) throw new HttpError(403, e.message)
     throw e
   }
-  return forwardInfo(store.config, store.state, tokenExtension(r.params.token))
-})
+}
 
 /** Fehlversuche mit der PIN je Nebenstelle; danach ist die PIN verbraucht */
 const pinFailures = new Map<string, number>()
@@ -1003,6 +1025,142 @@ async function voicemailAction(fields: Record<string, string>): Promise<void> {
   })
   if (res?.Response !== 'Success') throw new HttpError(500, res?.Message || 'Asterisk hat die Nachricht nicht geändert.')
 }
+
+// -- Selbstbedienung unter /me (Nebenstelle und Voicemail-PIN) ----------------------------
+
+const portal = new PortalSessions()
+
+function portalGate(r: Request): void {
+  const p = store.config.portal
+  if (!p.enabled) throw new HttpError(404, 'Die Selbstbedienung ist ausgeschaltet.')
+  if (!p.remote && !isLocal(r.ip)) throw new HttpError(403, 'Die Selbstbedienung ist nur im Netz der Anlage erreichbar.')
+  // Schutz vor fremden Formularen wie bei der Verwaltung
+  if (r.method !== 'GET' && r.raw.headers['x-phone4all'] !== '1') throw new HttpError(403, 'Anfrage abgelehnt.')
+}
+
+function portalExt(r: Request): Extension {
+  portalGate(r)
+  const num = portal.ext(r.cookies[PORTAL_COOKIE])
+  const ext = store.config.extensions.find((e) => e.number === num)
+  if (!ext) throw new HttpError(401, 'Bitte anmelden.')
+  return ext
+}
+
+function portalCookie(r: Request, token: string, maxAge: number): string {
+  const https = r.raw.headers['x-forwarded-proto'] === 'https' || 'encrypted' in r.raw.socket
+  return `${PORTAL_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/me; Max-Age=${maxAge}${https ? '; Secure' : ''}`
+}
+
+function samePin(a: string, b: string): boolean {
+  const x = Buffer.from(a)
+  const y = Buffer.from(b)
+  return x.length === y.length && timingSafeEqual(x, y)
+}
+
+pub.get('/me', (r) => {
+  portalGate(r)
+  r.res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'")
+  r.res.setHeader('Referrer-Policy', 'no-referrer')
+  sendText(r.res, 200, portalPage(store.config), 'text/html; charset=utf-8')
+})
+pub.get('/me/app.js', (r) => {
+  portalGate(r)
+  sendText(r.res, 200, PORTAL_JS, 'text/javascript; charset=utf-8')
+})
+
+pub.post('/me/api/login', async (r) => {
+  portalGate(r)
+  if (isBlocked(r.ip)) throw new HttpError(429, TOO_MANY)
+  const { number, pin } = await r.json<{ number: string; pin: string }>()
+  const ext = store.config.extensions.find((e) => e.number === String(number ?? '').trim())
+  if (ext && portal.locked(ext.number)) throw new HttpError(429, 'Zu viele falsche PINs – bitte in 15 Minuten noch einmal versuchen.')
+  const stored = ext?.voicemail.pin.replace(/\D/g, '') ?? ''
+  if (!ext || stored.length < 4 || !samePin(String(pin ?? ''), stored)) {
+    auth.failed(r.ip, 'Falsche PIN der Selbstbedienung')
+    if (ext) portal.failed(ext.number)
+    throw new HttpError(401, 'Nebenstelle oder PIN ist falsch.')
+  }
+  portal.succeeded(ext.number)
+  r.res.setHeader('Set-Cookie', portalCookie(r, portal.login(ext.number), PORTAL_MAX_AGE))
+  audit.add(r.ip, `Selbstbedienung: ${ext.number} angemeldet`)
+  return { ok: true }
+})
+pub.post('/me/api/logout', (r) => {
+  portal.logout(r.cookies[PORTAL_COOKIE] ?? '')
+  r.res.setHeader('Set-Cookie', portalCookie(r, '', 0))
+  return { ok: true }
+})
+pub.get('/me/api/state', (r) => {
+  const ext = portalExt(r)
+  return {
+    ext: { number: ext.number, name: ext.name },
+    dnd: Boolean(store.state.dnd[ext.number]),
+    forward: forwardInfo(store.config, store.state, ext),
+    groups: memberGroups(store.config, store.state, ext.number),
+    voicemail: ext.voicemail.enabled ? voicemailList(ext.number) : null,
+  }
+})
+pub.put('/me/api/dnd', async (r) => {
+  const ext = portalExt(r)
+  const { enabled } = await r.json<{ enabled: boolean }>()
+  if (enabled) store.state.dnd[ext.number] = true
+  else delete store.state.dnd[ext.number]
+  store.saveState()
+  return { ok: true }
+})
+pub.put('/me/api/forward', async (r) => {
+  const ext = portalExt(r)
+  changeForward(ext, await r.json<ForwardChange>())
+  return forwardInfo(store.config, store.state, store.config.extensions.find((e) => e.id === ext.id)!)
+})
+pub.put('/me/api/groups/:id', async (r) => {
+  const ext = portalExt(r)
+  const { active } = await r.json<{ active: boolean }>()
+  if (!setAway(store.config, store.state, ext.number, r.params.id, !active)) throw new HttpError(404, 'Gruppe nicht gefunden.')
+  store.saveState()
+  return memberGroups(store.config, store.state, ext.number)
+})
+function portalMailbox(r: Request): Extension {
+  const ext = portalExt(r)
+  if (!ext.voicemail.enabled) throw new HttpError(403, 'Für diese Nebenstelle ist keine Voicemail eingerichtet.')
+  return ext
+}
+pub.get('/me/api/voicemail/:id', (r) => {
+  const ext = portalMailbox(r)
+  const file = voicemail.file(ext.number, r.params.id)
+  if (!file) throw new HttpError(404, 'Nachricht nicht gefunden.')
+  sendFile(r.res, file)
+})
+pub.put('/me/api/voicemail/:id', async (r) => {
+  const ext = portalMailbox(r)
+  const msg = voicemail.find(ext.number, r.params.id)
+  if (!msg) throw new HttpError(404, 'Nachricht nicht gefunden.')
+  if (msg.folder === 'INBOX') await voicemailAction({ Action: 'VoicemailMove', Context: 'default', Mailbox: ext.number, Folder: 'INBOX', ID: msg.id, ToFolder: 'Old' })
+  return voicemailList(ext.number)
+})
+pub.delete('/me/api/voicemail/:id', async (r) => {
+  const ext = portalMailbox(r)
+  const msg = voicemail.find(ext.number, r.params.id)
+  if (!msg) throw new HttpError(404, 'Nachricht nicht gefunden.')
+  await voicemailAction({ Action: 'VoicemailRemove', Context: 'default', Mailbox: ext.number, Folder: msg.folder, ID: msg.id })
+  return voicemailList(ext.number)
+})
+pub.put('/me/api/pin', async (r) => {
+  const ext = portalExt(r)
+  const { old, pin } = await r.json<{ old: string; pin: string }>()
+  if (!samePin(String(old ?? ''), ext.voicemail.pin.replace(/\D/g, ''))) {
+    portal.failed(ext.number)
+    throw new HttpError(403, 'Die bisherige PIN stimmt nicht.')
+  }
+  const next = String(pin ?? '')
+  if (!/^\d{4,8}$/.test(next)) throw new HttpError(400, 'Die PIN hat 4 bis 8 Ziffern.')
+  if (/^(\d)\1+$/.test(next) || '0123456789'.includes(next) || next === ext.number) throw new HttpError(400, 'Diese PIN ist zu leicht zu erraten.')
+  store.update((draft) => void (draft.extensions.find((e) => e.id === ext.id)!.voicemail.pin = next))
+  applySoon()
+  portal.logoutExt(ext.number, r.cookies[PORTAL_COOKIE] ?? '')
+  audit.add(r.ip, `Selbstbedienung: ${ext.number} hat die Voicemail-PIN geändert`)
+  return { ok: true }
+})
 
 /** Anrufer aus der App heraus sperren (Recht „Rufnummern sperren“) */
 pub.post('/provision/:token/blocklist', async (r) => {
@@ -1262,8 +1420,24 @@ pub.post('/api/integration/timecondition', async (r) => {
 
 // -- Verwaltung (angemeldet) ----------------------------------------------------------
 
-api.get('/api/config', () => ({
-  config: store.config,
+/** Konfiguration für die Rolle: „Nur ansehen“ ohne Passwörter, „Personen und Anrufe“ ohne die des Systems */
+function configFor(role: Role): PbxConfig {
+  if (role === 'admin') return store.config
+  const c = role === 'viewer' ? stripSecrets(store.config) : structuredClone(store.config)
+  for (const t of c.trunks) t.password = ''
+  for (const w of c.webhooks) w.secret = ''
+  for (const s of c.contactsources) s.password = ''
+  for (const k of c.calendars) k.source.password = ''
+  Object.assign(c.mail, { password: '' })
+  Object.assign(c.integration, { token: '' })
+  Object.assign(c.offsite, { password: '', passphrase: '' })
+  Object.assign(c.transcription, { api_key: '' })
+  return c
+}
+
+api.get('/api/config', (r) => ({
+  config: configFor(r.user?.role ?? 'viewer'),
+  user: sessionUser(r.cookies[SESSION_COOKIE]),
   providers: PROVIDERS,
   states: BUNDESLAENDER,
   version: SETTINGS.version,
@@ -1647,10 +1821,16 @@ api.post('/api/asterisk/restart', async () => {
 
 api.post('/api/password', async (r) => {
   const { old, password } = await r.json<{ old: string; password: string }>()
-  if (!auth.check(old ?? '')) throw new HttpError(403, 'Das bisherige Passwort stimmt nicht.')
-  if (!password || password.length < 10) throw new HttpError(400, 'Das neue Passwort braucht mindestens 10 Zeichen.')
-  auth.setPassword(password)
-  const token = auth.login()
+  const login = r.user?.login ?? 'admin'
+  const okOld = login === 'admin' ? auth.check(old ?? '') : Boolean(users.check(login, old ?? ''))
+  if (!okOld) throw new HttpError(403, 'Das bisherige Passwort stimmt nicht.')
+  if (!password || password.length < PASSWORD_MIN) throw new HttpError(400, `Das neue Passwort braucht mindestens ${PASSWORD_MIN} Zeichen.`)
+  if (login === 'admin') auth.setPassword(password)
+  else {
+    users.update(users.find(login)!.id, { password })
+    auth.logoutUser(login)
+  }
+  const token = auth.login(login)
   r.res.setHeader('Set-Cookie', sessionCookie(r, token, SESSION_MAX_AGE))
   return { ok: true }
 })
@@ -1658,6 +1838,38 @@ api.post('/api/password', async (r) => {
 api.post('/api/mail/test', async (r) => {
   const { to } = await r.json<{ to: string }>()
   await sendMail(store.config.mail, to, `Test von ${store.config.system.name}`, 'Der E-Mail-Versand der Telefonanlage funktioniert.')
+  return { ok: true }
+})
+
+// Weitere Zugänge zur Weboberfläche (nur Verwaltung)
+
+api.get('/api/users', () => ({ users: users.list(), roles: ROLES }))
+api.post('/api/users', async (r) => {
+  const b = await r.json<{ login: string; name: string; role: Role; password: string }>()
+  try {
+    return users.add(String(b.login ?? ''), String(b.name ?? ''), b.role, String(b.password ?? ''))
+  } catch (e) {
+    if (e instanceof UserError) throw new HttpError(400, e.message)
+    throw e
+  }
+})
+api.put('/api/users/:id', async (r) => {
+  const b = await r.json<{ login?: string; name?: string; role?: Role; password?: string }>()
+  const before = users.get(r.params.id)
+  try {
+    const u = users.update(r.params.id, b)
+    // Neues Passwort, andere Rolle oder anderer Name: neu anmelden
+    if (before && (b.password || b.role !== before.role || u.login !== before.login)) auth.logoutUser(before.login)
+    return u
+  } catch (e) {
+    if (e instanceof UserError) throw new HttpError(400, e.message)
+    throw e
+  }
+})
+api.delete('/api/users/:id', (r) => {
+  const u = users.get(r.params.id)
+  if (u) auth.logoutUser(u.login)
+  users.remove(r.params.id)
   return { ok: true }
 })
 
@@ -1871,14 +2083,18 @@ async function handle(raw: http.IncomingMessage, res: http.ServerResponse): Prom
       return
     }
     if (req.path.startsWith('/api/')) {
-      if (!auth.valid(req.cookies[SESSION_COOKIE])) throw new HttpError(401, 'Bitte anmelden.')
+      const user = sessionUser(req.cookies[SESSION_COOKIE])
+      if (!user) throw new HttpError(401, 'Bitte anmelden.')
+      req.user = { login: user.login, role: user.role }
+      const denied = forbidden(user.role, req.method, req.path)
+      if (denied) throw new HttpError(403, denied)
       // Schutz vor fremden Formularen: Änderungen nur mit eigenem Kopfeintrag
       if (req.method !== 'GET' && raw.headers['x-phone4all'] !== '1') throw new HttpError(403, 'Anfrage abgelehnt.')
       const m = api.match(req.method, req.path)
       if (!m) throw new HttpError(404, 'Nicht gefunden.')
       req.params = m.params
       const result = await m.handler(req)
-      if (req.method !== 'GET') audit.add(req.ip, auditText(req.method, req.path, result))
+      if (req.method !== 'GET') audit.add(req.ip, auditText(req.method, req.path, result), Date.now(), user.login)
       if (!res.headersSent) {
         if (typeof result === 'string') sendText(res, 200, result)
         else sendJson(res, 200, result ?? { ok: true })
@@ -1960,6 +2176,7 @@ async function main(): Promise<void> {
     const local = localTime(new Date(), store.config.system.timezone)
     const today = local.date
     auth.prune()
+    portal.prune()
     faxes.prune()
     if (lastBackup !== today) {
       lastBackup = today
