@@ -11,6 +11,7 @@ import EventIcon from '@mui/icons-material/EventAvailable'
 import MicOffIcon from '@mui/icons-material/MicOff'
 import NotificationsOffIcon from '@mui/icons-material/NotificationsOff'
 import PauseIcon from '@mui/icons-material/Pause'
+import SwapCallsIcon from '@mui/icons-material/SwapCalls'
 import ForwardIcon from '@mui/icons-material/PhoneForwarded'
 import { Box, Button, Collapse, Stack, Typography } from '@mui/material'
 import { useEffect, useState } from 'react'
@@ -99,9 +100,17 @@ export function CallPanel({ call, popup = false }: { call: CallInfo; popup?: boo
       )}
       {otherCall && (
         <Typography variant="body2" sx={{ color: 'warning.main', mt: 0.5 }}>
-          Annehmen beendet das laufende Gespräch
+          Annehmen hält das laufende Gespräch
         </Typography>
       )}
+      {!ringing &&
+        state.calls
+          .filter((c) => c.id !== call.id && c.state === 'established')
+          .map((c) => (
+            <Button key={c.id} size="small" variant="outlined" startIcon={<SwapCallsIcon />} sx={{ mt: 1 }} onClick={() => void api.switchCall(c.id)}>
+              {c.held ? 'Wechseln zu' : 'Läuft:'} {c.name || c.number}
+            </Button>
+          ))}
 
       {ringing ? (
         <>
