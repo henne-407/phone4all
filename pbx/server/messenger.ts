@@ -33,6 +33,33 @@ export function messengerUsers(cfg: PbxConfig): Extension[] {
   })
 }
 
+/** Nummer der letzten Nachricht in einer Raumdatei (liest nur das Ende) */
+export function lastSeq(file: string): number {
+  let fd: number
+  try {
+    fd = fs.openSync(file, 'r')
+  } catch {
+    return 0
+  }
+  try {
+    const size = fs.fstatSync(fd).size
+    const len = Math.min(size, 64 * 1024)
+    const buf = Buffer.alloc(len)
+    fs.readSync(fd, buf, 0, len, size - len)
+    const lines = buf.toString('utf8').split('\n').filter((l) => l.trim())
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        return Number((JSON.parse(lines[i]) as ChatMessage).seq) || 0
+      } catch {
+        // abgeschnittene Zeile: die davor nehmen
+      }
+    }
+    return 0
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
 /** Unterhaltung aus Sicht einer Nebenstelle */
 export interface RoomView extends ChatRoom {
   last: ChatMessage | null
@@ -46,7 +73,12 @@ export class MessengerStore {
   private saveTimer: NodeJS.Timeout | null = null
 
   constructor(readonly dir: string) {
-    for (const r of loadJson<ChatRoom[]>(path.join(dir, 'rooms.json'), [])) this.rooms.set(r.id, r)
+    for (const r of loadJson<ChatRoom[]>(path.join(dir, 'rooms.json'), [])) {
+      // rooms.json wird verzögert gespeichert: Nach einem Absturz kann der Zähler hinter
+      // den schon geschriebenen Nachrichten liegen – dann würden Nummern doppelt vergeben
+      r.seq = Math.max(r.seq, lastSeq(this.roomFile(r.id)))
+      this.rooms.set(r.id, r)
+    }
   }
 
   // -- Ablage ---------------------------------------------------------------

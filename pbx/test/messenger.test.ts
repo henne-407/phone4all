@@ -112,6 +112,17 @@ describe('Messenger-Ablage', () => {
     expect(new MessengerStore(dir).messages(r.id)).toHaveLength(20 - removed)
   })
 
+  it('vergibt nach einem Absturz keine Nummern doppelt', () => {
+    const s = new MessengerStore(dir)
+    const r = s.direct('10', '11')
+    s.post(r, '10', 'eins')
+    s.flush()
+    s.post(r, '10', 'zwei') // Zähler noch nicht gespeichert, dann Absturz
+    const again = new MessengerStore(dir)
+    const room = again.rooms.get(r.id)!
+    expect(again.post(room, '11', 'drei').seq).toBe(3)
+  })
+
   it('löscht bei voller Platte höchstens die Hälfte des Verlaufs', () => {
     const s = new MessengerStore(dir)
     const r = s.direct('10', '11')
