@@ -156,6 +156,8 @@ function trunkSections(cfg: PbxConfig, t: Trunk, ctx: GenContext): string {
         `set_var=P4A_TRUNK=${t.id}`,
         cid && `set_var=P4A_TRUNK_CID=${cid}`,
         t.max_channels > 0 && `device_state_busy_at=${t.max_channels}`,
+        // Fax über T.38 (UDPTL); ohne geht Fax als Ton über G.711
+        ...(t.t38 ? ['t38_udptl=yes', 't38_udptl_ec=redundancy', 't38_udptl_maxdatagram=400', 't38_udptl_nat=yes'] : []),
         ...t.advanced
           .split('\n')
           .map((l) => l.trim())

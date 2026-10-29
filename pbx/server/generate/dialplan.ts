@@ -460,6 +460,7 @@ export function extensionsConf(cfg: PbxConfig, gen: GenContext): string {
     if (g.number) local.push(exten(g.number, [MARK_TO, `Goto(p4a-group,${g.id},1)`]))
   }
   for (const c of cfg.conferences) local.push(exten(c.number, [MARK_TO, `Goto(p4a-conf,${c.number},1)`]))
+  for (const f of cfg.faxes) if (f.number) local.push(exten(f.number, [MARK_TO, `Goto(p4a-fax,${f.id},1)`]))
   for (const ivr of cfg.ivrs) {
     if (ivr.number) local.push(exten(ivr.number, [MARK_TO, `Goto(p4a-ivr-${ivr.id},s,1)`]))
   }
@@ -510,6 +511,50 @@ export function extensionsConf(cfg: PbxConfig, gen: GenContext): string {
     conf.push(exten(c.number, steps))
   }
   parts.push(ctx('p4a-conf', ...conf))
+
+  // Fax empfangen (als Ton über G.711 oder T.38) und senden; die Anlage macht daraus PDF und E-Mail
+  if (cfg.faxes.length) {
+    const faxDir = `${gen.dirs.spool}/fax`
+    parts.push(
+      ctx(
+        'p4a-fax',
+        ...cfg.faxes.map((f) =>
+          exten(f.id, [
+            'Set(P4A_FAXBOX=${EXTEN})',
+            'Set(CDR(userfield)=fax)',
+            `Set(FAXOPT(localstationid)=${f.station || 'Phone4all'})`,
+            ...(f.header ? [`Set(FAXOPT(headerinfo)=${f.header})`] : []),
+            'Answer()',
+            `Set(P4A_FAXFILE=${faxDir}/in-\${UNIQUEID}.tif)`,
+            'ReceiveFAX(${P4A_FAXFILE},f)',
+            'Hangup()',
+          ]),
+        ),
+        exten('h', [
+          CURL_TIMEOUT,
+          'Set(R=${CURL(${P4A_API}/fax?box=${P4A_FAXBOX}&file=${URIENCODE(${P4A_FAXFILE})}&status=${FAXSTATUS}&error=${URIENCODE(${FAXERROR})}&pages=${FAXPAGES}&remote=${URIENCODE(${REMOTESTATIONID})}&from=${URIENCODE(${CALLERID(num)})})})',
+        ]),
+      ),
+      ctx(
+        'p4a-fax-send',
+        exten('s', [
+          CURL_TIMEOUT,
+          'Set(R=${CURL(${P4A_API}/fax-job?job=${P4A_FAXJOB})})',
+          'Set(P4A_FAXFILE=${CUT(R,|,1)})',
+          'GotoIf($["${P4A_FAXFILE}" = ""]?end)',
+          'Set(FAXOPT(localstationid)=${CUT(R,|,2)})',
+          'Set(FAXOPT(headerinfo)=${CUT(R,|,3)})',
+          'Set(CDR(userfield)=fax)',
+          'SendFAX(${P4A_FAXFILE},f)',
+          '(end)Hangup()',
+        ]),
+        exten('h', [
+          CURL_TIMEOUT,
+          'Set(R=${CURL(${P4A_API}/fax-sent?job=${P4A_FAXJOB}&status=${FAXSTATUS}&error=${URIENCODE(${FAXERROR})}&pages=${FAXPAGES}&remote=${URIENCODE(${REMOTESTATIONID})})})',
+        ]),
+      ),
+    )
+  }
 
   // Videoanrufe aus dem Messenger: Raum-ID wählen, die Anlage prüft die Mitgliedschaft
   if (videoEnabled(cfg)) {

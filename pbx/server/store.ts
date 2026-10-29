@@ -312,7 +312,7 @@ export function validate(cfg: PbxConfig): void {
     if (!emailList(f.email, `Fax ${f.name}`).length) throw new ValidationError(`Fax ${f.name}: E-Mail-Adresse für empfangene Faxe fehlt.`)
     f.station = f.station.trim().slice(0, 20)
     if (/[^\d +]/.test(f.station)) throw new ValidationError(`Fax ${f.name}: Die Kennung darf nur Ziffern, + und Leerzeichen enthalten.`)
-    f.header = f.header.replace(/[\r\n"]/g, ' ').trim().slice(0, 50)
+    f.header = f.header.replace(/[\r\n";\\]/g, ' ').trim().slice(0, 50)
     f.cid = cleanNumber(f.cid)
   }
   const deskMacs = new Set<string>()

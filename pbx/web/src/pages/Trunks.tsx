@@ -77,7 +77,7 @@ function ProviderTiles({ onPick }: { onPick: (key: string) => void }) {
 }
 
 function TrunkForm({ value, onChange, isNew }: { value: Trunk; onChange: (v: Trunk) => void; isNew: boolean }) {
-  const { providers } = usePbx()
+  const { config, providers } = usePbx()
   const set = <K extends keyof Trunk>(k: K, v: Trunk[K]): void => onChange({ ...value, [k]: v })
   if (!value.provider) {
     return (
@@ -175,6 +175,7 @@ function TrunkForm({ value, onChange, isNew }: { value: Trunk; onChange: (v: Tru
             <FormControlLabel control={<Switch checked={value.ip_auth} onChange={(e) => set('ip_auth', e.target.checked)} />} label="Nur IP-Prüfung (fester SIP-Trunk)" />
             <FormControlLabel control={<Switch checked={value.srtp} onChange={(e) => set('srtp', e.target.checked)} />} label="Sprache verschlüsseln (SRTP)" />
             <FormControlLabel control={<Switch checked={value.forward_caller_id} onChange={(e) => set('forward_caller_id', e.target.checked)} />} label="Bei Weiterleitungen Anrufernummer zeigen (CLIP no screening)" />
+            {config.faxes.length > 0 && <FormControlLabel control={<Switch checked={value.t38} onChange={(e) => set('t38', e.target.checked)} />} label="Fax über T.38 (wenn der Anbieter es kann)" />}
             <Full>
               <TextField
                 label="Zusätzliche PJSIP-Optionen"

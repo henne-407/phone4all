@@ -5,6 +5,7 @@ import CallIcon from '@mui/icons-material/Call'
 import CampaignIcon from '@mui/icons-material/Campaign'
 import ChatIcon from '@mui/icons-material/Chat'
 import ContactsIcon from '@mui/icons-material/Contacts'
+import FaxIcon from '@mui/icons-material/Fax'
 import DashboardIcon from '@mui/icons-material/Dashboard'
 import DialpadIcon from '@mui/icons-material/Dialpad'
 import GroupsIcon from '@mui/icons-material/Groups'
@@ -50,6 +51,7 @@ import Calls from './pages/Calls'
 import Conferences from './pages/Conferences'
 import Dashboard from './pages/Dashboard'
 import Dect from './pages/Dect'
+import Faxes from './pages/Faxes'
 import Extensions from './pages/Extensions'
 import Flows from './pages/Flows'
 import Groups from './pages/Groups'
@@ -106,6 +108,7 @@ const NAV: [string, NavItem[]][] = [
       { key: 'calendars', label: 'Kalender', icon: <CalendarMonthIcon />, page: <Calendars /> },
       { key: 'appprofiles', label: 'App-Profile', icon: <PhoneAndroidIcon />, page: <AppProfiles /> },
       { key: 'conferences', label: 'Konferenzräume', icon: <RecordVoiceOverIcon />, page: <Conferences /> },
+      { key: 'faxes', label: 'Fax', icon: <FaxIcon />, page: <Faxes /> },
       { key: 'messenger', label: 'Messenger', icon: <ChatIcon />, page: <Messenger /> },
     ],
   ],

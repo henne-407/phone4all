@@ -16,6 +16,7 @@ import { readAllCalls, readCalls, readQueueLog, tailLog } from './cdr'
 import { describeAgent, gigasetFile, requestMac } from './dect'
 import { type DoorRing, EmergencyLog, emergencyCall, emergencyText, isEmergency } from './emergency'
 import { CallTracker, type GroupMissedCall, type PbxEvent, Webhooks } from './events'
+import { type FaxRecord, FaxStore, MAX_ATTEMPTS, RETRY_MS, faxErrorText, faxRoute, pdfToTiff, tiffPages, tiffToPdf } from './fax'
 import { loadJson, saveJson } from './files'
 import { type ForwardChange, ForwardError, applyCfu, applyMobile, applyRules, check as checkForward, forwardInfo } from './forwarding'
 import { localTime } from './holidays'
@@ -114,6 +115,7 @@ const emergencies = new EmergencyLog()
 const doorRings = new EmergencyLog<DoorRing>()
 const tts = new Tts(PATHS.tts)
 const missed = new MissedList(PATHS.missed)
+const faxes = new FaxStore(PATHS.fax)
 const transcriber = new Transcriber(PATHS.whisper, PATHS.transcripts, SETTINGS.whisper)
 let offsiteStatus: OffsiteStatus = { time: 0, ok: true, file: '', error: '' }
 auth.init()
@@ -150,6 +152,122 @@ tracker.on('event', (e: PbxEvent) => {
   if (d.direction === 'in') missed.resolve(store.config, d.from, d.extension ?? '', 'answered')
 })
 tracker.on('group-missed', (m: GroupMissedCall) => missed.add(store.config, m.call, m.groups, m.from, m.from_name))
+
+// -- Fax per E-Mail ----------------------------------------------------------------------
+
+const FAX_SPOOL = path.join(PATHS.spool, 'fax')
+
+function faxMail(rec: FaxRecord, subject: string, text: string, pdf: boolean): void {
+  const cfg = store.config
+  const box = cfg.faxes.find((f) => f.id === rec.box)
+  if (!box || !cfg.mail.host) return
+  const file = faxes.pdf(rec.id)
+  const attachments: MailAttachment[] = pdf && fs.existsSync(file) ? [{ name: `Fax-${rec.number || 'unbekannt'}-${new Date(rec.time).toISOString().slice(0, 10)}.pdf`, type: 'application/pdf', data: fs.readFileSync(file) }] : []
+  for (const to of emailList(box.email, `Fax ${box.name}`)) {
+    sendMail(cfg.mail, to, subject, `${text}\n\n${box.name} – ${cfg.system.name}`, attachments).catch((e: Error) => console.error('Fax-E-Mail:', e.message))
+  }
+}
+
+/** Fax empfangen: TIFF aus dem Spool → PDF → E-Mail */
+async function faxReceived(q: URLSearchParams): Promise<void> {
+  const box = store.config.faxes.find((f) => f.id === q.get('box'))
+  const tif = q.get('file') ?? ''
+  const ok = q.get('status') === 'SUCCESS'
+  const pages = Number(q.get('pages')) || 0
+  const from = q.get('from') ?? ''
+  // Nur Dateien, die der Wählplan selbst anlegt
+  const valid = path.dirname(tif) === FAX_SPOOL && /^in-[\d.]+\.tif$/.test(path.basename(tif)) && fs.existsSync(tif)
+  if (!box) return
+  const rec = faxes.add({ box: box.id, direction: 'in', time: Date.now(), number: from, station: q.get('remote') ?? '', pages, status: ok ? 'ok' : 'failed', error: ok ? '' : faxErrorText(q.get('status') ?? '', q.get('error') ?? ''), by: '', attempts: 1 })
+  try {
+    if (valid && pages > 0) await tiffToPdf(tif, faxes.pdf(rec.id))
+  } catch (e) {
+    faxes.update(rec.id, { status: 'failed', error: (e as Error).message })
+  } finally {
+    if (valid) fs.rmSync(tif, { force: true })
+  }
+  const who = [from, rec.station].filter(Boolean).join(' / ') || 'unbekannt'
+  if (pages > 0) faxMail(rec, `Fax von ${who} (${pages} ${pages === 1 ? 'Seite' : 'Seiten'})`, `Ein Fax von ${who} ist angekommen${ok ? '' : ' – unvollständig: ' + rec.error}.`, true)
+  else if (!ok) watchdog.log('warning', 'asterisk', `Fax an ${box.name} von ${who} nicht empfangen: ${rec.error}`)
+}
+
+async function sendFax(boxId: string, number: string, pdf: Buffer, by: string): Promise<FaxRecord> {
+  const box = store.config.faxes.find((f) => f.id === boxId)
+  if (!box) throw new HttpError(404, 'Unbekanntes Fax.')
+  const num = cleanNumber(number)
+  if (!/^\+?\d{3,20}$/.test(num)) throw new HttpError(400, 'Ungültige Faxnummer.')
+  if (pdf.subarray(0, 5).toString('latin1') !== '%PDF-') throw new HttpError(400, 'Bitte eine PDF-Datei senden.')
+  if (!faxRoute(store.config, box, num).length) throw new HttpError(400, 'Diese Nummer ist über keine Leitung erreichbar (Wahlregeln prüfen).')
+  const rec = faxes.add({ box: box.id, direction: 'out', time: Date.now(), number: num, station: '', pages: 0, status: 'queued', error: '', by, attempts: 0 })
+  fs.mkdirSync(FAX_SPOOL, { recursive: true })
+  fs.writeFileSync(faxes.pdf(rec.id), pdf)
+  const tif = path.join(FAX_SPOOL, `out-${rec.id}.tif`)
+  try {
+    await pdfToTiff(faxes.pdf(rec.id), tif)
+  } catch (e) {
+    faxes.remove(rec.id)
+    throw new HttpError(400, `Das PDF lässt sich nicht umwandeln: ${(e as Error).message}`)
+  }
+  faxes.update(rec.id, { pages: tiffPages(tif) })
+  void faxAttempt(rec.id)
+  return faxes.get(rec.id)!
+}
+
+/** Ein Sendeversuch: über die erste Leitung wählen, nach dem Abheben sendet der Wählplan */
+async function faxAttempt(id: string): Promise<void> {
+  const rec = faxes.get(id)
+  const box = store.config.faxes.find((f) => f.id === rec?.box)
+  if (!rec || !box) return
+  const leg = faxRoute(store.config, box, rec.number)[0]
+  if (!leg) return faxFinished(rec, 'failed', 'Keine Leitung nach außen (Wahlregeln prüfen)')
+  faxes.update(id, { status: 'sending', attempts: rec.attempts + 1 })
+  let answered = false
+  try {
+    const [res] = await asterisk.ami.action(
+      {
+        Action: 'Originate',
+        Channel: `PJSIP/${leg.number}@${leg.endpoint}`,
+        Context: 'p4a-fax-send',
+        Exten: 's',
+        Priority: '1',
+        CallerID: `"${box.name.replace(/["<>]/g, '')}" <${leg.cid}>`,
+        // Bei ausgehenden Kanälen zeigt der Anbieter die „verbundene“ Nummer als Absender
+        Variable: `P4A_FAXJOB=${id},CONNECTEDLINE(num)=${leg.cid},CONNECTEDLINE(name)=${box.name.replace(/[",<>|]/g, ' ')}`,
+        Timeout: '60000',
+      },
+      75000,
+    )
+    answered = res?.Response === 'Success'
+  } catch {
+    answered = false
+  }
+  if (answered) {
+    // Ergebnis meldet der Wählplan (/internal/fax-sent); kommt nichts, gilt es nach 30 Minuten als fehlgeschlagen
+    setTimeout(() => {
+      const r = faxes.get(id)
+      if (r?.status === 'sending') faxFinished(r, 'failed', 'Keine Rückmeldung vom Sendevorgang')
+    }, 30 * 60000).unref()
+    return
+  }
+  faxRetry(id, 'Keine Antwort oder besetzt')
+}
+
+function faxRetry(id: string, error: string): void {
+  const rec = faxes.get(id)
+  if (!rec) return
+  if (rec.attempts >= MAX_ATTEMPTS) return faxFinished(rec, 'failed', error)
+  faxes.update(id, { status: 'queued', error })
+  setTimeout(() => void faxAttempt(id), RETRY_MS).unref()
+}
+
+function faxFinished(rec: FaxRecord, status: 'ok' | 'failed', error: string): void {
+  faxes.update(rec.id, { status, error })
+  fs.rmSync(path.join(FAX_SPOOL, `out-${rec.id}.tif`), { force: true })
+  const done = faxes.get(rec.id)!
+  const pages = `${done.pages} ${done.pages === 1 ? 'Seite' : 'Seiten'}`
+  if (status === 'ok') faxMail(done, `Sendebericht: Fax an ${done.number} gesendet`, `Das Fax an ${done.number}${done.station ? ` (${done.station})` : ''} wurde vollständig übertragen (${pages}).`, true)
+  else faxMail(done, `Sendebericht: Fax an ${done.number} fehlgeschlagen`, `Das Fax an ${done.number} (${pages}) konnte nach ${done.attempts} Versuchen nicht gesendet werden: ${error}.`, true)
+}
 
 // -- Voicemail als Text -------------------------------------------------------------------
 
@@ -440,6 +558,25 @@ internal.get('/internal/group', (r) =>
 internal.get('/internal/video', (r) => (messenger.mayJoin(r.query.get('ext') ?? '', r.query.get('room') ?? '') ? '1' : '0'))
 internal.get('/internal/tc', (r) => timeConditionTarget(store.config, r.query.get('id') ?? ''))
 internal.get('/internal/available', (r) => (isAvailable(store.state, r.query.get('num') ?? '', store.config, r.query.get('gid') ?? '') ? '1' : '0'))
+internal.get('/internal/fax', (r) => {
+  void faxReceived(r.query).catch((e: Error) => console.error('Fax empfangen:', e.message))
+  return 'ok'
+})
+internal.get('/internal/fax-job', (r) => {
+  const rec = faxes.get(r.query.get('job') ?? '')
+  const box = store.config.faxes.find((f) => f.id === rec?.box)
+  if (!rec || !box || rec.direction !== 'out') return ''
+  return [path.join(FAX_SPOOL, `out-${rec.id}.tif`), box.station || 'Phone4all', box.header.replace(/\|/g, ' ')].join('|')
+})
+internal.get('/internal/fax-sent', (r) => {
+  const rec = faxes.get(r.query.get('job') ?? '')
+  if (!rec || rec.status !== 'sending') return 'ok'
+  const status = r.query.get('status') ?? ''
+  faxes.update(rec.id, { station: r.query.get('remote') ?? '' })
+  if (status === 'SUCCESS') faxFinished(rec, 'ok', '')
+  else faxRetry(rec.id, faxErrorText(status, r.query.get('error') ?? ''))
+  return 'ok'
+})
 internal.get('/internal/mobile', (r) => mobilePlan(store.config, r.query.get('num') ?? ''))
 internal.get('/internal/page', (r) => pagePlan(store.config, store.state, r.query.get('ext') ?? '', r.query.get('target') ?? '', r.query.get('mode') ?? ''))
 internal.get('/internal/ring', (r) => ringPlan(store.config, store.state, r.query.get('target') ?? ''))
@@ -783,6 +920,27 @@ function missedView(ext = '') {
 }
 
 const MISSED_ACTIONS: MissedAction[] = ['claim', 'release', 'done', 'reopen']
+
+// Faxe aus den Apps senden (Recht „Faxe senden“): Faxgeräte, eigene gesendete Faxe, senden
+const FAX_UPLOAD = /^\/provision\/[^/]+\/fax$/
+
+function faxSender(token: string): Extension {
+  const ext = tokenExtension(token)
+  if (!appPermissions(store.config, ext.number).includes('fax_send')) throw new HttpError(403, 'Faxe senden ist für diese Nebenstelle nicht freigegeben.')
+  return ext
+}
+
+pub.get('/provision/:token/fax', (r) => {
+  const ext = faxSender(r.params.token)
+  return {
+    boxes: store.config.faxes.map((f) => ({ id: f.id, name: f.name })),
+    sent: faxes.list().filter((f) => f.direction === 'out' && f.by === ext.number).slice(0, 50),
+  }
+})
+pub.post('/provision/:token/fax', async (r) => {
+  const ext = faxSender(r.params.token)
+  return sendFax(r.query.get('box') ?? '', r.query.get('number') ?? '', await r.body(), ext.number)
+})
 
 pub.get('/provision/:token/missed', (r) => missedView(tokenExtension(r.params.token).number))
 
@@ -1363,6 +1521,20 @@ api.get('/api/stats/csv', (r) => {
   r.res.end('\ufeff' + callsCsv(readAllCalls(), from, to))
 })
 
+api.get('/api/faxes', () => faxes.list())
+api.get('/api/faxes/:id/pdf', (r) => {
+  const rec = faxes.get(r.params.id)
+  if (!rec) throw new HttpError(404, 'Fax nicht gefunden.')
+  sendFile(r.res, faxes.pdf(rec.id), `Fax-${rec.number || 'unbekannt'}-${new Date(rec.time).toISOString().slice(0, 10)}.pdf`)
+})
+api.delete('/api/faxes/:id', (r) => {
+  const rec = faxes.get(r.params.id)
+  if (rec?.status === 'sending') throw new HttpError(409, 'Das Fax wird gerade gesendet.')
+  faxes.remove(r.params.id)
+  return faxes.list()
+})
+api.post('/api/faxes/send', async (r) => sendFax(r.query.get('box') ?? '', r.query.get('number') ?? '', await r.body(), 'Verwaltung'))
+
 api.get('/api/missed', () => missedView())
 api.put('/api/missed/:group/:id', async (r) => {
   const { action } = await r.json<{ action: MissedAction }>()
@@ -1610,7 +1782,7 @@ function isLoopback(ip: string): boolean {
 const SECRET_PATH = /^\/(?:provision|setup|dect)\/([^/]+)/
 
 async function handle(raw: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-  const isUpload = raw.url?.startsWith('/api/sounds') || raw.url?.startsWith('/api/import')
+  const isUpload = raw.url?.startsWith('/api/sounds') || raw.url?.startsWith('/api/import') || raw.url?.startsWith('/api/faxes/send') || FAX_UPLOAD.test((raw.url ?? '').split('?')[0])
   const isChatFile = CHAT_UPLOAD.test((raw.url ?? '').split('?')[0])
   const limit = isChatFile ? store.config.messenger.max_file_mb * 1024 * 1024 : isUpload ? 64 * 1024 * 1024 : 1024 * 1024
   const req = makeRequest(raw, res, limit)
@@ -1722,6 +1894,7 @@ async function main(): Promise<void> {
     const local = localTime(new Date(), store.config.system.timezone)
     const today = local.date
     auth.prune()
+    faxes.prune()
     if (lastBackup !== today) {
       lastBackup = today
       store.backup('taeglich')
