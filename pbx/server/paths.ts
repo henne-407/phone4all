@@ -58,6 +58,8 @@ export const SETTINGS = {
   /** Benutzer für Asterisk (im Container „asterisk“, lokal leer) */
   runUser: env.PBX_ASTERISK_USER ?? '',
   mailer: env.PBX_MAILER ?? '/usr/bin/msmtp',
+  /** whisper.cpp (Voicemail als Text): whisper-cli und whisper-cli-avx2 */
+  whisper: env.PBX_WHISPER_DIR || '/opt/whisper',
   version: env.PBX_VERSION || 'dev',
   image: env.PBX_IMAGE || 'ghcr.io/henne-407/phone4all-pbx',
   repo: env.PBX_REPO || 'henne-407/phone4all',

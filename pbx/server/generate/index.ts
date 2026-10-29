@@ -154,7 +154,9 @@ function voicemailConf(cfg: PbxConfig, gen: GenContext): string {
   for (const ext of cfg.extensions.filter((e) => e.voicemail.enabled)) {
     // Ohne gültige PIN nie die Nebenstellennummer: dann ist die Mailbox per PIN nicht erreichbar
     const pin = ext.voicemail.pin.replace(/\D/g, '') || String(randomInt(1e8, 1e9))
-    const email = canMail ? val(ext.email).replace(/,/g, '') : ''
+    // Voicemail als Text: die E-Mail (mit Text) verschickt dann die Anlage selbst
+    const own = cfg.transcription.enabled && cfg.transcription.email
+    const email = canMail && !own ? val(ext.email).replace(/,/g, '') : ''
     const opts = [`attach=${ext.voicemail.attach ? 'yes' : 'no'}`, 'saycid=yes', 'envelope=no', 'tz=de']
     lines.push(`${ext.number} => ${pin},${val(ext.name).replace(/,/g, ' ')},${email},,${opts.join('|')}`)
   }

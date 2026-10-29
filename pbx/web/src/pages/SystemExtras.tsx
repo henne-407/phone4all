@@ -24,7 +24,7 @@ import {
   Typography,
 } from '@mui/material'
 import { useEffect, useState } from 'react'
-import { type EmergencySettings, type OffsiteSettings, type ParkingSettings, WEBHOOK_EVENTS, type Webhook } from '../../../server/model'
+import { type EmergencySettings, type OffsiteSettings, type ParkingSettings, type TranscriptionSettings, WEBHOOK_EVENTS, type Webhook } from '../../../server/model'
 import { api } from '../api'
 import { ChangesBar, ChipsInput, ConfirmDialog, FormGrid, Full, NumberField, Section, Select, useDraft, useEditor } from '../components/common'
 import { usePbx } from '../state'
@@ -83,6 +83,137 @@ export function Features() {
         </Typography>
       </Section>
       <ChangesBar dirty={emergency.dirty} onApply={() => saveSection('emergency', emergency.draft)} onDiscard={emergency.reset} text="Notrufe: ungespeicherte Änderungen" />
+      <Transcription />
+    </>
+  )
+}
+
+interface TranscriptionInfo {
+  binary: boolean
+  models: string[]
+  downloading: string
+  error: string
+  pending: number
+  all: { id: string; name: string; size: number }[]
+}
+
+/** Voicemail als Text: whisper.cpp auf der Anlage oder eine OpenAI-kompatible Schnittstelle */
+function Transcription() {
+  const { config, saveSection, toast } = usePbx()
+  const d = useDraft<TranscriptionSettings>(config.transcription)
+  const t = d.draft
+  const [info, setInfo] = useState<TranscriptionInfo | null>(null)
+  const [test, setTest] = useState<{ busy: boolean; text?: string }>({ busy: false })
+  const load = (): Promise<void> => api.get<TranscriptionInfo>('/api/transcription').then(setInfo)
+  useEffect(() => void load().catch(() => undefined), [])
+  // Während ein Modell lädt, den Stand abfragen
+  useEffect(() => {
+    if (!info?.downloading) return
+    const timer = setInterval(() => void load().catch(() => undefined), 3000)
+    return () => clearInterval(timer)
+  }, [info?.downloading])
+  const loaded = info?.models.includes(t.model)
+  const runTest = (): void => {
+    setTest({ busy: true })
+    void api
+      .post<{ text: string }>('/api/transcription/test', t)
+      .then((r) => setTest({ busy: false, text: r.text || '(nichts erkannt)' }))
+      .catch((e: Error) => {
+        setTest({ busy: false })
+        toast(e.message, 'error')
+      })
+  }
+  return (
+    <>
+      <Section
+        title="Voicemail als Text"
+        description="Sprachnachrichten werden nach dem Aufsprechen in Text umgewandelt. Der Text steht in den Apps über der Nachricht und auf Wunsch in der Voicemail-E-Mail – so sieht man auf einen Blick, worum es geht."
+      >
+        <FormGrid>
+          <Full>
+            <FormControlLabel control={<Switch checked={t.enabled} onChange={(e) => d.set({ enabled: e.target.checked })} />} label="Voicemail als Text einschalten" />
+          </Full>
+          {t.enabled && (
+            <>
+              <Select
+                label="Erkennung"
+                value={t.engine}
+                onChange={(v) => d.set({ engine: v })}
+                options={[
+                  ['local', 'Auf der Anlage (whisper.cpp, nichts verlässt das Haus)'],
+                  ['api', 'Über eine Schnittstelle (OpenAI-kompatibel)'],
+                ]}
+              />
+              {t.engine === 'local' ? (
+                <Select
+                  label="Sprachmodell"
+                  value={t.model}
+                  onChange={(v) => d.set({ model: v })}
+                  options={info ? info.all.map((m) => [m.id, m.name] as [string, string]) : [[t.model, t.model]]}
+                  helperText={
+                    info?.downloading === t.model
+                      ? 'Wird geladen …'
+                      : loaded
+                        ? 'Geladen'
+                        : 'Wird beim Speichern aus dem Internet geladen (einmalig)'
+                  }
+                />
+              ) : (
+                <>
+                  <TextField
+                    label="Adresse"
+                    value={t.api_url}
+                    onChange={(e) => d.set({ api_url: e.target.value })}
+                    helperText="Bis einschließlich /v1, z. B. http://speaches:8000/v1 oder https://api.openai.com/v1"
+                  />
+                  <TextField label="Modell" value={t.api_model} onChange={(e) => d.set({ api_model: e.target.value })} helperText="z. B. whisper-1 oder Systran/faster-whisper-small" />
+                  <TextField label="API-Schlüssel" type="password" value={t.api_key} onChange={(e) => d.set({ api_key: e.target.value })} helperText="Leer lassen, wenn der Dienst keinen braucht" />
+                </>
+              )}
+              <Full>
+                <FormControlLabel
+                  control={<Switch checked={t.email} onChange={(e) => d.set({ email: e.target.checked })} />}
+                  label="Text in die Voicemail-E-Mail schreiben"
+                />
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                  Die E-Mail kommt dann von der Anlage, sobald der Text fertig ist (meist nach wenigen Sekunden, auf einem Raspberry Pi bis etwa eine Minute).
+                </Typography>
+              </Full>
+            </>
+          )}
+        </FormGrid>
+        {t.engine === 'api' && t.enabled && /api\.openai\.com/i.test(t.api_url) && (
+          <Alert severity="info" sx={{ mt: 2 }}>
+            Die Nachrichten werden dabei an OpenAI übertragen. Für Kundendaten besser die Erkennung auf der Anlage oder einen eigenen Server nutzen.
+          </Alert>
+        )}
+        {info?.error && t.enabled && t.engine === 'local' && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {info.error}
+          </Alert>
+        )}
+        {info && !info.binary && t.enabled && t.engine === 'local' && (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            whisper.cpp ist in dieser Installation nicht vorhanden. Im Docker-Image ist es enthalten; sonst die Erkennung über eine Schnittstelle nutzen.
+          </Alert>
+        )}
+        {t.enabled && (
+          <Stack direction="row" spacing={2} sx={{ mt: 2, alignItems: 'center' }}>
+            <Button variant="outlined" onClick={runTest} disabled={test.busy || (t.engine === 'local' && !loaded)}>
+              {test.busy ? 'Wird erkannt …' : 'Probe'}
+            </Button>
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              {test.text ? `Erkannt: „${test.text}“` : 'Spricht einen Satz mit der Sprachausgabe und wandelt ihn wieder in Text.'}
+            </Typography>
+          </Stack>
+        )}
+      </Section>
+      <ChangesBar
+        dirty={d.dirty}
+        onApply={() => saveSection('transcription', t).then(() => void load().catch(() => undefined))}
+        onDiscard={d.reset}
+        text="Voicemail als Text: ungespeicherte Änderungen"
+      />
     </>
   )
 }

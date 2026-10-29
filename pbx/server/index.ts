@@ -2,6 +2,7 @@
 
 import { timingSafeEqual } from 'node:crypto'
 import fs from 'node:fs'
+import os from 'node:os'
 import http from 'node:http'
 import https from 'node:https'
 import type { Duplex } from 'node:stream'
@@ -22,9 +23,9 @@ import { type MissedAction, MissedList } from './missed'
 import { integrationReport, validToken } from './integration'
 import { LdapServer } from './ldap'
 import { HttpError, type Request, Router, clientIp, makeRequest, proxyHints, sendFile, sendJson, sendText, serveStatic, setTrustedProxies, socketIp } from './http'
-import { sendMail } from './mail'
+import { type MailAttachment, sendMail } from './mail'
 import { ChatError, MessengerHub, MessengerStore, messengerUsers } from './messenger'
-import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, type PhonebookEntry, SECTIONS, type SectionName, WEBHOOK_EVENTS } from './model'
+import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, type PhonebookEntry, SECTIONS, type SectionName, type TranscriptionSettings, WEBHOOK_EVENTS } from './model'
 import { cleanNumber } from './numbers'
 import { type OffsiteStatus, OffsiteError, download as offsiteDownload, target as offsiteTarget, upload as offsiteUpload } from './offsite'
 import { PATHS, SETTINGS } from './paths'
@@ -75,10 +76,11 @@ import {
   renewPin,
 } from './store'
 import { Tts, TtsError, VOICES } from './tts'
+import { TranscribeError, type Transcript, Transcriber, WHISPER_MODELS } from './transcribe'
 import { callsCsv, computeStats, parseQueueLog } from './stats'
 import type { DectBase, PbxConfig } from './model'
 import { Updater } from './updates'
-import { VoicemailBox } from './voicemail'
+import { VoicemailBox, type VoicemailMessage } from './voicemail'
 import { type WatchEvent, Watchdog } from './watchdog'
 import { reject, upgrade } from './websocket'
 
@@ -112,6 +114,7 @@ const emergencies = new EmergencyLog()
 const doorRings = new EmergencyLog<DoorRing>()
 const tts = new Tts(PATHS.tts)
 const missed = new MissedList(PATHS.missed)
+const transcriber = new Transcriber(PATHS.whisper, PATHS.transcripts, SETTINGS.whisper)
 let offsiteStatus: OffsiteStatus = { time: 0, ok: true, file: '', error: '' }
 auth.init()
 store.hooks = {
@@ -119,15 +122,18 @@ store.hooks = {
     messenger.store.renumber(from, to)
     moveMailbox(from, to)
     missed.renumber(from, to)
+    moveTranscripts(from, to)
   },
   removed: (number) => {
     messenger.forgotten(number)
     removeMailbox(number)
+    fs.rmSync(path.join(PATHS.transcripts, number), { recursive: true, force: true })
   },
 }
 
 tracker.on('event', (e: PbxEvent) => {
   void Promise.all(webhooks.dispatch(e))
+  if (e.event === 'voicemail.new') setTimeout(() => scanVoicemail(String((e.data as { extension: string }).extension)), 1000).unref()
   // Türsprechstelle ruft an: für Home Assistant und als eigenes Ereignis
   if (e.event === 'call.ringing') {
     const d = e.data as { call: string; from: string }
@@ -144,6 +150,68 @@ tracker.on('event', (e: PbxEvent) => {
   if (d.direction === 'in') missed.resolve(store.config, d.from, d.extension ?? '', 'answered')
 })
 tracker.on('group-missed', (m: GroupMissedCall) => missed.add(store.config, m.call, m.groups, m.from, m.from_name))
+
+// -- Voicemail als Text -------------------------------------------------------------------
+
+/** Ab hier verschickt die Anlage die Voicemail-E-Mails selbst (vorher kamen sie von Asterisk) */
+let transcriptMailSince = Date.now()
+let transcriptMailOn = false
+
+function moveTranscripts(from: string, to: string): void {
+  const src = path.join(PATHS.transcripts, from)
+  if (!fs.existsSync(src)) return
+  fs.rmSync(path.join(PATHS.transcripts, to), { recursive: true, force: true })
+  fs.renameSync(src, path.join(PATHS.transcripts, to))
+}
+
+/** Neue Nachrichten einreihen (nur die der letzten 3 Tage), Texte gelöschter Nachrichten entfernen */
+function scanVoicemail(only?: string): void {
+  const cfg = store.config
+  if (!cfg.transcription.enabled) return
+  const since = Date.now() - 3 * 86400000
+  for (const ext of cfg.extensions.filter((e) => e.voicemail.enabled && (!only || e.number === only))) {
+    const list = voicemail.list(ext.number)
+    transcriber.prune(ext.number, new Set(list.map((m) => m.id)))
+    for (const m of list) {
+      if (m.time < since || transcriber.get(ext.number, m.id) || transcriber.pending(ext.number, m.id)) continue
+      const file = voicemail.file(ext.number, m.id)
+      if (!file) continue
+      const mail = m.time >= transcriptMailSince
+      transcriber.enqueue(() => store.config.transcription, ext.number, m.id, file, (t) => {
+        tracker.report('voicemail.transcribed', { extension: ext.number, from: m.number, from_name: m.name, text: t.text, error: t.error })
+        if (mail) transcriptMail(ext.number, m.id, t)
+      })
+    }
+  }
+}
+
+function transcriptMail(mailbox: string, id: string, t: Transcript): void {
+  const cfg = store.config
+  const ext = cfg.extensions.find((e) => e.number === mailbox)
+  const m = voicemail.find(mailbox, id)
+  if (!ext?.email || !m || !cfg.transcription.email || !cfg.mail.host) return
+  const caller = m.name && m.number ? `${m.name} (${m.number})` : m.name || m.number || 'Unbekannt'
+  const when = new Date(m.time).toLocaleString('de-DE', { timeZone: cfg.system.timezone, dateStyle: 'medium', timeStyle: 'short' })
+  const length = `${Math.floor(m.duration / 60)}:${String(m.duration % 60).padStart(2, '0')}`
+  const text = t.error ? `(Die Nachricht konnte nicht in Text umgewandelt werden: ${t.error})` : t.text ? `„${t.text}“` : '(Kein gesprochener Text erkannt.)'
+  const attachments: MailAttachment[] = []
+  const wav = voicemail.file(mailbox, id)
+  if (ext.voicemail.attach && wav) attachments.push({ name: `Nachricht-${m.number || 'unbekannt'}.wav`, type: 'audio/wav', data: fs.readFileSync(wav) })
+  const body = `Hallo ${ext.name},\n\n${caller} hat am ${when} eine Nachricht hinterlassen (Länge ${length}):\n\n${text}\n\nAbhören: *97 am Telefon oder in der App.\n\n${mailbox} – ${cfg.system.name}`
+  for (const to of emailList(ext.email, 'Voicemail'))
+    sendMail(cfg.mail, to, `Neue Sprachnachricht von ${caller}`, body, attachments).catch((e: Error) => console.error('Voicemail-E-Mail:', e.message))
+}
+
+/** Einstellungen geändert: E-Mail-Versand übernimmt ab jetzt die Anlage bzw. wieder Asterisk */
+function transcriptionChanged(): void {
+  const on = store.config.transcription.enabled && store.config.transcription.email
+  if (on && !transcriptMailOn) transcriptMailSince = Date.now()
+  transcriptMailOn = on
+  const tr = store.config.transcription
+  if (tr.enabled && tr.engine === 'local' && !transcriber.status().models.includes(tr.model) && !transcriber.downloading) {
+    transcriber.install(tr.model).catch((e: Error) => console.error('Spracherkennung laden:', e.message))
+  }
+}
 
 function freeBytes(): number | null {
   try {
@@ -213,6 +281,7 @@ function applySoon(): void {
     applyTimer = null
     ldap.apply()
     messenger.refresh()
+    transcriptionChanged()
     asterisk
       .apply(store.config, guard.banned())
       .then(() => setTimeout(() => void loadPresence(), 2000))
@@ -685,7 +754,7 @@ const PIN_MAX_FAILURES = 5
 pub.get('/provision/:token/presence', (r) => {
   const ext = tokenExtension(r.params.token)
   const view = presence.view(store.config, store.state)
-  const vm = ext.voicemail.enabled ? { revision: voicemail.revision(ext.number), unread: voicemail.unread(ext.number) } : null
+  const vm = ext.voicemail.enabled ? { revision: `${voicemail.revision(ext.number)}-${transcriber.count(ext.number)}`, unread: voicemail.unread(ext.number) } : null
   const groups = memberGroups(store.config, store.state, ext.number)
   const list = store.config.groups.some((g) => g.missed_list && g.members.includes(ext.number))
   return {
@@ -731,7 +800,17 @@ function voicemailExtension(token: string): Extension {
   return ext
 }
 
-pub.get('/provision/:token/voicemail', (r) => voicemail.list(voicemailExtension(r.params.token).number))
+/** Nachrichten mit Text (falls Voicemail als Text eingeschaltet ist) */
+function voicemailList(mailbox: string): (VoicemailMessage & { text?: string; transcribing?: boolean })[] {
+  const on = store.config.transcription.enabled
+  return voicemail.list(mailbox).map((m) => {
+    if (!on) return m
+    const t = transcriber.get(mailbox, m.id)
+    return t ? { ...m, text: t.text } : { ...m, transcribing: transcriber.pending(mailbox, m.id) }
+  })
+}
+
+pub.get('/provision/:token/voicemail', (r) => voicemailList(voicemailExtension(r.params.token).number))
 
 pub.get('/provision/:token/voicemail/:id', (r) => {
   const ext = voicemailExtension(r.params.token)
@@ -748,7 +827,7 @@ pub.put('/provision/:token/voicemail/:id', async (r) => {
   if (msg.folder === 'INBOX') {
     await voicemailAction({ Action: 'VoicemailMove', Context: 'default', Mailbox: ext.number, Folder: 'INBOX', ID: msg.id, ToFolder: 'Old' })
   }
-  return voicemail.list(ext.number)
+  return voicemailList(ext.number)
 })
 
 pub.delete('/provision/:token/voicemail/:id', async (r) => {
@@ -756,7 +835,7 @@ pub.delete('/provision/:token/voicemail/:id', async (r) => {
   const msg = voicemail.find(ext.number, r.params.id)
   if (!msg) throw new HttpError(404, 'Nachricht nicht gefunden.')
   await voicemailAction({ Action: 'VoicemailRemove', Context: 'default', Mailbox: ext.number, Folder: msg.folder, ID: msg.id })
-  return voicemail.list(ext.number)
+  return voicemailList(ext.number)
 })
 
 async function voicemailAction(fields: Record<string, string>): Promise<void> {
@@ -1445,6 +1524,33 @@ api.post('/api/webhooks/:id/test', async (r) => {
 
 // Ansagen aus Text (Piper)
 
+api.get('/api/transcription', () => ({ ...transcriber.status(), all: WHISPER_MODELS }))
+api.post('/api/transcription/install', async (r) => {
+  const { model } = await r.json<{ model: string }>()
+  if (!WHISPER_MODELS.some((m) => m.id === model)) throw new HttpError(400, 'Unbekanntes Modell.')
+  transcriber.install(String(model)).catch((e: Error) => console.error('Spracherkennung laden:', e.message))
+  return transcriber.status()
+})
+/** Probe: kurzer Satz über die Sprachausgabe gesprochen und wieder erkannt (oder hochgeladene WAV) */
+api.post('/api/transcription/test', async (r) => {
+  // Ungespeicherte Einstellungen aus dem Formular; der API-Schlüssel kommt nie zurück in die Oberfläche
+  const draft = await r.json<Partial<TranscriptionSettings>>().catch(() => ({}))
+  const cfg: TranscriptionSettings = { ...store.config.transcription, ...draft }
+  cfg.api_key ||= store.config.transcription.api_key
+  cfg.api_url = cfg.api_url.trim().replace(/\/+$/, '')
+  const voice = tts.status().voices[0]
+  if (!voice) throw new HttpError(400, 'Für die Probe wird die Sprachausgabe gebraucht (Ansagen und Musik → Aus Text sprechen).')
+  const file = path.join(os.tmpdir(), `p4a-stt-${Date.now()}.wav`)
+  fs.writeFileSync(file, await tts.speak('Hallo, hier ist die Telefonanlage. Bitte rufen Sie mich morgen zurück.', voice))
+  try {
+    return { text: await transcriber.transcribe(cfg, file) }
+  } catch (e) {
+    if (e instanceof TranscribeError) throw new HttpError(400, e.message)
+    throw e
+  } finally {
+    fs.rmSync(file, { force: true })
+  }
+})
 api.get('/api/tts', () => ({ ...tts.status(), all: VOICES.map(({ id, name }) => ({ id, name })) }))
 api.post('/api/tts/install', async (r) => {
   const { voice } = await r.json<{ voice: string }>()
@@ -1559,6 +1665,9 @@ async function main(): Promise<void> {
   asterisk.prepareDirs()
   await asterisk.apply(store.config, guard.banned())
   ldap.apply()
+  transcriptionChanged()
+  scanVoicemail()
+  setInterval(() => scanVoicemail(), 5 * 60000).unref()
   const server = http.createServer((req, res) => void handle(req, res))
   // /ws: SIP über WebSocket (Mobil-App) · /provision/<token>/chat: Messenger der Apps
   const onUpgrade = (req: http.IncomingMessage, socket: Duplex, head: Buffer): void => {

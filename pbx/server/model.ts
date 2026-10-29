@@ -330,7 +330,7 @@ export interface OffsiteSettings {
   passphrase: string
 }
 
-export type WebhookEvent = 'call.ringing' | 'call.answered' | 'call.ended' | 'call.missed' | 'voicemail.new' | 'call.blocked' | 'emergency' | 'door.ring'
+export type WebhookEvent = 'call.ringing' | 'call.answered' | 'call.ended' | 'call.missed' | 'voicemail.new' | 'voicemail.transcribed' | 'call.blocked' | 'emergency' | 'door.ring'
 
 export const WEBHOOK_EVENTS: [WebhookEvent, string][] = [
   ['call.ringing', 'Anruf klingelt'],
@@ -338,6 +338,7 @@ export const WEBHOOK_EVENTS: [WebhookEvent, string][] = [
   ['call.ended', 'Anruf beendet'],
   ['call.missed', 'Anruf verpasst'],
   ['voicemail.new', 'Neue Voicemail'],
+  ['voicemail.transcribed', 'Voicemail als Text'],
   ['call.blocked', 'Anruf gesperrt'],
   ['emergency', 'Notruf gewählt'],
   ['door.ring', 'Türsprechstelle klingelt'],
@@ -851,7 +852,7 @@ export const DEFAULT_CONFIG: PbxConfig = {
   parking: { enabled: true, number: '700', slots: 8, seconds: 120 },
   emergency: { notify_email: '', notify_exts: [] },
   offsite: { enabled: false, type: 'webdav', url: '', user: '', password: '', bucket: '', region: '', folder: 'phone4all', keep: 30, passphrase: '' },
-  transcription: { enabled: false, engine: 'local', model: 'base', api_url: '', api_key: '', api_model: 'whisper-1', email: true },
+  transcription: { enabled: false, engine: 'local', model: 'small-q5_1', api_url: '', api_key: '', api_model: 'whisper-1', email: true },
   portal: { enabled: false, remote: false },
 }
 

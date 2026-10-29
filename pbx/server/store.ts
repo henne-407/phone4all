@@ -335,7 +335,7 @@ export function validate(cfg: PbxConfig): void {
   const tr = cfg.transcription
   if (tr.enabled) {
     if (!['local', 'api'].includes(tr.engine)) throw new ValidationError('Voicemail als Text: unbekannte Art.')
-    if (!/^[a-z0-9.-]{1,40}$/.test(tr.model)) throw new ValidationError('Voicemail als Text: ungültiges Modell.')
+    if (!/^[a-z0-9._-]{1,40}$/.test(tr.model)) throw new ValidationError('Voicemail als Text: ungültiges Modell.')
     tr.api_url = tr.api_url.trim().replace(/\/+$/, '')
     if (tr.engine === 'api' && !/^https?:\/\/\S+$/i.test(tr.api_url)) throw new ValidationError('Voicemail als Text: Adresse mit http:// oder https:// angeben, z. B. http://speaches:8000/v1.')
   }
