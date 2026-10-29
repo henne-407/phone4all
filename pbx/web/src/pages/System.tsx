@@ -256,7 +256,24 @@ function Backup() {
   const [files, setFiles] = useState(true)
   const [backups, setBackups] = useState<{ name: string; size: number; time: number }[]>([])
   const [restore, setRestore] = useState<string | null>(null)
-  const [importData, setImportData] = useState<unknown>(null)
+  const [importData, setImportData] = useState<{ format?: string } | null>(null)
+  const [exportPassword, setExportPassword] = useState('')
+  const [importPassword, setImportPassword] = useState('')
+  const encryptedImport = importData?.format === 'phone4all-pbx-encrypted'
+  const exportEncrypted = async (): Promise<void> => {
+    try {
+      const data = await api.post<unknown>('/api/export', { files, password: exportPassword })
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `phone4all-pbx-${new Date().toISOString().slice(0, 10)}-verschluesselt.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      setExportPassword('')
+    } catch (e) {
+      toast((e as Error).message, 'error')
+    }
+  }
   const ref = useRef<HTMLInputElement>(null)
   const load = (): void => void api.get<typeof backups>('/api/backups').then(setBackups)
   useEffect(load, [])
@@ -267,14 +284,27 @@ function Backup() {
           <FormControlLabel control={<Checkbox checked={secrets} onChange={(e) => setSecrets(e.target.checked)} />} label="Mit Passwörtern" />
           <FormControlLabel control={<Checkbox checked={files} onChange={(e) => setFiles(e.target.checked)} />} label="Mit Ansagen und Wartemusik" />
           <Box sx={{ flex: 1 }} />
-          <Button variant="contained" startIcon={<DownloadIcon />} href={`/api/export?secrets=${secrets ? 1 : 0}&files=${files ? 1 : 0}`}>
-            Exportieren
-          </Button>
+          {secrets ? (
+            <Button variant="contained" startIcon={<DownloadIcon />} disabled={exportPassword.length < 10} onClick={() => void exportEncrypted()}>
+              Exportieren
+            </Button>
+          ) : (
+            <Button variant="contained" startIcon={<DownloadIcon />} href={`/api/export?secrets=0&files=${files ? 1 : 0}`}>
+              Exportieren
+            </Button>
+          )}
         </Stack>
         {secrets && (
-          <Alert severity="warning" variant="outlined" sx={{ mt: 2 }}>
-            Die Datei enthält dann alle Passwörter im Klartext – sicher aufbewahren.
-          </Alert>
+          <TextField
+            type="password"
+            label="Passwort für die Datei"
+            value={exportPassword}
+            onChange={(e) => setExportPassword(e.target.value)}
+            helperText="Mindestens 10 Zeichen. Die Datei ist damit verschlüsselt; ohne das Passwort lässt sie sich nicht wieder einlesen."
+            autoComplete="new-password"
+            sx={{ mt: 2, maxWidth: 420 }}
+            fullWidth
+          />
         )}
       </Section>
       <Section title="Konfiguration importieren" description="Ersetzt die aktuelle Einrichtung. Vorher wird automatisch gesichert. Fehlende Passwörter werden aus der aktuellen Einrichtung übernommen oder neu erzeugt.">
@@ -350,10 +380,14 @@ function Backup() {
         title="Konfiguration importieren?"
         text="Die aktuelle Einrichtung wird ersetzt (und vorher gesichert)."
         confirm="Importieren"
-        onClose={() => setImportData(null)}
-        onConfirm={() => {
-          const data = importData
+        onClose={() => {
           setImportData(null)
+          setImportPassword('')
+        }}
+        onConfirm={() => {
+          const data = encryptedImport ? { ...importData, password: importPassword } : importData
+          setImportData(null)
+          setImportPassword('')
           void api
             .post('/api/import', data)
             .then(reload)
@@ -361,7 +395,20 @@ function Backup() {
             .then(load)
             .catch((e: Error) => toast(e.message, 'error'))
         }}
-      />
+      >
+        {encryptedImport && (
+          <TextField
+            type="password"
+            label="Passwort der Datei"
+            value={importPassword}
+            onChange={(e) => setImportPassword(e.target.value)}
+            autoComplete="off"
+            sx={{ mt: 2 }}
+            fullWidth
+            autoFocus
+          />
+        )}
+      </ConfirmDialog>
     </>
   )
 }

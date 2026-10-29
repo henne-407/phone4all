@@ -234,7 +234,7 @@ Geänderte Einstellungen werden erst mit *Anwenden* in der Leiste am unteren Ran
 | Allgemein | Name, Adresse für Telefone, Länder-/Ortsvorwahl, Bundesland, Zeitzone, Ports, öffentliche Adresse (NAT), lokale Netze, verschlüsselte Sprache (SRTP; sinnvoll nur mit SIP über TLS am Telefon), Codecs |
 | E-Mail | SMTP-Server für Voicemail und Einladungen, Testmail |
 | Sicherheit | Sperre nach Fehlanmeldungen, nie sperren, Nebenstellen nur aus bestimmten Netzen, gesperrte Adressen |
-| Sicherung | Export, Import, automatische Sicherungen wiederherstellen |
+| Sicherung | Export (mit Passwörtern nur verschlüsselt, mit eigenem Passwort), Import, automatische Sicherungen wiederherstellen |
 | Aktualisierung | neue Version installieren, Kanal stabil/Beta, automatisch nachts |
 | Zugang | Passwort der Weboberfläche, Suche der App im lokalen Netz, Rechte aller Nebenstellen in der App |
 | Fernzugriff | öffentliche HTTPS-Adresse für Mobil-App und Einrichtungslinks ([Anleitung](fernzugriff.md)) |

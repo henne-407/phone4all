@@ -1,6 +1,6 @@
 /** Konfiguration und Laufzeitzustand laden/speichern, Sicherungen, Export und Import. */
 
-import { randomBytes, randomInt } from 'node:crypto'
+import { createCipheriv, createDecipheriv, randomBytes, randomInt, scryptSync } from 'node:crypto'
 import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
@@ -288,6 +288,55 @@ export interface ExportFile {
   files?: Record<string, string>
   /** Termine der zentralen Kalender (Kalender-ID → Termine) */
   calendars?: Record<string, unknown[]>
+}
+
+/** Export mit Passwörtern: AES-256-GCM, Schlüssel per scrypt aus dem Passwort */
+export interface EncryptedExport {
+  format: 'phone4all-pbx-encrypted'
+  exported: string
+  version: string
+  kdf: { name: 'scrypt'; N: number; r: number; p: number; salt: string }
+  iv: string
+  tag: string
+  data: string
+}
+
+const SCRYPT = { N: 1 << 15, r: 8, p: 1 }
+export const EXPORT_PASSWORD_MIN = 10
+
+function exportKey(password: string, salt: Buffer, kdf: { N: number; r: number; p: number }): Buffer {
+  return scryptSync(password, salt, 32, { N: kdf.N, r: kdf.r, p: kdf.p, maxmem: 256 * kdf.N * kdf.r })
+}
+
+export function encryptExport(data: ExportFile, password: string): EncryptedExport {
+  if (password.length < EXPORT_PASSWORD_MIN) throw new ValidationError(`Das Passwort für den Export braucht mindestens ${EXPORT_PASSWORD_MIN} Zeichen.`)
+  const salt = randomBytes(16)
+  const iv = randomBytes(12)
+  const cipher = createCipheriv('aes-256-gcm', exportKey(password, salt, SCRYPT), iv)
+  const body = Buffer.concat([cipher.update(JSON.stringify(data), 'utf8'), cipher.final()])
+  return {
+    format: 'phone4all-pbx-encrypted',
+    exported: data.exported,
+    version: data.version,
+    kdf: { name: 'scrypt', ...SCRYPT, salt: salt.toString('base64') },
+    iv: iv.toString('base64'),
+    tag: cipher.getAuthTag().toString('base64'),
+    data: body.toString('base64'),
+  }
+}
+
+export function decryptExport(file: EncryptedExport, password: string): ExportFile {
+  const { N, r, p } = file.kdf ?? {}
+  // Grenzen, damit eine präparierte Datei den Dienst nicht mit scrypt lahmlegt
+  if (![N, r, p].every(Number.isInteger) || N > 1 << 17 || r > 16 || p > 4) throw new ValidationError('Die Exportdatei ist beschädigt.')
+  try {
+    const decipher = createDecipheriv('aes-256-gcm', exportKey(password, Buffer.from(file.kdf.salt, 'base64'), { N, r, p }), Buffer.from(file.iv, 'base64'))
+    decipher.setAuthTag(Buffer.from(file.tag, 'base64'))
+    const json = Buffer.concat([decipher.update(Buffer.from(file.data, 'base64')), decipher.final()]).toString('utf8')
+    return JSON.parse(json) as ExportFile
+  } catch {
+    throw new ValidationError('Das Passwort stimmt nicht oder die Datei ist beschädigt.')
+  }
 }
 
 export function stripSecrets(cfg: PbxConfig): PbxConfig {

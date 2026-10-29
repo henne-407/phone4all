@@ -145,3 +145,16 @@ describe('Gruppenchat', () => {
     fs.rmSync(dir, { recursive: true, force: true })
   })
 })
+
+describe('Verschlüsselter Export', () => {
+  it('verschlüsselt mit Passwort und liest nur mit dem richtigen wieder ein', async () => {
+    const { encryptExport, decryptExport } = await import('../server/store')
+    const data = { format: 'phone4all-pbx' as const, exported: 'heute', version: '1', config: sampleConfig() }
+    expect(() => encryptExport(data, 'kurz')).toThrow(/10 Zeichen/)
+    const enc = encryptExport(data, 'ein langes Passwort')
+    expect(JSON.stringify(enc)).not.toContain('Person 10')
+    expect(decryptExport(enc, 'ein langes Passwort').config.extensions[0].number).toBe('10')
+    expect(() => decryptExport(enc, 'falsches Passwort!')).toThrow(/stimmt nicht/)
+    expect(() => decryptExport({ ...enc, kdf: { ...enc.kdf, N: 1 << 25 } }, 'x')).toThrow(/beschädigt/)
+  })
+})

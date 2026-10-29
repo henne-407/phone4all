@@ -664,6 +664,7 @@ export function ConfirmDialog({
   confirm,
   onClose,
   onConfirm,
+  children,
 }: {
   open: boolean
   title: string
@@ -671,6 +672,7 @@ export function ConfirmDialog({
   confirm: string
   onClose: () => void
   onConfirm: () => void
+  children?: ReactNode
 }) {
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs">
@@ -679,6 +681,7 @@ export function ConfirmDialog({
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
           {text}
         </Typography>
+        {children}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose}>Abbrechen</Button>

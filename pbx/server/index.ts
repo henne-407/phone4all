@@ -42,10 +42,13 @@ import { SourceSync } from './sources/sync'
 import { listSounds, saveSound, soundDir, soundFile, type SoundKind } from './sounds'
 import {
   ConfigStore,
+  type EncryptedExport,
   type ExportFile,
   ValidationError,
   addDevice,
   consumePin,
+  decryptExport,
+  encryptExport,
   fillSecrets,
   findDevice,
   linkValid,
@@ -932,7 +935,9 @@ api.post('/api/mail/test', async (r) => {
 // Sicherung, Export, Import
 
 api.get('/api/export', (r) => {
-  const data = store.exportData(r.query.get('secrets') === '1', r.query.get('files') === '1', SETTINGS.version)
+  // Mit Passwörtern nur verschlüsselt (POST mit Passwort)
+  if (r.query.get('secrets') === '1') throw new HttpError(400, 'Export mit Passwörtern nur verschlüsselt: bitte ein Passwort angeben.')
+  const data = store.exportData(false, r.query.get('files') === '1', SETTINGS.version)
   const date = new Date().toISOString().slice(0, 10)
   r.res.writeHead(200, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -941,8 +946,15 @@ api.get('/api/export', (r) => {
   r.res.end(JSON.stringify(data, null, 2))
 })
 
+/** Export mit allen Passwörtern, mit einem eigenen Passwort verschlüsselt */
+api.post('/api/export', async (r) => {
+  const { files, password } = await r.json<{ files?: boolean; password?: string }>()
+  return encryptExport(store.exportData(true, Boolean(files), SETTINGS.version), String(password ?? ''))
+})
+
 api.post('/api/import', async (r) => {
-  const data = await r.json<ExportFile>()
+  const raw = await r.json<(ExportFile | EncryptedExport) & { password?: string }>()
+  const data = raw.format === 'phone4all-pbx-encrypted' ? decryptExport(raw, String(raw.password ?? '')) : (raw as ExportFile)
   store.importData(data)
   calendars.revision++
   applySoon()
