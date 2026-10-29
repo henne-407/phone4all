@@ -789,8 +789,12 @@ function Diagnose() {
   const d = useDraft<WatchdogSettings>(config.watchdog)
   const { draft: w, set } = d
   const [data, setData] = useState<WatchdogResponse | null>(null)
+  const [changes, setChanges] = useState<{ time: number; ip: string; action: string }[]>([])
   const [busy, setBusy] = useState(false)
-  const load = (): void => void api.get<WatchdogResponse>('/api/watchdog').then(setData).catch(() => undefined)
+  const load = (): void => {
+    void api.get<WatchdogResponse>('/api/watchdog').then(setData).catch(() => undefined)
+    void api.get<typeof changes>('/api/audit').then(setChanges).catch(() => undefined)
+  }
   useEffect(() => {
     load()
     const t = setInterval(load, 10000)
@@ -871,6 +875,19 @@ function Diagnose() {
           </List>
         ) : (
           <Typography sx={{ color: 'text.secondary' }}>Keine Ereignisse.</Typography>
+        )}
+      </Section>
+      <Section title="Änderungsprotokoll" description="Anmeldungen und Änderungen in der Weboberfläche mit Adresse, neueste zuerst.">
+        {changes.length ? (
+          <List dense disablePadding sx={{ maxHeight: 420, overflow: 'auto' }}>
+            {changes.map((c, i) => (
+              <ListItem key={i} disableGutters>
+                <ListItemText primary={c.action} secondary={`${new Date(c.time).toLocaleString('de-DE')} · ${c.ip}`} />
+              </ListItem>
+            ))}
+          </List>
+        ) : (
+          <Typography sx={{ color: 'text.secondary' }}>Noch keine Einträge.</Typography>
         )}
       </Section>
       <ChangesBar dirty={d.dirty} onApply={() => saveSection('watchdog', w)} onDiscard={d.reset} />

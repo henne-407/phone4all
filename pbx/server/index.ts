@@ -9,6 +9,7 @@ import path from 'node:path'
 import { Asterisk } from './asterisk'
 import { CalendarStore } from './calendars'
 import { external } from './directory'
+import { AuditLog, auditText } from './audit'
 import { Auth, SESSION_COOKIE, SESSION_MAX_AGE } from './auth'
 import { readCalls, tailLog } from './cdr'
 import { describeAgent, gigasetFile, requestMac } from './dect'
@@ -78,6 +79,7 @@ const sources = new SourceSync(
   (id, events) => calendars.replace(id, events),
 )
 external.entries = () => sources.entries()
+const audit = new AuditLog(PATHS.audit)
 const ldap = new LdapServer(() => store.config)
 ldap.isBlocked = (ip) => isBlocked(ip)
 ldap.onFailure = (ip) => auth.failed(ip, 'Falsches Kennwort am LDAP-Telefonbuch')
@@ -343,9 +345,11 @@ pub.post('/api/login', async (r) => {
   const { password } = await r.json<{ password: string }>()
   if (!auth.check(String(password ?? ''))) {
     auth.failed(r.ip, 'Falsches Passwort der Weboberfläche')
+    audit.add(r.ip, 'Anmeldung fehlgeschlagen')
     throw new HttpError(401, 'Das Passwort ist falsch.')
   }
   const token = auth.login()
+  audit.add(r.ip, 'Angemeldet')
   r.res.setHeader('Set-Cookie', sessionCookie(r, token, SESSION_MAX_AGE))
   return { ok: true }
 })
@@ -961,6 +965,8 @@ api.post('/api/import', async (r) => {
   return { ok: true }
 })
 
+api.get('/api/audit', () => audit.list())
+
 api.get('/api/backups', () => store.backups())
 api.post('/api/backups', () => ({ name: store.backup('manuell') }))
 api.post('/api/backups/:name/restore', (r) => {
@@ -1045,6 +1051,7 @@ async function handle(raw: http.IncomingMessage, res: http.ServerResponse): Prom
       if (!m) throw new HttpError(404, 'Nicht gefunden.')
       req.params = m.params
       const result = await m.handler(req)
+      if (req.method !== 'GET') audit.add(req.ip, auditText(req.method, req.path, result))
       if (!res.headersSent) {
         if (typeof result === 'string') sendText(res, 200, result)
         else sendJson(res, 200, result ?? { ok: true })

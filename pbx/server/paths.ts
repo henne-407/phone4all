@@ -23,6 +23,7 @@ export const PATHS = {
   recordings: path.join(DATA, 'recordings'),
   spool: path.join(DATA, 'spool'),
   log: path.join(DATA, 'log'),
+  audit: path.join(DATA, 'log', 'audit.jsonl'),
   db: path.join(DATA, 'db'),
   keys: path.join(DATA, 'keys'),
   etc: path.resolve(env.PBX_ASTERISK_ETC || '/etc/asterisk'),

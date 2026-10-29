@@ -158,3 +158,14 @@ describe('Verschlüsselter Export', () => {
     expect(() => decryptExport({ ...enc, kdf: { ...enc.kdf, N: 1 << 25 } }, 'x')).toThrow(/beschädigt/)
   })
 })
+
+describe('Änderungsprotokoll', () => {
+  it('schreibt Einträge und liefert die neuesten zuerst', async () => {
+    const { AuditLog, auditText } = await import('../server/audit')
+    const log = new AuditLog(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'p4a-audit-')), 'log', 'audit.jsonl'))
+    expect(log.list()).toEqual([])
+    log.add('192.0.2.1', 'Angemeldet', 1)
+    log.add('192.0.2.1', auditText('POST', '/api/extensions', { number: '10', name: 'Anna' }), 2)
+    expect(log.list().map((e) => e.action)).toEqual(['Gespeichert: /api/extensions (10 Anna)', 'Angemeldet'])
+  })
+})
