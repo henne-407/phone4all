@@ -244,6 +244,9 @@ export class Updater {
     }
     try {
       info.project = (await composeInfo()).project
+      // Beim Start lief der Hilfscontainer evtl. noch: jetzt auswerten
+      await this.collect().catch(() => undefined)
+      info.last = this.info.last
       info.canApply = true
       info.reason = ''
       // TrueNAS-Apps (Projekt „ix-…“) lesen keine .env: Der Kanal folgt dem Image-Tag der App
