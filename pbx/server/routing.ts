@@ -356,6 +356,8 @@ export function feature(cfg: PbxConfig, state: RuntimeState, ext: string, code: 
       state.cfu[ext] = target
       return { reply: 'on', stateChanged: true }
     }
+    case 'vmother':
+      return { reply: appPermissions(cfg, ext).includes('voicemail_other') ? 'on' : 'error' }
     case 'tc': {
       const tc = cfg.timeconditions[Number(arg) - 1]
       if (!tc) return { reply: 'error' }

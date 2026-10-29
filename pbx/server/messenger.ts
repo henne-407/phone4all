@@ -152,9 +152,14 @@ export class MessengerStore {
   }
 
   /** Gruppe umbenennen oder Mitglieder ändern; liefert die bisherigen Mitglieder */
-  updateGroup(r: ChatRoom, change: { name?: string; members?: string[] }): string[] {
+  /** @param by wer ändert; andere entfernen darf nur, wer die Gruppe angelegt hat (solange Mitglied) */
+  updateGroup(r: ChatRoom, change: { name?: string; members?: string[] }, by = ''): string[] {
     if (r.kind !== 'group') throw new ChatError('Nur Gruppen lassen sich ändern.')
     const before = r.members
+    const removesOthers = change.members && before.some((m) => m !== by && !change.members!.includes(m))
+    if (by && removesOthers && by !== r.created_by && before.includes(r.created_by)) {
+      throw new ChatError('Andere Mitglieder entfernen kann nur, wer die Gruppe angelegt hat.')
+    }
     if (change.name !== undefined) {
       const clean = change.name.trim().slice(0, 80)
       if (!clean) throw new ChatError('Die Gruppe braucht einen Namen.')
@@ -462,7 +467,7 @@ export class MessengerHub {
         const before = r.members
         if (members) for (const m of members.filter((x) => !before.includes(x))) this.member(m)
         const oldName = r.name
-        s.updateGroup(r, { name: msg.name === undefined ? undefined : String(msg.name), members })
+        s.updateGroup(r, { name: msg.name === undefined ? undefined : String(msg.name), members }, c.ext)
         const added = r.members.filter((m) => !before.includes(m))
         const gone = before.filter((m) => !r.members.includes(m))
         const notes: string[] = []

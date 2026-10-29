@@ -128,13 +128,12 @@ export function parseProfile(data: unknown): PbxProfile {
     throw new Error('Die Antwort ist kein Profil einer Phone4all-Telefonanlage.')
   }
   if (typeof p.password !== 'string' || p.password.includes(';')) throw new Error('Das Profil enthält kein gültiges Passwort.')
-  if (!['udp', 'tcp', 'tls'].includes(p.account.transport)) p.account.transport = 'udp'
   return {
     format: PROFILE_FORMAT,
     version: Number(p.version) || 1,
     pbx: { name: String(p.pbx?.name ?? 'Telefonanlage'), version: String(p.pbx?.version ?? '') },
     extension: String(p.extension ?? p.account.user),
-    account: p.account,
+    account: parseAccount(p.account),
     password: p.password,
     url: typeof p.url === 'string' && /^https?:\/\//.test(p.url) ? p.url : '',
     phonebook: Array.isArray(p.phonebook) ? p.phonebook.filter((e) => e && typeof e.phone === 'string') : [],
@@ -144,6 +143,35 @@ export function parseProfile(data: unknown): PbxProfile {
     messenger: p.messenger === true,
     video: p.messenger === true ? parseVideo(p.video) : null,
     revision: String(p.revision ?? ''),
+  }
+}
+
+/**
+ * Nur bekannte Felder übernehmen; sie landen in der Kontozeile von baresip, daher keine
+ * Zeichen, mit denen sich weitere Parameter oder Zeilen einschmuggeln ließen.
+ */
+export function parseAccount(raw: Partial<AccountSettings>): AccountSettings {
+  const text = (v: unknown, pattern = /^[\w.:@[\]-]*$/): string => {
+    const s = String(v ?? '').trim()
+    if (!pattern.test(s)) throw new Error('Das Profil enthält ungültige Kontodaten.')
+    return s
+  }
+  const num = (v: unknown, max: number): number => {
+    const n = Number(v)
+    return Number.isInteger(n) && n >= 0 && n <= max ? n : 0
+  }
+  return {
+    display_name: String(raw.display_name ?? '').replace(/["<>;\r\n\\]/g, '').slice(0, 80),
+    user: text(raw.user),
+    domain: text(raw.domain),
+    auth_user: text(raw.auth_user),
+    port: num(raw.port, 65535),
+    local_port: num(raw.local_port, 65535),
+    transport: raw.transport === 'tcp' || raw.transport === 'tls' ? raw.transport : 'udp',
+    outbound: text(raw.outbound, /^[\w.:@[\];=-]*$/),
+    stun: text(raw.stun),
+    mediaenc: ['srtp', 'srtp-mand', 'srtp-mandf', 'dtls_srtp', 'zrtp'].includes(String(raw.mediaenc)) ? String(raw.mediaenc) : '',
+    regint: num(raw.regint, 86400) || 300,
   }
 }
 

@@ -88,7 +88,7 @@ export interface ForwardRule {
 }
 
 /** Was eine Nebenstelle in der App selbst einstellen darf */
-export type AppPermission = 'forward' | 'forward_external' | 'forward_rules' | 'calendar_edit' | 'phonebook_edit'
+export type AppPermission = 'forward' | 'forward_external' | 'forward_rules' | 'calendar_edit' | 'phonebook_edit' | 'voicemail_other'
 
 export const APP_PERMISSIONS: [AppPermission, string, string][] = [
   ['forward', 'Umleitung schalten', 'In der App die Sofort-Umleitung ein- und ausschalten'],
@@ -96,6 +96,7 @@ export const APP_PERMISSIONS: [AppPermission, string, string][] = [
   ['forward_rules', 'Umleitungsregeln bearbeiten', 'Weiterleitung bei besetzt/keine Antwort und Regeln nach Zeit'],
   ['calendar_edit', 'Zentrale Kalender bearbeiten', 'Termine in beschreibbaren zentralen Kalendern anlegen und ändern'],
   ['phonebook_edit', 'Telefonbuch bearbeiten', 'Einträge im zentralen Telefonbuch anlegen und ändern'],
+  ['voicemail_other', 'Fremde Voicemail abhören', 'Mit *98 andere Mailboxen abhören (mit deren PIN)'],
 ]
 
 export type GroupMode = 'all' | 'sequential' | 'queue'

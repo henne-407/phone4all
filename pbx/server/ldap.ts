@@ -278,7 +278,7 @@ function sameSecret(a: string, b: string): boolean {
 }
 
 /** Eine LDAP-Nachricht beantworten; liefert die Antworten (leer bei Unbind/Abandon) */
-export function respond(cfg: PbxConfig, msg: Ber, session: { bound: boolean }): Buffer[] | 'close' {
+export function respond(cfg: PbxConfig, msg: Ber, session: { bound: boolean; failed?: boolean }): Buffer[] | 'close' {
   const id = num(msg.children[0])
   const op = msg.children[1]
   if (!op) return 'close'
@@ -302,6 +302,7 @@ export function respond(cfg: PbxConfig, msg: Ber, session: { bound: boolean }): 
         session.bound = true
         return [result(id, 0x61, SUCCESS)]
       }
+      session.failed = true
       return [result(id, 0x61, INVALID_CREDENTIALS, 'Kennwort falsch')]
     }
     case 0x42: // UnbindRequest
@@ -331,6 +332,10 @@ export class LdapServer {
   private port = 0
   /** Für die Weboberfläche: läuft / Fehler beim Start */
   status: { listening: boolean; port: number; error: string } = { listening: false, port: 0, error: '' }
+
+  /** Gemeinsame Sperrliste: gesperrte Adressen abweisen, falsche Kennwörter melden */
+  isBlocked: (ip: string) => boolean = () => false
+  onFailure: (ip: string) => void = () => undefined
 
   constructor(private getCfg: () => PbxConfig) {}
 
@@ -367,11 +372,12 @@ export class LdapServer {
   }
 
   private connection(sock: net.Socket): void {
-    if (!this.allowed(sock.remoteAddress ?? '')) {
+    const ip = (sock.remoteAddress ?? '').replace(/^::ffff:/, '')
+    if (!this.allowed(sock.remoteAddress ?? '') || this.isBlocked(ip)) {
       sock.destroy()
       return
     }
-    const session = { bound: false }
+    const session: { bound: boolean; failed?: boolean } = { bound: false }
     let buf = Buffer.alloc(0)
     sock.setTimeout(60000, () => sock.destroy())
     sock.on('error', () => sock.destroy())
@@ -387,6 +393,10 @@ export class LdapServer {
           if (!r) break
           buf = buf.subarray(r.end)
           const out = respond(this.getCfg(), r.ber, session)
+          if (session.failed) {
+            session.failed = false
+            this.onFailure(ip)
+          }
           if (out === 'close') {
             sock.end()
             return

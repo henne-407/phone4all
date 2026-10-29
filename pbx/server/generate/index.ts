@@ -1,5 +1,6 @@
 /** Erzeugt alle Asterisk-Konfigurationsdateien aus der Konfiguration der Anlage. */
 
+import { randomInt } from 'node:crypto'
 import type { PbxConfig } from '../model'
 import { webrtcEnabled } from '../remote'
 import type { GenContext } from './context'
@@ -151,7 +152,8 @@ function voicemailConf(cfg: PbxConfig, gen: GenContext): string {
     '[default]',
   ]
   for (const ext of cfg.extensions.filter((e) => e.voicemail.enabled)) {
-    const pin = ext.voicemail.pin.replace(/\D/g, '') || ext.number
+    // Ohne gültige PIN nie die Nebenstellennummer: dann ist die Mailbox per PIN nicht erreichbar
+    const pin = ext.voicemail.pin.replace(/\D/g, '') || String(randomInt(1e8, 1e9))
     const email = canMail ? val(ext.email).replace(/,/g, '') : ''
     const opts = [`attach=${ext.voicemail.attach ? 'yes' : 'no'}`, 'saycid=yes', 'envelope=no', 'tz=de']
     lines.push(`${ext.number} => ${pin},${val(ext.name).replace(/,/g, ' ')},${email},,${opts.join('|')}`)

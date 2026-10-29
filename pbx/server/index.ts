@@ -76,6 +76,8 @@ const sources = new SourceSync(
 )
 external.entries = () => sources.entries()
 const ldap = new LdapServer(() => store.config)
+ldap.isBlocked = (ip) => isBlocked(ip)
+ldap.onFailure = (ip) => auth.failed(ip, 'Falsches Kennwort am LDAP-Telefonbuch')
 const messenger = new MessengerHub(new MessengerStore(PATHS.messenger), () => store.config)
 auth.init()
 
@@ -327,11 +329,11 @@ function touchDevice(token: string, ip: string): void {
   })
 }
 
-pub.get('/api/session', (r) => ({
-  authenticated: auth.valid(r.cookies[SESSION_COOKIE]),
-  name: store.config.system.name,
-  version: SETTINGS.version,
-}))
+pub.get('/api/session', (r) => {
+  const authenticated = auth.valid(r.cookies[SESSION_COOKIE])
+  // Version nur nach Anmeldung (verrät sonst, welche Lücken offen sein könnten)
+  return { authenticated, name: store.config.system.name, ...(authenticated ? { version: SETTINGS.version } : {}) }
+})
 
 pub.post('/api/login', async (r) => {
   if (isBlocked(r.ip)) throw new HttpError(429, TOO_MANY)
@@ -1131,6 +1133,19 @@ async function main(): Promise<void> {
   }
   process.on('SIGTERM', () => void shutdown())
   process.on('SIGINT', () => void shutdown())
+}
+
+// Ein einzelner Fehler soll nicht die ganze Anlage (und laufende Gespräche) beenden
+for (const event of ['uncaughtException', 'unhandledRejection'] as const) {
+  process.on(event, (e: unknown) => {
+    const text = e instanceof Error ? e.stack || e.message : String(e)
+    console.error(`Unbehandelter Fehler: ${text}`)
+    try {
+      watchdog.log('error', 'asterisk', `Unbehandelter Fehler im Verwaltungsdienst: ${e instanceof Error ? e.message : String(e)}`)
+    } catch {
+      // Protokoll nicht verfügbar
+    }
+  })
 }
 
 void main()

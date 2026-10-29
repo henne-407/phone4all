@@ -130,3 +130,18 @@ describe('Kontingent im Messenger', () => {
     fs.rmSync(dir, { recursive: true, force: true })
   })
 })
+
+describe('Gruppenchat', () => {
+  it('nur wer die Gruppe angelegt hat, entfernt andere', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'p4a-group-'))
+    const s = new MessengerStore(dir)
+    const g = s.createGroup('10', 'Team', ['11', '12'])
+    expect(() => s.updateGroup(g, { members: ['10', '11'] }, '11')).toThrow(/angelegt hat/)
+    // hinzufügen und sich selbst austragen geht
+    s.updateGroup(g, { members: ['10', '11', '12', '13'] }, '11')
+    s.updateGroup(g, { members: ['10', '12', '13'] }, '11')
+    s.updateGroup(g, { members: ['10', '12'] }, '10')
+    expect(g.members).toEqual(['10', '12'])
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+})

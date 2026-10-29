@@ -109,7 +109,18 @@ function genericContexts(app: boolean, maxExt: number, maxTotal: number): string
     ctx(
       'p4a-features',
       exten('*97', ['Answer()', 'Wait(0.5)', 'VoiceMailMain(${P4A_EXT}@default,s)', 'Hangup()']),
-      exten('*98', ['Answer()', 'Wait(0.5)', 'VoiceMailMain(@default)', 'Hangup()']),
+      // Fremde Mailboxen nur mit dem Recht voicemail_other
+      exten('*98', [
+        'Answer()',
+        'Wait(0.5)',
+        CURL_TIMEOUT,
+        'Set(R=${CURL(${P4A_API}/feature?ext=${P4A_EXT}&code=vmother)})',
+        'GotoIf($["${R}" != "on"]?deny)',
+        'VoiceMailMain(@default)',
+        'Hangup()',
+        '(deny)Playback(pbx-invalid)',
+        'Hangup()',
+      ]),
       exten('*8', ['Pickup()', 'Hangup()']),
       exten('_**X.', ['Pickup(${EXTEN:2}@PICKUPMARK)', 'Hangup()']),
       exten('*76', ['Gosub(p4a-feature,s,1(dnd,))', 'Hangup()']),

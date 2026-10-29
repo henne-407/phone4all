@@ -102,6 +102,11 @@ export function migrateDevices(raw: unknown, exts: Extension[], now = Date.now()
   }
 }
 
+/** Selbst gewählte SIP-Passwörter: mindestens 12 Zeichen (ältere kürzere bleiben gültig) */
+export function checkNewSecret(secret: string): void {
+  if (secret.length < 12) throw new ValidationError('Das SIP-Passwort braucht mindestens 12 Zeichen (oder leer lassen für ein zufälliges).')
+}
+
 export function newPin(digits = 6): string {
   return Array.from({ length: digits }, () => randomInt(10)).join('')
 }
@@ -111,7 +116,7 @@ export function fillSecrets(ext: Extension): void {
   if (!ext.secret) ext.secret = newSecret()
   if (!ext.provision_token) renewLink(ext)
   if (!/^\d{6,}$/.test(ext.provision_pin)) renewPin(ext)
-  if (!ext.voicemail.pin) ext.voicemail.pin = newPin(4)
+  if (!/^\d+$/.test(ext.voicemail.pin)) ext.voicemail.pin = newPin(4)
 }
 
 /** Fehlende Geheimnisse einer DECT-Basis ergänzen; MAC einheitlich schreiben. */
@@ -348,6 +353,7 @@ export class ConfigStore {
     this.update((draft) => {
       const list = draft[kind] as unknown as Record<string, unknown>[]
       if (!item.id) {
+        if (kind === 'extensions' && item.secret) checkNewSecret(String(item.secret))
         saved = { ...item, id: newId() }
         list.push(saved)
       } else {
@@ -357,6 +363,7 @@ export class ConfigStore {
         saved = { ...list[i], ...item }
         if (kind === 'trunks' && !item.password) saved.password = list[i].password
         if (kind === 'extensions' && !item.secret) saved.secret = list[i].secret
+        if (kind === 'extensions' && item.secret && item.secret !== list[i].secret) checkNewSecret(String(item.secret))
         // Einladungslink, PIN und Geräte vergibt nur der Server (die Oberfläche hat evtl. einen alten Stand)
         if (kind === 'extensions') {
           for (const k of ['provision_token', 'provision_expires', 'provision_pin', 'provision_pin_expires', 'devices']) saved[k] = list[i][k]

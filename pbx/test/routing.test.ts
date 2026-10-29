@@ -164,3 +164,17 @@ describe('Ausgehende Anrufe', () => {
     expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '030555', cid: '' })).toBe('deny')
   })
 })
+
+describe('Fremde Voicemail (*98)', () => {
+  it('nur mit Recht, und nie mit der Nebenstellennummer als PIN', () => {
+    const cfg = sampleConfig()
+    const s: RuntimeState = structuredClone(EMPTY_STATE)
+    expect(feature(cfg, s, '10', 'vmother', '').reply).toBe('error')
+    cfg.groups[0].permissions = ['voicemail_other']
+    const member = cfg.groups[0].members[0]
+    expect(feature(cfg, s, member, 'vmother', '').reply).toBe('on')
+    cfg.extensions[0].voicemail.pin = 'abc'
+    expect(generate(cfg, gen)['voicemail.conf']).not.toMatch(/^10 => 10,/m)
+    expect(generate(cfg, gen)['extensions.conf']).toMatch(/code=vmother/)
+  })
+})
