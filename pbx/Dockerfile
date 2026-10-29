@@ -1,6 +1,8 @@
 # Phone4all Telefonanlage: Asterisk 20 (LTS) aus Ubuntu 24.04 plus Verwaltungsdienst (Node.js)
 
-FROM node:24-slim AS build
+# Bauen und Testen einmal auf der Bau-Plattform: das Ergebnis ist reines JavaScript, unter
+# Emulation (arm64) wären die Tests langsam und liefen in Zeitlimits
+FROM --platform=$BUILDPLATFORM node:24-slim AS build
 WORKDIR /src
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
