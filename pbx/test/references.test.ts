@@ -43,7 +43,7 @@ describe('Nebenstelle umnummerieren und löschen', () => {
     expect(store.state.cfu['11']).toBe('20')
     expect(moved).toEqual(['10>20'])
 
-    store.remove('extensions', a.id)
+    store.remove('extensions', String(a.id))
     expect(store.config.groups[0].members).toEqual(['11'])
     expect(store.config.extensions[0].forward.busy).toBe('')
     expect(store.state.cfu['11']).toBeUndefined()

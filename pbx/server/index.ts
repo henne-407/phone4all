@@ -878,6 +878,7 @@ async function main(): Promise<void> {
   startDiscovery(() => store.config)
   asterisk.start()
   watchdog.log('info', 'asterisk', `Verwaltungsdienst gestartet (Version ${SETTINGS.version})`)
+  if (store.recovered) watchdog.log('error', 'disk', store.recovered)
   watchdog.start()
   setTimeout(() => void watchdog.tick(), 15000).unref()
   sources.start()

@@ -213,15 +213,45 @@ export class ConfigStore {
   /** Daten außerhalb der Konfiguration mitziehen (Chats, Voicemail) */
   hooks = { renumbered: (_from: string, _to: string): void => undefined, removed: (_number: string): void => undefined }
 
+  /** Meldung, wenn die Konfiguration beim Start beschädigt war (für den Watchdog) */
+  recovered = ''
+
   constructor() {
     const fresh = !fs.existsSync(PATHS.config)
-    this.config = withDefaults(loadJson<Partial<PbxConfig>>(PATHS.config, structuredClone(DEFAULT_CONFIG)))
+    this.config = withDefaults(fresh ? structuredClone(DEFAULT_CONFIG) : this.loadConfig())
     const before = JSON.stringify(this.config)
     for (const e of this.config.extensions) fillSecrets(e)
     for (const b of this.config.dect) fillDectSecrets(b)
     this.state = { dnd: {}, cfu: {}, ...loadJson<Partial<RuntimeState>>(PATHS.state, {}) }
     // Neu vergebene Geheimnisse sofort speichern, sonst ändern sie sich beim nächsten Start
-    if (fresh || JSON.stringify(this.config) !== before) this.save()
+    if (fresh || this.recovered || JSON.stringify(this.config) !== before) this.save()
+  }
+
+  /**
+   * config.json lesen. Ist sie unlesbar (Platte voll, Stromausfall, Handarbeit), nicht
+   * mit leerer Anlage weitermachen: Datei beiseitelegen und die neueste Sicherung laden.
+   */
+  private loadConfig(): Partial<PbxConfig> {
+    try {
+      const data = JSON.parse(fs.readFileSync(PATHS.config, 'utf8')) as Partial<PbxConfig>
+      if (data && typeof data === 'object' && !Array.isArray(data)) return data
+      throw new Error('kein JSON-Objekt')
+    } catch (e) {
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+      const broken = `${PATHS.config}.defekt-${stamp}`
+      fs.copyFileSync(PATHS.config, broken)
+      for (const b of this.backups()) {
+        const data = loadJson<ExportFile | null>(path.join(PATHS.backups, b.name), null)
+        if (data?.format === 'phone4all-pbx' && data.config && typeof data.config === 'object') {
+          this.recovered = `Die Konfiguration war beschädigt (${(e as Error).message}) und wurde aus der Sicherung ${b.name} wiederhergestellt. Die beschädigte Datei liegt unter ${path.basename(broken)}.`
+          console.error(this.recovered)
+          return data.config
+        }
+      }
+      this.recovered = `Die Konfiguration war beschädigt (${(e as Error).message}) und es gibt keine Sicherung. Die Anlage startet leer; die beschädigte Datei liegt unter ${path.basename(broken)}.`
+      console.error(this.recovered)
+      return structuredClone(DEFAULT_CONFIG)
+    }
   }
 
   save(): void {
@@ -349,7 +379,7 @@ export class ConfigStore {
           const st = fs.statSync(path.join(PATHS.backups, name))
           return { name, size: st.size, time: st.mtimeMs }
         })
-        .sort((a, b) => b.name.localeCompare(a.name))
+        .sort((a, b) => b.time - a.time || b.name.localeCompare(a.name))
     } catch {
       return []
     }

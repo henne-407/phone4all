@@ -47,3 +47,22 @@ describe('Konfiguration', () => {
     expect(store.config.groups[0].members).toEqual(['10'])
   })
 })
+
+describe('Beschädigte Konfiguration', () => {
+  it('lädt die neueste Sicherung statt einer leeren Anlage', async () => {
+    const store = new ConfigStore()
+    store.upsert('extensions', { number: '77', name: 'Gesichert' })
+    const name = store.backup('test')
+    const { PATHS } = await import('../server/paths')
+    // Eindeutig die neueste Sicherung, auch wenn mehrere in derselben Millisekunde entstanden
+    const later = new Date(Date.now() + 10000)
+    fs.utimesSync(path.join(PATHS.backups, name), later, later)
+    fs.writeFileSync(PATHS.config, '{"extensions": [ abgeschnitten')
+    const again = new ConfigStore()
+    expect(again.recovered).toContain('wiederhergestellt')
+    expect(again.config.extensions.some((e) => e.number === '77')).toBe(true)
+    expect(fs.readdirSync(PATHS.data).some((f) => f.startsWith('config.json.defekt-'))).toBe(true)
+    // Wiederhergestellt und gleich wieder gespeichert
+    expect(JSON.parse(fs.readFileSync(PATHS.config, 'utf8')).extensions.length).toBeGreaterThan(0)
+  })
+})
