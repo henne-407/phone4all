@@ -123,6 +123,19 @@ describe('Messenger-Ablage', () => {
     expect(rooms.reduce((n, r) => n + s.messages(r.id).length, 0)).toBe(15 - removed)
   })
 
+  it('lässt nur die Verwaltung der Gruppe andere entfernen', () => {
+    const s = new MessengerStore(dir)
+    const g = s.createGroup('10', 'Team', ['11', '12'])
+    expect(() => s.updateGroup(g, { members: ['10', '11'] }, '11')).toThrow(/angelegt/)
+    s.updateGroup(g, { name: 'Team 2', members: ['10', '11', '12', '13'] }, '11')
+    expect(g.members).toEqual(['10', '11', '12', '13'])
+    s.updateGroup(g, { members: ['10', '11', '12'] }, '10')
+    // Verlässt die Verwaltung die Gruppe, dürfen alle übrigen
+    s.leave(g, '10')
+    s.updateGroup(g, { members: ['11'] }, '11')
+    expect(g.members).toEqual(['11'])
+  })
+
   it('vergibt nach einem Absturz keine Nummern doppelt', () => {
     const s = new MessengerStore(dir)
     const r = s.direct('10', '11')

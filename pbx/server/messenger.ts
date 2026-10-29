@@ -60,6 +60,11 @@ export function lastSeq(file: string): number {
   }
 }
 
+/** Verwaltet die Gruppe: wer sie angelegt hat – ist er nicht mehr dabei, jedes Mitglied */
+export function isGroupAdmin(r: ChatRoom, ext: string): boolean {
+  return r.created_by === ext || !r.members.includes(r.created_by)
+}
+
 /** Unterhaltung aus Sicht einer Nebenstelle */
 export interface RoomView extends ChatRoom {
   last: ChatMessage | null
@@ -215,9 +220,13 @@ export class MessengerStore {
   }
 
   /** Gruppe umbenennen oder Mitglieder ändern; liefert die bisherigen Mitglieder */
-  updateGroup(r: ChatRoom, change: { name?: string; members?: string[] }): string[] {
+  updateGroup(r: ChatRoom, change: { name?: string; members?: string[] }, by = ''): string[] {
     if (r.kind !== 'group') throw new ChatError('Nur Gruppen lassen sich ändern.')
     const before = r.members
+    // Hinzufügen und Umbenennen darf jedes Mitglied, andere entfernen nur, wer die Gruppe verwaltet
+    if (by && change.members && !isGroupAdmin(r, by) && before.some((m) => m !== by && !change.members?.includes(m))) {
+      throw new ChatError('Mitglieder entfernen kann nur, wer die Gruppe angelegt hat.')
+    }
     if (change.name !== undefined) {
       const clean = change.name.trim().slice(0, 80)
       if (!clean) throw new ChatError('Die Gruppe braucht einen Namen.')
@@ -245,6 +254,10 @@ export class MessengerStore {
   renumber(from: string, to: string): void {
     let changed = false
     for (const r of this.rooms.values()) {
+      if (r.created_by === from) {
+        r.created_by = to
+        changed = true
+      }
       if (!r.members.includes(from)) continue
       r.members = r.members.map((m) => (m === from ? to : m))
       if (from in r.read) {
@@ -263,6 +276,8 @@ export class MessengerStore {
   forget(number: string): string[] {
     const affected: string[] = []
     for (const r of [...this.rooms.values()]) {
+      // Eine spätere Nebenstelle mit derselben Nummer verwaltet die alten Gruppen nicht
+      if (r.created_by === number) r.created_by = ''
       if (!r.members.includes(number)) continue
       affected.push(r.id)
       r.members = r.members.filter((m) => m !== number)
@@ -553,7 +568,7 @@ export class MessengerHub {
         const before = r.members
         if (members) for (const m of members.filter((x) => !before.includes(x))) this.member(m)
         const oldName = r.name
-        s.updateGroup(r, { name: msg.name === undefined ? undefined : String(msg.name), members })
+        s.updateGroup(r, { name: msg.name === undefined ? undefined : String(msg.name), members }, c.ext)
         const added = r.members.filter((m) => !before.includes(m))
         const gone = before.filter((m) => !r.members.includes(m))
         const notes: string[] = []
