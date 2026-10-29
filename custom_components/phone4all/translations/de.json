@@ -47,6 +47,12 @@
       "active_calls": { "name": "Laufende Gespräche" }
     },
     "event": {
+      "emergency_event": {
+        "name": "Notruf",
+        "state_attributes": {
+          "event_type": { "state": { "emergency_call": "Notruf gewählt" } }
+        }
+      },
       "missed_call_event": {
         "name": "Verpasster Anruf",
         "state_attributes": {

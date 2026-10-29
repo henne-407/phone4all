@@ -14,6 +14,7 @@ SUPPORTED_API = 1
 
 # Ereignisse auf dem Ereignisbus von Home Assistant (für Automationen)
 EVENT_MISSED_CALL = "phone4all_missed_call"
+EVENT_EMERGENCY_CALL = "phone4all_emergency_call"
 EVENT_PROBLEM = "phone4all_problem"
 EVENT_PROBLEM_RESOLVED = "phone4all_problem_resolved"
 

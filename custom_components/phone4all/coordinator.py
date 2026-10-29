@@ -14,6 +14,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .api import Phone4allApi, Phone4allAuthError, Phone4allError
 from .const import (
     DOMAIN,
+    EVENT_EMERGENCY_CALL,
     EVENT_MISSED_CALL,
     EVENT_PROBLEM,
     EVENT_PROBLEM_RESOLVED,
@@ -38,6 +39,7 @@ class Phone4allCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         super().__init__(hass, _LOGGER, config_entry=entry, name=DOMAIN, update_interval=SCAN_INTERVAL)
         self.api = api
         self._seen: list[str] | None = None
+        self._seen_emergency: list[str] | None = None
         self._problems: dict[str, str] = {}
         self._event_listeners: list[Callable[[str, dict[str, Any]], None]] = []
 
@@ -75,7 +77,33 @@ class Phone4allCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self._set_problems({p["key"]: p["message"] for p in data.get("problems", [])})
         self._check_missed(data.get("missed", {}).get("calls", []))
+        # Ab Telefonanlage 0.9: Notrufe (110/112) von Nebenstellen
+        self._check_emergency(data.get("emergency", []))
         return data
+
+    def _check_emergency(self, calls: list[dict[str, Any]]) -> None:
+        ids = [c["id"] for c in calls]
+        if self._seen_emergency is None:
+            # Erster Abruf: frühere Notrufe nicht nachträglich melden
+            self._seen_emergency = ids
+            return
+        for call in reversed(calls):
+            if call["id"] in self._seen_emergency:
+                continue
+            self._seen_emergency.append(call["id"])
+            _LOGGER.warning("%s: Notruf %s von Nebenstelle %s", self.config_entry.title, call["number"], call["extension"])
+            self._fire(
+                EVENT_EMERGENCY_CALL,
+                "emergency_call",
+                {
+                    "call_id": call["id"],
+                    "time": call["time"],
+                    "extension": call["extension"],
+                    "name": call["name"],
+                    "number": call["number"],
+                },
+            )
+        del self._seen_emergency[:-SEEN_LIMIT]
 
     def _check_missed(self, calls: list[dict[str, Any]]) -> None:
         ids = [c["id"] for c in calls]

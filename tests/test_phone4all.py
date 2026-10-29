@@ -166,3 +166,20 @@ async def test_blueprint(hass: HomeAssistant) -> None:
     config = inputs.async_substitute()
     PLATFORM_SCHEMA(config)
     assert config["actions"][0]["choose"][1]["sequence"][0]["timeout"] == {"minutes": 2}
+
+
+async def test_emergency(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) -> None:
+    report = deepcopy(REPORT)
+    report["emergency"] = [{"id": "e1", "time": "2026-10-24T06:00:00.000Z", "extension": "10", "name": "Anna", "number": "112"}]
+    await setup(hass, aioclient_mock, report)
+    emergencies = async_capture_events(hass, "phone4all_emergency_call")
+
+    # Neuer Notruf; der beim Start schon bekannte wird nicht gemeldet
+    report["emergency"].insert(0, {"id": "e2", "time": "2026-10-24T09:00:00.000Z", "extension": "11", "name": "Bert", "number": "110"})
+    await refresh(hass, aioclient_mock, report)
+    await refresh(hass, aioclient_mock, report)
+    assert [e.data["call_id"] for e in emergencies] == ["e2"]
+    assert emergencies[0].data["extension"] == "11"
+    event = hass.states.get("event.buro_emergency_call")
+    assert event.attributes["event_type"] == "emergency_call"
+    assert event.attributes["number"] == "110"
