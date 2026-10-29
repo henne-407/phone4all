@@ -36,6 +36,19 @@ describe('Konfiguration', () => {
     expect(store.backups().some((b) => b.name.includes('vor-import'))).toBe(true)
   })
 
+  it('lässt beim Import keine Zeilen in die Asterisk-Konfiguration schmuggeln', () => {
+    const data = store.exportData(true, false, 'test')
+    data.config.trunks = [{ ...(data.config.trunks[0] ?? {}), id: 'x]\n[evil', name: 'Böse', registrar: 'sip.example.de', enabled: false } as never]
+    expect(() => store.importData(data)).toThrow(/Ungültige ID/)
+  })
+
+  it('prüft Adressen und Netze in den Sicherheitseinstellungen', () => {
+    expect(() => store.update((d) => void (d.security.trusted_proxies = ['192.168.1.0/33']))).toThrow(/Vertrauenswürdige Proxys/)
+    expect(() => store.update((d) => void (d.security.whitelist = ['irgendwas']))).toThrow(/Nie sperren/)
+    store.update((d) => void (d.security.trusted_proxies = ['192.168.1.20', '10.0.0.0/8', '::1']))
+    expect(store.config.security.trusted_proxies).toContain('10.0.0.0/8')
+  })
+
   it('weist fremde Dateien zurück', () => {
     expect(() => store.importData({ format: 'other' } as never)).toThrow(ValidationError)
   })

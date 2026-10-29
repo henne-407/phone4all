@@ -13,7 +13,7 @@ import { loadJson, saveJson } from './files'
 import { type ForwardChange, ForwardError, applyCfu, applyRules, check as checkForward, forwardInfo } from './forwarding'
 import { integrationReport, validToken } from './integration'
 import { LdapServer } from './ldap'
-import { HttpError, type Request, Router, makeRequest, sendFile, sendJson, sendText, serveStatic } from './http'
+import { HttpError, type Request, Router, clientIp, makeRequest, proxyHints, sendFile, sendJson, sendText, serveStatic, setTrustedProxies, socketIp } from './http'
 import { sendMail } from './mail'
 import { ChatError, MessengerHub, MessengerStore, messengerUsers } from './messenger'
 import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, type PhonebookEntry, SECTIONS, type SectionName } from './model'
@@ -41,6 +41,7 @@ import { type WatchEvent, Watchdog } from './watchdog'
 import { reject, upgrade } from './websocket'
 
 const store = new ConfigStore()
+setTrustedProxies(() => store.config.security.trusted_proxies)
 const auth = new Auth()
 const asterisk = new Asterisk()
 const turn = new Turn()
@@ -204,13 +205,19 @@ pub.post('/api/login', async (r) => {
     throw new HttpError(401, 'Das Passwort ist falsch.')
   }
   const token = auth.login()
-  r.res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MAX_AGE}`)
+  r.res.setHeader('Set-Cookie', sessionCookie(r, token, SESSION_MAX_AGE))
   return { ok: true }
 })
 
+/** Sitzungs-Cookie; über HTTPS (auch hinter dem Proxy) mit Secure */
+function sessionCookie(r: Request, token: string, maxAge: number): string {
+  const https = r.raw.headers['x-forwarded-proto'] === 'https' || 'encrypted' in r.raw.socket
+  return `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${https ? '; Secure' : ''}`
+}
+
 pub.post('/api/logout', (r) => {
   auth.logout(r.cookies[SESSION_COOKIE] ?? '')
-  r.res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`)
+  r.res.setHeader('Set-Cookie', sessionCookie(r, '', 0))
   return { ok: true }
 })
 
@@ -402,6 +409,8 @@ pub.post('/provision', async (r) => {
 pub.get('/setup/:token', (r) => {
   const ext = store.config.extensions.find((e) => e.provision_token && e.provision_token === r.params.token)
   if (!ext) throw new HttpError(404, 'Unbekannter Einrichtungslink.')
+  r.res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'")
+  r.res.setHeader('Referrer-Policy', 'no-referrer')
   sendText(r.res, 200, landingPage(store.config, ext, linkBase(store.config, requestBase(r))), 'text/html; charset=utf-8')
 })
 
@@ -633,6 +642,7 @@ api.get('/api/status', async () => ({
   update: updater.info,
   version: SETTINGS.version,
   remote: { enabled: store.config.remote.enabled, turn: turn.state, connections: ws.count },
+  proxy_hints: [...proxyHints].map(([ip, time]) => ({ ip, time })),
   watchdog: watchdog.status(),
 }))
 
@@ -703,7 +713,7 @@ api.post('/api/password', async (r) => {
   if (!password || password.length < 10) throw new HttpError(400, 'Das neue Passwort braucht mindestens 10 Zeichen.')
   auth.setPassword(password)
   const token = auth.login()
-  r.res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MAX_AGE}`)
+  r.res.setHeader('Set-Cookie', sessionCookie(r, token, SESSION_MAX_AGE))
   return { ok: true }
 })
 
@@ -791,7 +801,8 @@ async function handle(raw: http.IncomingMessage, res: http.ServerResponse): Prom
   try {
     if (req.path.startsWith('/internal/')) {
       const m = internal.match(req.method, req.path)
-      if (!isLoopback(req.ip) || !m) throw new HttpError(404, '')
+      // Nur echte Verbindungen von 127.0.0.1 – Kopfzeilen wie X-Forwarded-For zählen hier nicht
+      if (!isLoopback(socketIp(raw)) || !m) throw new HttpError(404, '')
       req.params = m.params
       sendText(res, 200, String(await m.handler(req)))
       return
@@ -837,7 +848,7 @@ async function main(): Promise<void> {
   server.on('upgrade', (req, socket, head: Buffer) => {
     const m = /^\/provision\/([^/?]+)\/chat\/?(\?.*)?$/.exec(req.url ?? '')
     if (!m) return ws.upgrade(req, socket, head)
-    const ip = (req.socket.remoteAddress ?? '').replace(/^::ffff:/, '')
+    const ip = clientIp(req)
     if (auth.blocked(ip)) return reject(socket, 429, 'Too Many Requests')
     const ext = store.config.extensions.find((e) => e.provision_token && e.provision_token === decodeURIComponent(m[1]))
     if (!ext) {

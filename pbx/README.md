@@ -50,8 +50,9 @@ Einrichtung, Kontakte und Kalender laufen wie bei der Desktop-App über `/provis
 SIP als WebSocket über `/ws` (die Anlage reicht das an Asterisk weiter), die Sprache per
 WebRTC mit DTLS-SRTP. Weil die Anlage hinter dem Proxy keine eigene öffentliche Adresse
 hat, läuft die Sprache über den eingebauten TURN-Server (coturn, Port 3478). Er leitet
-nur zur Anlage selbst weiter, nicht ins Internet, und vergibt Zugangsdaten, die nach
-acht Tagen ablaufen.
+nur per UDP und nur zur SIP-Adresse der Anlage weiter (`no-tcp-relay`, keine Docker-
+oder VPN-Netze), nicht ins Internet, und vergibt Zugangsdaten, die nach acht Tagen
+ablaufen.
 
 Mit **Pangolin** (oder einem anderen Proxy, der WebSockets durchreicht):
 
@@ -67,8 +68,11 @@ Mit **Pangolin** (oder einem anderen Proxy, der WebSockets durchreicht):
 
 Jede Nebenstelle bekommt dafür ein zweites Gerät `<nummer>-app` (gleiches Passwort).
 Anrufe klingeln überall gleichzeitig, *Nicht stören*, Weiterleitungen und Gruppen gelten
-für beide. Fehlanmeldungen über den WebSocket sperren die Adresse des Telefons (aus
-`X-Forwarded-For` des Proxys), nicht den Proxy.
+für beide. `<nummer>-app` und `<nummer>-video` nehmen Anmeldungen nur über den
+WebSocket-Proxy der Anlage an (127.0.0.1), nicht direkt per UDP/TCP. Fehlanmeldungen über
+den WebSocket sperren die Adresse des Telefons (aus `X-Forwarded-For` des Proxys), nicht
+den Proxy. `X-Forwarded-For` gilt nur von *vertrauenswürdigen Proxys* (Einstellung
+`security.trusted_proxies`, Standard 127.0.0.1, ::1 und 172.16.0.0/12).
 
 ## Funktionen
 

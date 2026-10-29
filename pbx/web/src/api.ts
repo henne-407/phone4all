@@ -77,6 +77,8 @@ export interface StatusResponse {
   update: UpdateInfo
   version: string
   remote: { enabled: boolean; turn: 'off' | 'running' | 'missing' | 'error'; connections: number }
+  /** Absender mit X-Forwarded-For, die nicht als Proxy eingetragen sind */
+  proxy_hints: { ip: string; time: number }[]
   watchdog: WatchdogStatus
 }
 

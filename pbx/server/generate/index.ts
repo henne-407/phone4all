@@ -17,7 +17,7 @@ const MODULES = [
   // PJSIP
   'res_pjproject', 'res_pjsip', 'res_pjsip_session', 'res_pjsip_authenticator_digest',
   'res_pjsip_outbound_authenticator_digest', 'res_pjsip_endpoint_identifier_ip',
-  'res_pjsip_endpoint_identifier_user', 'res_pjsip_endpoint_identifier_anonymous', 'res_pjsip_registrar',
+  'res_pjsip_endpoint_identifier_user', 'res_pjsip_registrar',
   'res_pjsip_outbound_registration', 'res_pjsip_nat', 'res_pjsip_sdp_rtp', 'res_pjsip_caller_id',
   'res_pjsip_diversion', 'res_pjsip_dtmf_info', 'res_pjsip_header_funcs', 'res_pjsip_acl', 'res_pjsip_refer',
   'res_pjsip_rfc3326', 'res_pjsip_pubsub', 'res_pjsip_outbound_publish', 'res_pjsip_exten_state', 'res_pjsip_mwi',

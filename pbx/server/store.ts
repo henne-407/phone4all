@@ -2,6 +2,7 @@
 
 import { randomBytes, randomInt } from 'node:crypto'
 import fs from 'node:fs'
+import net from 'node:net'
 import path from 'node:path'
 import { loadJson, saveJson, writeAtomic } from './files'
 import {
@@ -84,7 +85,32 @@ function validateRule(num: string, r: ForwardRule): void {
   }
 }
 
+/** IDs landen in Dateinamen und Asterisk-Konfiguration (Kontexte, Abschnitte) */
+const ID = /^[A-Za-z0-9_-]{1,64}$/
+
+/** IPv4/IPv6-Adresse oder IPv4-Netz in CIDR-Schreibweise */
+export function isAddressOrNet(entry: string): boolean {
+  const [addr, bits, extra] = entry.trim().split('/')
+  if (extra !== undefined) return false
+  if (bits === undefined) return net.isIP(addr) !== 0
+  return net.isIPv4(addr) && /^\d{1,2}$/.test(bits) && Number(bits) <= 32
+}
+
 export function validate(cfg: PbxConfig): void {
+  for (const kind of COLLECTIONS) {
+    for (const item of cfg[kind] as unknown as { id: unknown }[]) {
+      if (typeof item.id !== 'string' || !ID.test(item.id)) throw new ValidationError(`Ungültige ID „${String(item.id)}“ (nur Buchstaben, Ziffern, - und _).`)
+    }
+  }
+  const sec = cfg.security
+  for (const [label, list] of [
+    ['Nie sperren', sec.whitelist],
+    ['Nebenstellen nur aus diesen Netzen', sec.extension_nets],
+    ['Vertrauenswürdige Proxys', sec.trusted_proxies],
+  ] as const) {
+    const bad = list.find((e) => !isAddressOrNet(e))
+    if (bad !== undefined) throw new ValidationError(`${label}: „${bad}“ ist keine IP-Adresse und kein Netz wie 192.168.1.0/24.`)
+  }
   for (const e of cfg.extensions) {
     if (!isInternalNumber(e.number)) throw new ValidationError(`Ungültige Nebenstelle „${e.number}“: 2–6 Ziffern, nicht mit 0 beginnend.`)
     if (!e.name.trim()) throw new ValidationError(`Nebenstelle ${e.number}: Name fehlt.`)

@@ -2,9 +2,9 @@ import { createHmac } from 'node:crypto'
 import type http from 'node:http'
 import { describe, expect, it } from 'vitest'
 import { generate } from '../server/generate'
-import { clientIp } from '../server/http'
+import { DEFAULT_TRUSTED_PROXIES, clientIp, proxyHints, setTrustedProxies } from '../server/http'
 import { profile } from '../server/provisioning'
-import { turnConf, turnCredentials } from '../server/remote'
+import { localAddresses, turnConf, turnCredentials, turnPeers } from '../server/remote'
 import { remotePort } from '../server/security'
 import { gen, sampleConfig } from './helpers'
 
@@ -63,6 +63,33 @@ describe('Zugriff von unterwegs', () => {
     expect(conf).toContain('denied-peer-ip=0.0.0.0-255.255.255.255')
     expect(conf).toContain('allowed-peer-ip=192.168.1.5')
     expect(conf).toContain('static-auth-secret=geheim')
+    expect(conf).toContain('no-tcp-relay')
+  })
+
+  it('lässt das TURN-Relais nur zur Anlage weiterleiten, nicht in Docker-Netze', () => {
+    const v4 = (address: string, internal = false) => ({ address, family: 'IPv4', internal }) as never
+    const ifaces = { lo: [v4('127.0.0.1', true)], eth0: [v4('192.168.1.5')], docker0: [v4('172.17.0.1')], 'br-1a2b': [v4('172.18.0.1')], tailscale0: [v4('100.64.1.2')] }
+    expect(localAddresses(ifaces)).toEqual(['192.168.1.5'])
+    const cfg = sampleConfig()
+    expect(turnPeers(cfg, ['192.168.1.5', '10.0.0.2'])).toEqual(['192.168.1.5', '10.0.0.2'])
+    cfg.system.sip_host = '10.0.0.2'
+    expect(turnPeers(cfg, ['192.168.1.5', '10.0.0.2'])).toEqual(['10.0.0.2'])
+    // Fremde Adresse als SIP-Adresse: nicht als Ziel übernehmen
+    cfg.system.sip_host = '8.8.8.8'
+    expect(turnPeers(cfg, ['192.168.1.5'])).toEqual(['192.168.1.5'])
+  })
+
+  it('lässt App- und Videogeräte nur über den eigenen WebSocket-Proxy zu', () => {
+    const cfg = sampleConfig()
+    cfg.security.extension_nets = ['192.168.0.0/16']
+    const pjsip = generate(cfg, gen)['pjsip.conf']
+    const app = /\[10-app\]\(p4a-app\)\n([^[]*)/.exec(pjsip)![1]
+    expect(app).toContain('deny=0.0.0.0/0.0.0.0')
+    expect(app).toContain('permit=127.0.0.1/255.255.255.255')
+    const video = /\[10-video\]\(p4a-video\)\n([^[]*)/.exec(pjsip)![1]
+    expect(video).toContain('permit=127.0.0.1/255.255.255.255')
+    expect(pjsip).toContain('endpoint_identifier_order=ip,username\n')
+    expect(generate(cfg, gen)['modules.conf']).not.toContain('anonymous')
   })
 
   it('nimmt die Adresse hinter dem Proxy aus dem letzten X-Forwarded-For-Eintrag', () => {
@@ -71,6 +98,13 @@ describe('Zugriff von unterwegs', () => {
     expect(clientIp(fakeReq('203.0.113.9', '10.0.0.1'))).toBe('203.0.113.9')
     expect(clientIp(fakeReq('172.18.0.3', '1.2.3.4, 198.51.100.7'))).toBe('198.51.100.7')
     expect(clientIp(fakeReq('::ffff:127.0.0.1', 'kaputt'))).toBe('127.0.0.1')
+    // Geräte im LAN sind keine Proxys: Sie können sich nicht als 127.0.0.1 ausgeben
+    expect(clientIp(fakeReq('192.168.1.20', '127.0.0.1'))).toBe('192.168.1.20')
+    expect(proxyHints.has('192.168.1.20')).toBe(true)
+    setTrustedProxies(() => ['192.168.1.20'])
+    expect(clientIp(fakeReq('192.168.1.20', '198.51.100.7'))).toBe('198.51.100.7')
+    expect(clientIp(fakeReq('172.18.0.3', '198.51.100.7'))).toBe('172.18.0.3')
+    setTrustedProxies(() => DEFAULT_TRUSTED_PROXIES)
     expect(remotePort('IPV4/WS/127.0.0.1/41234')).toBe(41234)
   })
 })

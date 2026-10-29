@@ -256,6 +256,8 @@ export interface SecuritySettings {
   whitelist: string[] // IPs/Netze, die nie gesperrt werden
   /** Nebenstellen nur aus diesen Netzen zulassen (leer = überall) */
   extension_nets: string[]
+  /** Reverse-Proxys (z. B. Newt von Pangolin), deren X-Forwarded-For gilt */
+  trusted_proxies: string[]
 }
 
 export interface UpdateSettings {
@@ -551,6 +553,7 @@ export const DEFAULT_CONFIG: PbxConfig = {
     ban_minutes: 60,
     whitelist: ['127.0.0.1'],
     extension_nets: [],
+    trusted_proxies: ['127.0.0.1', '::1', '172.16.0.0/12'],
   },
   updates: { channel: 'stable', auto: false, hour: 3 },
   // Wie bisher: Umleiten (*21) und Schreiben in zentrale Kalender darf jede Nebenstelle

@@ -141,6 +141,30 @@ function Security() {
           <Full>
             <ChipsInput label="Nebenstellen nur aus diesen Netzen" value={s.extension_nets} onChange={(v) => set({ extension_nets: v })} helperText="Leer = von überall (z. B. Homeoffice). Mit 192.168.0.0/16 nur aus dem Büro-LAN." />
           </Full>
+          <Full>
+            <ChipsInput
+              label="Vertrauenswürdige Proxys"
+              value={s.trusted_proxies}
+              onChange={(v) => set({ trusted_proxies: v })}
+              helperText="Nur diesen Adressen glaubt die Anlage die Kopfzeile X-Forwarded-For (z. B. Newt von Pangolin). Standard: lokal und Docker-Netze."
+            />
+          </Full>
+          {status?.proxy_hints
+            .filter((h) => !s.trusted_proxies.includes(h.ip))
+            .map((h) => (
+              <Full key={h.ip}>
+                <Alert
+                  severity="info"
+                  action={
+                    <Button color="inherit" size="small" onClick={() => set({ trusted_proxies: [...s.trusted_proxies, h.ip] })}>
+                      Eintragen
+                    </Button>
+                  }
+                >
+                  {h.ip} schickt X-Forwarded-For (zuletzt {new Date(h.time).toLocaleString('de-DE')}). Ist das Ihr Reverse-Proxy, hier eintragen, damit Sperren die Adresse des Handys treffen und nicht den Proxy.
+                </Alert>
+              </Full>
+            ))}
         </FormGrid>
       </Section>
       <Section title="Gesperrte Adressen">
