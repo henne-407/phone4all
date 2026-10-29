@@ -13,6 +13,7 @@ import type { App } from './app'
 import { CalDavBackend } from './calendars'
 import { CardDavBackend } from './contactSync'
 import { errorText } from './dav'
+import { isExecutable, safeFileName, writeDownload } from './files'
 import { DIRS, RINGTONE_DIR } from './paths'
 import { discover } from './provisioning'
 import { ringtonePath, saveCustomRingtone } from './ringtones'
@@ -49,6 +50,7 @@ export function createApi(app: App) {
     hangup: (id?: string) => phone.hangup(id),
     setMute: (muted: boolean, id?: string) => phone.setMute(muted, id),
     setHold: (held: boolean, id?: string) => phone.setHold(held, id),
+    switchCall: (id: string) => phone.switchTo(id),
     sendDtmf: (digit: string, id?: string) => phone.sendDtmf(digit, id),
     stopRinging: () => phone.stopRinging(),
     transfer: (id: string, target: string) => phone.transfer(id, target),
@@ -119,6 +121,8 @@ export function createApi(app: App) {
       if ('autostart' in values) app.updateAutostart()
       app.stateChanged()
     },
+    /** Wähl-Links und Tastenkürzel; false = Tastenkürzel ist belegt */
+    setLinks: (values: { handler?: boolean; hotkey?: string }) => app.setLinks(values),
     setReminderMinutes: (minutes: number) => {
       store.settings.calendar.reminder_minutes = minutes
       store.saveSettings()
@@ -164,6 +168,17 @@ export function createApi(app: App) {
       attempt(() => app.provisioning.savePhonebookEntry(contact)),
     pbxDeleteContact: (id: string) => attempt(() => app.provisioning.deletePhonebookEntry(id)),
     takePbxLink: () => app.takePendingLink(),
+    pbxVoicemail: () => attempt(() => app.provisioning.voicemailList()),
+    pbxVoicemailAudio: (id: string) => attempt(() => app.provisioning.voicemailAudio(id)),
+    pbxVoicemailRead: (id: string) => attempt(() => app.provisioning.voicemailRead(id)),
+    pbxVoicemailDelete: (id: string) => attempt(() => app.provisioning.voicemailDelete(id)),
+    pbxBlock: (number: string, note: string) => attempt(() => app.provisioning.blockNumber(number, note)),
+    /** Gespräch parken: Weiterleiten an die Parknummer der Anlage */
+    park: (id: string) => {
+      const parking = store.settings.provisioning.parking
+      if (parking) phone.transfer(id, parking.number)
+    },
+    openCrm: (number: string, name: string) => app.openCrm(number, name),
     setTitleBarColors: (color: string, symbolColor: string) => app.setTitleBarColors(color, symbolColor),
 
     // -- Kontakte ------------------------------------------------------------
@@ -330,18 +345,22 @@ export function createApi(app: App) {
       }),
     messengerOpenFile: (room: string, file: ChatFile) =>
       attempt(async () => {
+        const name = safeFileName(file.name)
+        if (isExecutable(name)) {
+          throw new Error('Programme und Skripte öffnet Phone4All aus Sicherheitsgründen nicht direkt. Bitte „Speichern“ wählen und die Datei vor dem Öffnen prüfen.')
+        }
         const dir = path.join(DIRS.runtime, 'messenger')
         fs.mkdirSync(dir, { recursive: true })
-        const target = path.join(dir, `${file.id}-${path.basename(file.name)}`)
-        if (!fs.existsSync(target)) fs.writeFileSync(target, await app.messenger.download(room, file))
+        const target = path.join(dir, `${String(file.id).replace(/[^\w-]/g, '')}-${name}`)
+        if (!fs.existsSync(target)) writeDownload(target, await app.messenger.download(room, file))
         const error = await shell.openPath(target)
         if (error) throw new Error(error)
       }),
     messengerSaveFile: (room: string, file: ChatFile) =>
       attempt(async () => {
-        const r = await dialog.showSaveDialog(app.mainWindow()!, { title: 'Datei speichern', defaultPath: path.basename(file.name) })
+        const r = await dialog.showSaveDialog(app.mainWindow()!, { title: 'Datei speichern', defaultPath: safeFileName(file.name) })
         if (r.canceled || !r.filePath) return false
-        fs.writeFileSync(r.filePath, await app.messenger.download(room, file))
+        writeDownload(r.filePath, await app.messenger.download(room, file))
         return true
       }),
   }

@@ -60,12 +60,45 @@ function contactsContext(): string {
   )
 }
 
-function genericContexts(app: boolean): string[] {
+/**
+ * Grenzen für gleichzeitige Gespräche nach außen (Schutz vor Gebührenbetrug): je
+ * Nebenstelle (bei Umleitungen die umleitende) und für die ganze Anlage. Notrufe zählen
+ * mit, werden aber nie abgewiesen.
+ */
+function limitSteps(maxExt: number, maxTotal: number): string[] {
+  if (maxExt <= 0 && maxTotal <= 0) return []
+  return [
+    'Set(P4A_ACTOR=x${IF($["${P4A_FWDBY}" = ""]?${P4A_EXT}:${P4A_FWDBY})})',
+    'Set(GROUP(p4a-out)=all)',
+    'Set(GROUP(p4a-actor)=${P4A_ACTOR})',
+    'GotoIf($["${P4A_NUM}" = "110" | "${P4A_NUM}" = "112"]?go)',
+    ...(maxTotal > 0 ? [`GotoIf($[\${GROUP_COUNT(all@p4a-out)} > ${maxTotal}]?limit)`] : []),
+    ...(maxExt > 0 ? [`GotoIf($[\${GROUP_COUNT(\${P4A_ACTOR}@p4a-actor)} > ${maxExt}]?limit)`] : []),
+  ]
+}
+
+function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTotal: number): string[] {
+  const limits = limitSteps(maxExt, maxTotal)
   return [
     ...(app ? [contactsContext()] : []),
     ctx(
       'p4a-from-ext',
-      ['include => p4a-features', 'include => p4a-local', 'include => p4a-outbound'],
+      // Parkplätze (res_parking legt p4a-park selbst an) vor den Wahlregeln, sonst ginge 701 nach außen
+      ['include => p4a-features', 'include => p4a-local', ...(parking ? ['include => p4a-park'] : []), 'include => p4a-outbound'],
+    ),
+    // Anruf über die Schnittstelle (/api/integration/call): erst klingeln die Geräte der
+    // Nebenstelle (ohne Umleitungen), nach dem Abheben wählt die Anlage die Nummer
+    ctx(
+      'p4a-originate',
+      exten('_X.', [
+        'Set(P4A_TARGET=${EXTEN})',
+        contacts('P4A_TARGET', app),
+        'GotoIf($["${C}" = ""]?end)',
+        'Set(CALLERID(num)=${P4A_DIAL})',
+        'Set(CALLERID(name)=Anruf an ${P4A_DIAL})',
+        'Dial(${C},30)',
+        '(end)Hangup()',
+      ]),
     ),
     ctx(
       'p4a-from-trunk',
@@ -85,13 +118,25 @@ function genericContexts(app: boolean): string[] {
         'Set(CDR(p4a_to)=${CUT(R,|,4)})',
         'Set(CDR(userfield)=in)',
         goTo('T'),
-        '(fail)Hangup(34)',
+        // Verwaltungsdienst antwortet nicht: Standardziel des SIP-Kontos (fest im Wählplan)
+        '(fail)Goto(p4a-trunk-fallback,${P4A_TRUNK},1)',
       ]),
     ),
     ctx(
       'p4a-features',
       exten('*97', ['Answer()', 'Wait(0.5)', 'VoiceMailMain(${P4A_EXT}@default,s)', 'Hangup()']),
-      exten('*98', ['Answer()', 'Wait(0.5)', 'VoiceMailMain(@default)', 'Hangup()']),
+      // Fremde Mailboxen nur mit dem Recht voicemail_other
+      exten('*98', [
+        'Answer()',
+        'Wait(0.5)',
+        CURL_TIMEOUT,
+        'Set(R=${CURL(${P4A_API}/feature?ext=${P4A_EXT}&code=vmother)})',
+        'GotoIf($["${R}" != "on"]?deny)',
+        'VoiceMailMain(@default)',
+        'Hangup()',
+        '(deny)Playback(pbx-invalid)',
+        'Hangup()',
+      ]),
       exten('*8', ['Pickup()', 'Hangup()']),
       exten('_**X.', ['Pickup(${EXTEN:2}@PICKUPMARK)', 'Hangup()']),
       exten('*76', ['Gosub(p4a-feature,s,1(dnd,))', 'Hangup()']),
@@ -146,7 +191,8 @@ function genericContexts(app: boolean): string[] {
         'Hangup()',
         '(dial)Set(CDR(userfield)=out)',
         'Set(CDR(p4a_to)=${P4A_NUM})',
-        'Set(I=2)',
+        ...limits,
+        '(go)Set(I=2)',
         '(next)Set(EP=${CUT(R,|,${I})})',
         'GotoIf($["${EP}" = ""]?fail)',
         'Set(NUM=${CUT(R,|,$[${I} + 1])})',
@@ -160,6 +206,13 @@ function genericContexts(app: boolean): string[] {
         'Goto(next)',
         '(fail)Congestion(5)',
         'Hangup()',
+        ...(limits.length
+          ? [
+              '(limit)Set(R=${CURL(${P4A_API}/alert?kind=limit&ext=${URIENCODE(${P4A_ACTOR:1})})})',
+              'Congestion(5)',
+              'Hangup()',
+            ]
+          : []),
         // Eigene Nummer eines SIP-Kontos: wie ein Anruf von außen weiterleiten
         '(local)Set(T=${CUT(R,|,2)})',
         'Set(CALLERID(name)=${CUT(R,|,3)})',
@@ -283,6 +336,8 @@ function genericContexts(app: boolean): string[] {
       exten('_X.', ['Answer()', 'Wait(0.5)', 'VoiceMail(${EXTEN}@default,b)', 'Hangup()']),
     ),
     ctx('p4a-hangup', exten('s', ['Hangup()'])),
+    // Gesperrter Anrufer (Sperrliste): abweisen, in der Anrufliste als gesperrt vermerken
+    ctx('p4a-blocked', exten('s', ['Set(CDR(userfield)=blocked)', 'Hangup(21)'])),
   ]
 }
 
@@ -291,7 +346,7 @@ export function extensionsConf(cfg: PbxConfig, gen: GenContext): string {
     '; Erzeugt von Phone4all – Änderungen in der Weboberfläche vornehmen',
     ctx('general', ['static=yes', 'writeprotect=yes', 'clearglobalvars=yes']),
     ctx('globals', [`P4A_API=${gen.apiUrl}`, `P4A_REC=${gen.dirs.recordings}`, 'P4A_DIALOPTS=']),
-    ...genericContexts(cfg.remote.enabled),
+    ...genericContexts(cfg.remote.enabled, cfg.parking.enabled, cfg.security.max_calls_ext, cfg.security.max_calls_total),
   ]
 
   // Interne Rufnummern
@@ -311,6 +366,11 @@ export function extensionsConf(cfg: PbxConfig, gen: GenContext): string {
   parts.push(ctx('p4a-local', ...local))
 
   parts.push(
+    ctx(
+      'p4a-trunk-fallback',
+      ...cfg.trunks.map((t) => exten(t.id, ['NoOp(Verwaltungsdienst antwortet nicht)', `Goto(${gotoArgs(destTarget(cfg, t.inbound_default))})`])),
+      exten('i', ['Hangup(34)']),
+    ),
     ctx('p4a-group', ...cfg.groups.map((g) => exten(g.id, [`Set(P4A_GID=${g.id})`, 'Goto(p4a-group-run,s,1)']))),
     ctx(
       'p4a-tc',
@@ -336,7 +396,8 @@ export function extensionsConf(cfg: PbxConfig, gen: GenContext): string {
         'Set(TRIES=0)',
         '(pin)Read(PIN,conf-getpin,8,,1,10)',
         ...(admin ? [`GotoIf($["\${PIN}" = "${admin}"]?admin)`] : []),
-        ...(pin ? [`GotoIf($["\${PIN}" = "${pin}"]?join)`] : []),
+        // Ohne Teilnehmer-PIN kommt jeder hinein; die PIN-Abfrage gilt nur der Moderation
+        pin ? `GotoIf($["\${PIN}" = "${pin}"]?join)` : 'Goto(join)',
         'Set(TRIES=$[${TRIES} + 1])',
         'GotoIf($[${TRIES} < 3]?pin)',
         'Playback(conf-invalidpin)',

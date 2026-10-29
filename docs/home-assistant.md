@@ -32,7 +32,7 @@ Voraussetzung ist Home Assistant 2025.2 oder neuer. Die Integration fragt die An
 | *Problem* | an, solange die Anlage ein Problem meldet; Attribut `problems` |
 | *SIP-Konto …* | je SIP-Konto: an = beim Anbieter angemeldet |
 | *Asterisk*, *Update* | Diagnose: Asterisk läuft, neue Version verfügbar |
-| *Verpasster Anruf*, *Störungsmeldung* | Ereignis-Entitäten für den Verlauf |
+| *Verpasster Anruf*, *Notruf*, *Störungsmeldung* | Ereignis-Entitäten für den Verlauf |
 
 Die genauen Entitäts-IDs und Ereignisdaten stehen in der
 [Referenz](../pbx/README.md#home-assistant).
@@ -67,6 +67,24 @@ actions:
       message: >-
         Verpasster Anruf von
         {{ trigger.event.data.caller_name or trigger.event.data.caller }}
+```
+
+Bei einem Notruf (110 oder 112 von einer Nebenstelle) das Licht im Flur
+einschalten und alle Handys benachrichtigen:
+
+```yaml
+triggers:
+  - trigger: event
+    event_type: phone4all_emergency_call
+actions:
+  - action: light.turn_on
+    target:
+      entity_id: light.flur
+  - action: notify.notify
+    data:
+      message: >-
+        Notruf {{ trigger.event.data.number }} von
+        {{ trigger.event.data.name or trigger.event.data.extension }}
 ```
 
 Licht rot färben, solange die Anlage eine Störung hat (Entitäts-ID an die eigene Anlage

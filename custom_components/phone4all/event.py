@@ -1,4 +1,4 @@
-"""Ereignis-Entitäten: verpasster Anruf, Problem aufgetreten / behoben."""
+"""Ereignis-Entitäten: verpasster Anruf, Notruf, Problem aufgetreten / behoben."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ async def async_setup_entry(
     async_add_entities(
         [
             Phone4allEvent(coordinator, "missed_call", ["missed_call"]),
+            Phone4allEvent(coordinator, "emergency", ["emergency_call"]),
             Phone4allEvent(coordinator, "problem", ["problem", "resolved"]),
         ]
     )

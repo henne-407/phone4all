@@ -1,13 +1,14 @@
 /** Zustand der App: Profil, Telefon, Kontakte, Verlauf und Einstellungen. */
 
+import Constants from 'expo-constants'
 import * as Notifications from 'expo-notifications'
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { AppState, Platform } from 'react-native'
+import { AppState, Linking, Platform } from 'react-native'
 import { startService, stopService } from '../modules/call-service'
 import { type Person, deviceContacts, fromPhonebook, sortPeople, toNamed } from './contacts'
 import { findName } from './numbers'
 import { type Call, type PhoneState, phone } from './phone'
-import { type Profile, fetchProfile, fetchRevision } from './provisioning'
+import { type Presence, type Profile, crmUrl, fetchPresence, fetchProfile, fetchRevision, setDeviceName } from './provisioning'
 import {
   type HistoryEntry,
   type Settings,
@@ -22,6 +23,13 @@ import {
 } from './storage'
 
 const POLL = 2 * 60 * 1000
+/** Im Hintergrund: Profil (mit TURN-Zugang, gültig 8 Tage) spätestens so oft auffrischen */
+const BACKGROUND_REFRESH = 12 * 60 * 60 * 1000
+
+setDeviceName(Constants.deviceName || (Platform.OS === 'ios' ? 'iPhone' : 'Android'))
+
+/** Besetztanzeige: nur solange die App im Vordergrund ist */
+const PRESENCE_POLL = 4000
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
@@ -36,6 +44,8 @@ interface Store {
   settings: Settings
   /** Ändert sich, wenn die Anlage neue Termine meldet */
   eventsRevision: string
+  /** Kollegen, geparkte Gespräche, Voicemail (null = unbekannt oder ältere Anlage) */
+  presence: Presence | null
   contactsError: string
   setup(p: Profile): Promise<void>
   reset(): Promise<void>
@@ -77,6 +87,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [eventsRevision, setEventsRevision] = useState('')
+  const [presence, setPresence] = useState<Presence | null>(null)
   const profileRef = useRef<Profile | null>(null)
   profileRef.current = profile
 
@@ -122,6 +133,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     phone.onIncoming = (call) => void notifyIncoming(call).catch(() => undefined)
+    // Anrufer von außen im CRM öffnen (App-Profil der Anlage)
+    phone.onAnswered = (call) => {
+      const crm = profileRef.current?.crm
+      if (crm?.auto && call.direction === 'in' && call.number.replace(/\D/g, '').length > 5) {
+        void Linking.openURL(crmUrl(crm.url, call.number, call.name)).catch(() => undefined)
+      }
+    }
     phone.onEnded = ({ call, missed }) => {
       void Notifications.dismissNotificationAsync(`anruf-${call.id}`).catch(() => undefined)
       if (missed && AppState.currentState !== 'active') {
@@ -172,11 +190,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .catch((e: Error) => setContactsError(e.message))
   }, [settings.deviceContacts])
 
+  const loadedAt = useRef(Date.now())
   const reloadProfile = useCallback(async () => {
     const cur = profileRef.current
     if (!cur) return
     const next = await fetchProfile(cur.url)
     await saveProfile(next)
+    loadedAt.current = Date.now()
     setProfile(next)
   }, [])
 
@@ -186,7 +206,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let stopped = false
     const check = async (): Promise<void> => {
       const cur = profileRef.current
-      if (!cur || AppState.currentState !== 'active') return
+      if (!cur) return
+      if (AppState.currentState !== 'active') {
+        // Hintergrunddienst (Android): Ohne Auffrischen läuft der TURN-Zugang nach 8 Tagen ab
+        if (Date.now() - loadedAt.current > BACKGROUND_REFRESH) await reloadProfile().catch(() => undefined)
+        return
+      }
       try {
         const rev = await fetchRevision(cur)
         if (stopped) return
@@ -211,8 +236,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [profile?.url, reloadProfile])
 
+  // Besetztanzeige alle paar Sekunden, nur im Vordergrund
+  useEffect(() => {
+    if (!profile) {
+      setPresence(null)
+      return
+    }
+    let stopped = false
+    const load = async (): Promise<void> => {
+      const cur = profileRef.current
+      if (!cur || AppState.currentState !== 'active') return
+      try {
+        const next = await fetchPresence(cur)
+        if (!stopped) setPresence((old) => (JSON.stringify(old) === JSON.stringify(next) ? old : next))
+      } catch {
+        if (!stopped) setPresence(null)
+      }
+    }
+    void load()
+    const timer = setInterval(() => void load(), PRESENCE_POLL)
+    return () => {
+      stopped = true
+      clearInterval(timer)
+    }
+  }, [profile?.url])
+
   const store: Store = {
     ready,
+    presence,
     profile,
     phone: phoneState,
     people,

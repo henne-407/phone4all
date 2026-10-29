@@ -17,6 +17,8 @@ import type { WebSocketConnection } from './websocket'
 const MAX_TEXT = 8000
 const MAX_MEMBERS = 50
 const PAGE = 50
+const FILES_PER_WINDOW = 30
+const FILE_WINDOW = 10 * 60000
 
 export class ChatError extends Error {}
 
@@ -33,6 +35,38 @@ export function messengerUsers(cfg: PbxConfig): Extension[] {
   })
 }
 
+/** Nummer der letzten Nachricht in einer Raumdatei (liest nur das Ende) */
+export function lastSeq(file: string): number {
+  let fd: number
+  try {
+    fd = fs.openSync(file, 'r')
+  } catch {
+    return 0
+  }
+  try {
+    const size = fs.fstatSync(fd).size
+    const len = Math.min(size, 64 * 1024)
+    const buf = Buffer.alloc(len)
+    fs.readSync(fd, buf, 0, len, size - len)
+    const lines = buf.toString('utf8').split('\n').filter((l) => l.trim())
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        return Number((JSON.parse(lines[i]) as ChatMessage).seq) || 0
+      } catch {
+        // abgeschnittene Zeile: die davor nehmen
+      }
+    }
+    return 0
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
+/** Verwaltet die Gruppe: wer sie angelegt hat – ist er nicht mehr dabei, jedes Mitglied */
+export function isGroupAdmin(r: ChatRoom, ext: string): boolean {
+  return r.created_by === ext || !r.members.includes(r.created_by)
+}
+
 /** Unterhaltung aus Sicht einer Nebenstelle */
 export interface RoomView extends ChatRoom {
   last: ChatMessage | null
@@ -41,12 +75,23 @@ export interface RoomView extends ChatRoom {
 
 export class MessengerStore {
   rooms = new Map<string, ChatRoom>()
-  /** Geladene Nachrichten je Raum (erst beim ersten Zugriff gelesen) */
+  /** Geladene Nachrichten je Raum (erst beim ersten Zugriff gelesen, zuletzt benutzte zuletzt) */
   private cache = new Map<string, ChatMessage[]>()
+  /** Ungefähre Größe je geladenem Raum in Bytes */
+  private sizes = new Map<string, number>()
   private saveTimer: NodeJS.Timeout | null = null
 
-  constructor(readonly dir: string) {
-    for (const r of loadJson<ChatRoom[]>(path.join(dir, 'rooms.json'), [])) this.rooms.set(r.id, r)
+  /** @param cacheBytes so viel Verlauf bleibt höchstens im Speicher, ältere Räume werden bei Bedarf neu gelesen */
+  constructor(
+    readonly dir: string,
+    readonly cacheBytes = 32 * 1024 * 1024,
+  ) {
+    for (const r of loadJson<ChatRoom[]>(path.join(dir, 'rooms.json'), [])) {
+      // rooms.json wird verzögert gespeichert: Nach einem Absturz kann der Zähler hinter
+      // den schon geschriebenen Nachrichten liegen – dann würden Nummern doppelt vergeben
+      r.seq = Math.max(r.seq, lastSeq(this.roomFile(r.id)))
+      this.rooms.set(r.id, r)
+    }
   }
 
   // -- Ablage ---------------------------------------------------------------
@@ -79,30 +124,54 @@ export class MessengerStore {
 
   messages(room: string): ChatMessage[] {
     let list = this.cache.get(room)
-    if (!list) {
-      list = []
-      try {
-        for (const line of fs.readFileSync(this.roomFile(room), 'utf8').split('\n')) {
-          if (!line.trim()) continue
-          try {
-            list.push(JSON.parse(line) as ChatMessage)
-          } catch {
-            // beschädigte Zeile überspringen
-          }
-        }
-      } catch {
-        // noch keine Nachrichten
-      }
+    if (list) {
+      // ans Ende rücken: zuletzt benutzt
+      this.cache.delete(room)
       this.cache.set(room, list)
+      return list
     }
+    list = []
+    let size = 0
+    try {
+      for (const line of fs.readFileSync(this.roomFile(room), 'utf8').split('\n')) {
+        if (!line.trim()) continue
+        try {
+          list.push(JSON.parse(line) as ChatMessage)
+          size += line.length
+        } catch {
+          // beschädigte Zeile überspringen
+        }
+      }
+    } catch {
+      // noch keine Nachrichten
+    }
+    this.remember(room, list, size)
     return list
+  }
+
+  private remember(room: string, list: ChatMessage[], size: number): void {
+    this.cache.delete(room)
+    this.cache.set(room, list)
+    this.sizes.set(room, size)
+    let total = [...this.sizes.values()].reduce((a, b) => a + b, 0)
+    for (const old of this.cache.keys()) {
+      if (total <= this.cacheBytes || old === room) break
+      total -= this.sizes.get(old) ?? 0
+      this.forgetCache(old)
+    }
+  }
+
+  private forgetCache(room: string): void {
+    this.cache.delete(room)
+    this.sizes.delete(room)
   }
 
   private rewrite(room: string, list: ChatMessage[]): void {
     const file = this.roomFile(room)
     fs.mkdirSync(path.dirname(file), { recursive: true })
-    fs.writeFileSync(file, list.map((m) => JSON.stringify(m) + '\n').join(''), { mode: 0o600 })
-    this.cache.set(room, list)
+    const text = list.map((m) => JSON.stringify(m) + '\n').join('')
+    fs.writeFileSync(file, text, { mode: 0o600 })
+    this.remember(room, list, text.length)
   }
 
   // -- Unterhaltungen -------------------------------------------------------
@@ -128,8 +197,11 @@ export class MessengerStore {
   direct(a: string, b: string): ChatRoom {
     if (a === b) throw new ChatError('Ein Chat mit sich selbst ist nicht möglich.')
     const pair = [a, b].sort()
-    const id = `d-${pair[0]}-${pair[1]}`.replace(/[^\w-]/g, '_')
-    let r = this.rooms.get(id)
+    // Nach dem Umnummerieren passt die ID nicht mehr zu den Mitgliedern: nach Mitgliedern suchen
+    let r = [...this.rooms.values()].find((x) => x.kind === 'direct' && x.members.length === 2 && pair.every((m) => x.members.includes(m)))
+    let id = `d-${pair[0]}-${pair[1]}`.replace(/[^\w-]/g, '_')
+    // Die ID gehört einem früheren Chat (z. B. einer gelöschten Nebenstelle): neue ID
+    if (!r && this.rooms.has(id)) id = `${id}-${newId()}`
     if (!r) {
       r = { id, kind: 'direct', name: '', members: pair, created: Date.now(), created_by: a, seq: 0, read: {} }
       this.rooms.set(id, r)
@@ -150,9 +222,13 @@ export class MessengerStore {
   }
 
   /** Gruppe umbenennen oder Mitglieder ändern; liefert die bisherigen Mitglieder */
-  updateGroup(r: ChatRoom, change: { name?: string; members?: string[] }): string[] {
+  updateGroup(r: ChatRoom, change: { name?: string; members?: string[] }, by = ''): string[] {
     if (r.kind !== 'group') throw new ChatError('Nur Gruppen lassen sich ändern.')
     const before = r.members
+    // Hinzufügen und Umbenennen darf jedes Mitglied, andere entfernen nur, wer die Gruppe verwaltet
+    if (by && change.members && !isGroupAdmin(r, by) && before.some((m) => m !== by && !change.members?.includes(m))) {
+      throw new ChatError('Mitglieder entfernen kann nur, wer die Gruppe angelegt hat.')
+    }
     if (change.name !== undefined) {
       const clean = change.name.trim().slice(0, 80)
       if (!clean) throw new ChatError('Die Gruppe braucht einen Namen.')
@@ -176,9 +252,47 @@ export class MessengerStore {
     else this.flush()
   }
 
+  /** Nebenstelle hat eine neue Nummer: Ihre Chats gehen mit */
+  renumber(from: string, to: string): void {
+    let changed = false
+    for (const r of this.rooms.values()) {
+      if (r.created_by === from) {
+        r.created_by = to
+        changed = true
+      }
+      if (!r.members.includes(from)) continue
+      r.members = r.members.map((m) => (m === from ? to : m))
+      if (from in r.read) {
+        r.read[to] = r.read[from]
+        delete r.read[from]
+      }
+      changed = true
+    }
+    if (changed) this.flush()
+  }
+
+  /**
+   * Nebenstelle gelöscht: Sie verlässt alle Unterhaltungen, damit eine spätere
+   * Nebenstelle mit derselben Nummer die alten Chats nicht sieht.
+   */
+  forget(number: string): string[] {
+    const affected: string[] = []
+    for (const r of [...this.rooms.values()]) {
+      // Eine spätere Nebenstelle mit derselben Nummer verwaltet die alten Gruppen nicht
+      if (r.created_by === number) r.created_by = ''
+      if (!r.members.includes(number)) continue
+      affected.push(r.id)
+      r.members = r.members.filter((m) => m !== number)
+      delete r.read[number]
+      if (!r.members.length) this.removeRoom(r.id)
+    }
+    if (affected.length) this.flush()
+    return affected
+  }
+
   removeRoom(id: string): void {
     this.rooms.delete(id)
-    this.cache.delete(id)
+    this.forgetCache(id)
     fs.rmSync(this.roomFile(id), { force: true })
     fs.rmSync(this.fileDir(id), { recursive: true, force: true })
     this.flush()
@@ -194,8 +308,10 @@ export class MessengerStore {
     const list = this.messages(r.id) // vor dem Anhängen laden, sonst doppelt im Speicher
     const target = this.roomFile(r.id)
     fs.mkdirSync(path.dirname(target), { recursive: true })
-    fs.appendFileSync(target, JSON.stringify(msg) + '\n', { mode: 0o600 })
+    const line = JSON.stringify(msg) + '\n'
+    fs.appendFileSync(target, line, { mode: 0o600 })
     list.push(msg)
+    if (this.cache.get(r.id) === list) this.sizes.set(r.id, (this.sizes.get(r.id) ?? 0) + line.length)
     // Eigene Nachrichten gelten als gelesen
     if (from) r.read[from] = r.seq
     this.saveSoon()
@@ -228,6 +344,20 @@ export class MessengerStore {
     return { id, name: clean, size: data.length, type: /^[\w.+-]+\/[\w.+-]+$/.test(type) ? type : 'application/octet-stream' }
   }
 
+  /** Anhänge, die eine Nebenstelle verschickt hat: Größe in Bytes und Zeitpunkte */
+  filesOf(ext: string): { bytes: number; times: number[] } {
+    let bytes = 0
+    const times: number[] = []
+    for (const id of this.rooms.keys()) {
+      for (const m of this.messages(id)) {
+        if (m.from !== ext || !m.file) continue
+        bytes += m.file.size
+        times.push(m.time)
+      }
+    }
+    return { bytes, times }
+  }
+
   /** Belegter Speicher in Bytes (Nachrichten und Anhänge) */
   usage(): number {
     let total = 0
@@ -249,24 +379,32 @@ export class MessengerStore {
   }
 
   /**
-   * Speicher knapp: älteste Nachrichten (mit Anhängen) löschen, bis wieder genug frei ist.
-   * Gibt die Zahl der gelöschten Nachrichten zurück.
+   * Aufräumen: älteste Nachrichten (mit Anhängen) löschen, solange der Messenger mehr als
+   * sein Kontingent belegt. Ist die Platte aus anderen Gründen knapp, wird höchstens die
+   * Hälfte des Messengers geopfert – sonst wäre am Ende der ganze Verlauf weg, ohne dass
+   * es etwas nützt. Gibt die Zahl der gelöschten Nachrichten zurück.
    */
-  cleanup(freeBytes: () => number | null, minFree: number): number {
+  cleanup(limits: { freeBytes: () => number | null; minFree: number; maxUsage: number; usage?: () => number }): number {
+    const usage = limits.usage ?? (() => this.usage())
+    const start = usage()
     let removed = 0
     for (;;) {
-      const free = freeBytes()
-      if (free === null || free >= minFree) return removed
-      const all = [...this.rooms.keys()].flatMap((id) => this.messages(id))
+      const used = usage()
+      const free = limits.freeBytes()
+      const overQuota = used > limits.maxUsage
+      const diskLow = free !== null && free < limits.minFree && used > start / 2
+      if (!overQuota && !diskLow) return removed
+      // Nur Zeit und Nummer sammeln: Der Zwischenspeicher kann Räume unterwegs verwerfen und neu lesen
+      const all = [...this.rooms.keys()].flatMap((id) => this.messages(id).map((m) => ({ room: id, seq: m.seq, time: m.time })))
       if (!all.length) return removed
       // In Schritten von einem Zehntel löschen, damit nicht mehr als nötig verschwindet
-      all.sort((a, b) => a.time - b.time)
-      const cut = all[Math.max(0, Math.ceil(all.length / 10) - 1)].time
+      all.sort((a, b) => a.time - b.time || a.seq - b.seq)
+      const doomed = new Set(all.slice(0, Math.ceil(all.length / 10)).map((m) => `${m.room}:${m.seq}`))
       for (const id of this.rooms.keys()) {
         const list = this.messages(id)
-        const keep = list.filter((m) => m.time > cut)
+        const keep = list.filter((m) => !doomed.has(`${id}:${m.seq}`))
         if (keep.length === list.length) continue
-        for (const m of list) if (m.time <= cut && m.file) fs.rmSync(path.join(this.fileDir(id), m.file.id), { force: true })
+        for (const m of list) if (doomed.has(`${id}:${m.seq}`) && m.file) fs.rmSync(path.join(this.fileDir(id), m.file.id), { force: true })
         removed += list.length - keep.length
         this.rewrite(id, keep)
       }
@@ -446,7 +584,7 @@ export class MessengerHub {
         const before = r.members
         if (members) for (const m of members.filter((x) => !before.includes(x))) this.member(m)
         const oldName = r.name
-        s.updateGroup(r, { name: msg.name === undefined ? undefined : String(msg.name), members })
+        s.updateGroup(r, { name: msg.name === undefined ? undefined : String(msg.name), members }, c.ext)
         const added = r.members.filter((m) => !before.includes(m))
         const gone = before.filter((m) => !r.members.includes(m))
         const notes: string[] = []
@@ -490,8 +628,17 @@ export class MessengerHub {
   }
 
   /** Datei wurde per HTTP hochgeladen: als Nachricht verschicken */
-  postFile(ext: string, room: string, name: string, type: string, data: Buffer, text = ''): ChatMessage {
+  postFile(ext: string, room: string, name: string, type: string, data: Buffer, text = '', now = Date.now()): ChatMessage {
     const r = this.store.room(room, ext)
+    // Kontingent: Speicher je Nebenstelle und höchstens 30 Dateien in 10 Minuten
+    const quota = this.config().messenger.quota_mb * 1024 * 1024
+    const mine = this.store.filesOf(ext)
+    if (quota > 0 && mine.bytes + data.length > quota) {
+      throw new ChatError(`Ihr Speicher im Messenger ist voll (${this.config().messenger.quota_mb} MB). Bitte die Verwaltung, alte Unterhaltungen zu löschen.`)
+    }
+    if (mine.times.filter((t) => t > now - FILE_WINDOW).length >= FILES_PER_WINDOW) {
+      throw new ChatError('Zu viele Dateien in kurzer Zeit. Bitte etwas warten.')
+    }
     const file = this.store.saveFile(r.id, name, type, data)
     const msg = this.store.post(r, ext, text, file)
     this.publishMessage(r, msg)
@@ -508,7 +655,7 @@ export class MessengerHub {
     const allowed = messengerUsers(cfg)
     for (const c of [...this.clients]) {
       const ext = allowed.find((e) => e.number === c.ext)
-      if (!ext || ext.provision_token !== c.token) c.conn.close(4003, 'Kein Zugriff mehr')
+      if (!ext || !ext.devices.some((d) => d.token === c.token)) c.conn.close(4003, 'Kein Zugriff mehr')
     }
     this.broadcast({ t: 'users', users: this.users() })
   }
@@ -573,6 +720,22 @@ export class MessengerHub {
     const rooms = [...this.calls.keys()]
     this.calls.clear()
     for (const room of rooms) this.publishCall(room)
+  }
+
+  /** Nebenstelle gelöscht: aus allen Unterhaltungen nehmen und die übrigen Mitglieder informieren */
+  forgotten(number: string): void {
+    for (const id of this.store.forget(number)) {
+      const r = this.store.rooms.get(id)
+      if (r) this.publishRoom(r)
+    }
+  }
+
+  /** Hinweis der Anlage (z. B. Notruf) im Einzelchat zwischen zwei Nebenstellen */
+  notice(to: string, about: string, text: string): void {
+    const users = messengerUsers(this.config())
+    if (to === about || !users.some((e) => e.number === to) || !users.some((e) => e.number === about)) return
+    const r = this.store.direct(to, about)
+    this.publishMessage(r, this.store.post(r, '', text))
   }
 
   /** Unterhaltung wurde in der Verwaltung gelöscht */

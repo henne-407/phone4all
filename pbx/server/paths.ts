@@ -18,11 +18,13 @@ export const PATHS = {
   backups: path.join(DATA, 'backups'),
   calendars: path.join(DATA, 'calendars'),
   messenger: path.join(DATA, 'messenger'),
+  tts: path.join(DATA, 'tts'),
   sounds: path.join(DATA, 'sounds', 'custom'),
   moh: path.join(DATA, 'sounds', 'moh'),
   recordings: path.join(DATA, 'recordings'),
   spool: path.join(DATA, 'spool'),
   log: path.join(DATA, 'log'),
+  audit: path.join(DATA, 'log', 'audit.jsonl'),
   db: path.join(DATA, 'db'),
   keys: path.join(DATA, 'keys'),
   etc: path.resolve(env.PBX_ASTERISK_ETC || '/etc/asterisk'),
@@ -41,6 +43,8 @@ export const PATHS = {
 
 export const SETTINGS = {
   httpPort: Number(env.PBX_HTTP_PORT) || 8080,
+  /** HTTPS für die Weboberfläche im LAN (eigenes oder selbst signiertes Zertifikat); 0 = aus */
+  httpsPort: env.PBX_HTTPS_PORT === undefined ? 8443 : Number(env.PBX_HTTPS_PORT) || 0,
   amiPort: Number(env.PBX_AMI_PORT) || 5038,
   /** HTTP-Server von Asterisk (nur 127.0.0.1) für SIP über WebSocket */
   asteriskHttpPort: Number(env.PBX_ASTERISK_HTTP_PORT) || 8088,

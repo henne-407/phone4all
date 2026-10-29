@@ -12,7 +12,7 @@ export interface CallRecord {
   fromName: string
   to: string
   answeredBy: string
-  status: 'answered' | 'missed' | 'busy' | 'failed'
+  status: 'answered' | 'missed' | 'busy' | 'failed' | 'blocked'
   duration: number
   recordings: string[]
 }
@@ -82,8 +82,9 @@ export function groupCalls(rows: Row[], recordings: string[]): CallRecord[] {
   for (const [id, legs] of calls) {
     const first = legs[0]
     const answered = legs.find((l) => l.disposition === 'ANSWERED' && l.dstchannel) ?? legs.find((l) => l.disposition === 'ANSWERED')
-    const direction = legs.some((l) => l.userfield === 'in') ? 'in' : legs.some((l) => l.userfield === 'out') ? 'out' : 'internal'
-    const status = answered ? 'answered' : legs.some((l) => l.disposition === 'BUSY') ? 'busy' : direction === 'out' && legs.some((l) => l.disposition === 'FAILED') ? 'failed' : 'missed'
+    const direction = legs.some((l) => l.userfield === 'in' || l.userfield === 'blocked') ? 'in' : legs.some((l) => l.userfield === 'out') ? 'out' : 'internal'
+    const blocked = legs.some((l) => l.userfield === 'blocked')
+    const status = blocked ? 'blocked' : answered ? 'answered' : legs.some((l) => l.disposition === 'BUSY') ? 'busy' : direction === 'out' && legs.some((l) => l.disposition === 'FAILED') ? 'failed' : 'missed'
     result.push({
       id,
       start: first.start,
@@ -100,19 +101,37 @@ export function groupCalls(rows: Row[], recordings: string[]): CallRecord[] {
   return result.sort((a, b) => b.start.localeCompare(a.start))
 }
 
-export function readCalls(limit = 200): CallRecord[] {
-  const text = readTail(path.join(PATHS.log, 'cdr-custom', 'cdr.csv'), 4 * 1024 * 1024)
-  const rows = text
-    .split('\n')
-    .filter((l) => l.trim())
-    .map((l) => Object.fromEntries(parseCsvLine(l).map((v, i) => [FIELDS[i], v])) as Row)
-  let recordings: string[] = []
+// Die Home-Assistant-Abfrage liest die Anrufliste alle paar Sekunden – solange sich weder
+// cdr.csv noch der Aufnahmeordner ändert, reicht das Ergebnis vom letzten Mal.
+let cached: { key: string; calls: CallRecord[] } | null = null
+
+function stamp(file: string): string {
   try {
-    recordings = fs.readdirSync(PATHS.recordings)
+    const st = fs.statSync(file)
+    return `${st.mtimeMs}:${st.size}`
   } catch {
-    // noch keine Aufnahmen
+    return '-'
   }
-  return groupCalls(rows, recordings).slice(0, limit)
+}
+
+export function readCalls(limit = 200): CallRecord[] {
+  const file = path.join(PATHS.log, 'cdr-custom', 'cdr.csv')
+  const key = `${stamp(file)}|${stamp(PATHS.recordings)}`
+  if (cached?.key !== key) {
+    const text = readTail(file, 4 * 1024 * 1024)
+    const rows = text
+      .split('\n')
+      .filter((l) => l.trim())
+      .map((l) => Object.fromEntries(parseCsvLine(l).map((v, i) => [FIELDS[i], v])) as Row)
+    let recordings: string[] = []
+    try {
+      recordings = fs.readdirSync(PATHS.recordings)
+    } catch {
+      // noch keine Aufnahmen
+    }
+    cached = { key, calls: groupCalls(rows, recordings) }
+  }
+  return cached.calls.slice(0, limit)
 }
 
 export function tailLog(lines = 300): string {

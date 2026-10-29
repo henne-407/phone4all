@@ -1,10 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import { EMPTY_STATE, extensionPlan, feature, groupPlan, routeInbound, routeOutbound, type RuntimeState } from '../server/routing'
-import { sampleConfig, to } from './helpers'
+import { generate } from '../server/generate'
+import { EMPTY_STATE, extensionPlan, feature, groupPlan, lookupName, routeInbound, routeOutbound, type RuntimeState } from '../server/routing'
+import { gen, sampleConfig, to } from './helpers'
 
 const state = (): RuntimeState => structuredClone(EMPTY_STATE)
 
 describe('Eingehende Anrufe', () => {
+  it('findet Namen über alle Nummernformate und auch kurze Einträge', () => {
+    const cfg = sampleConfig()
+    const base = cfg.phonebook[0]
+    cfg.phonebook = [
+      { ...base, id: 'a', name: 'Kurz', company: '', phone: '5550', mobile: '' },
+      { ...base, id: 'b', name: 'Erster', company: '', phone: '', mobile: '0171 5551234' },
+      { ...base, id: 'c', name: 'Zweiter', company: '', phone: '+49 171 5551234', mobile: '' },
+    ]
+    expect(lookupName(cfg, '+491715551234')).toBe('Erster')
+    expect(lookupName(cfg, '00491715551234')).toBe('Erster')
+    expect(lookupName(cfg, '1715551234')).toBe('Erster')
+    expect(lookupName(cfg, '0305550')).toBe('Kurz')
+    expect(lookupName(cfg, '0309999')).toBe('')
+  })
+
   it('nimmt das Standardziel des Kontos und sucht den Namen im Telefonbuch', () => {
     const cfg = sampleConfig()
     const r = routeInbound(cfg, { trunk: 't1', did: '+49301234567', to: '', cid: '+49301111111', name: '' }).split('|')
@@ -39,6 +55,9 @@ describe('Nebenstellen und Gruppen', () => {
     expect(extensionPlan(cfg, s, '10')).toBe('goto|p4a-local^11')
     expect(feature(cfg, s, '10', 'cfu', '10').reply).toBe('error')
     feature(cfg, s, '10', 'cfu', '')
+    // Nach außen umleiten ist standardmäßig nicht freigegeben
+    expect(feature(cfg, s, '10', 'cfu', '0171 555').reply).toBe('error')
+    cfg.provisioning.permissions.push('forward_external')
     feature(cfg, s, '10', 'cfu', '0171 555')
     expect(extensionPlan(cfg, s, '10')).toBe('goto|p4a-fwd^0171555')
   })
@@ -48,6 +67,13 @@ describe('Nebenstellen und Gruppen', () => {
     const s = state()
     s.dnd['11'] = true
     expect(groupPlan(cfg, s, 'g1', 'Max', '/snd')).toBe('all|30|10|p4a-vmu^10|Zentrale: Max||15')
+  })
+
+  it('lässt auch umgeleitete Mitglieder aus', () => {
+    const cfg = sampleConfig()
+    const s = state()
+    s.cfu['11'] = '0171555'
+    expect(groupPlan(cfg, s, 'g1', 'Max', '/snd').split('|')[2]).toBe('10')
   })
 })
 
@@ -108,6 +134,48 @@ describe('Ausgehende Anrufe', () => {
     expect(routeOutbound(cfg, { ext: '99', fwd: '', num: '0301234', cid: '' })).toBe('deny')
   })
 
+  it('bremst Gebührenbetrug: Sonderrufnummern, Länder, Uhrzeit, Umleitungen, Notbremse', () => {
+    const cfg = sampleConfig()
+    const out = (num: string, ext = '11', fwd = '', now = new Date('2026-10-28T12:00:00Z')) =>
+      routeOutbound(cfg, { ext, fwd, num, cid: '' }, now).split('|')[0]
+    for (const n of ['0180 5123456', '012 3456789', '0700 1234567', '0137 1234567', '0019 1', '00881 612345678']) expect(out(n)).toBe('deny')
+    cfg.extensions[1].allow_premium = true
+    expect(out('0180 5123456')).toBe('ok')
+    cfg.extensions[1].allow_premium = false
+    // Länderliste: Österreich ja, Jamaika (+1 876) nicht; '*' = alle
+    expect(out('0043 1234')).toBe('ok')
+    expect(out('001 876 5551234')).toBe('deny')
+    cfg.security.countries = ['*']
+    expect(out('001 876 5551234')).toBe('ok')
+    // Ausland nur tagsüber (Berlin: 23:30 Uhr)
+    cfg.security.international_daytime = true
+    expect(out('0043 1234', '11', '', new Date('2026-10-28T22:30:00Z'))).toBe('deny')
+    expect(out('0043 1234')).toBe('ok')
+    // Umleitungen ins Ausland nur mit Freigabe
+    expect(out('0043 1234', '', '11')).toBe('deny')
+    cfg.security.forward_international = true
+    expect(out('0043 1234', '', '11')).toBe('ok')
+    // Notbremse: nichts mehr nach außen, Notruf geht
+    cfg.security.outbound_stop = true
+    expect(out('030 7654321', '10')).toBe('deny')
+    expect(out('11833')).toBe('deny')
+    expect(out('112', '12')).toBe('ok')
+  })
+
+  it('begrenzt gleichzeitige Gespräche nach außen im Wählplan', () => {
+    const cfg = sampleConfig()
+    let conf = generate(cfg, gen)['extensions.conf']
+    expect(conf).toContain('GotoIf($[${GROUP_COUNT(all@p4a-out)} > 6]?limit)')
+    expect(conf).toContain('GotoIf($[${GROUP_COUNT(${P4A_ACTOR}@p4a-actor)} > 2]?limit)')
+    expect(conf).toContain('n(limit),Set(R=${CURL(${P4A_API}/alert?kind=limit&ext=${URIENCODE(${P4A_ACTOR:1})})})')
+    expect(generate(cfg, gen)['modules.conf']).toContain('func_groupcount.so')
+    cfg.security.max_calls_ext = 0
+    cfg.security.max_calls_total = 0
+    conf = generate(cfg, gen)['extensions.conf']
+    expect(conf).not.toContain('GROUP_COUNT')
+    expect(conf).not.toContain('n(limit)')
+  })
+
   it('folgt Wahlregeln mit Ausweichkonto', () => {
     const cfg = sampleConfig()
     cfg.trunks.push({ ...cfg.trunks[0], id: 't2', name: 'sipgate', number_format: 'e164_no_plus', numbers: [], default_cid: '' })
@@ -116,5 +184,19 @@ describe('Ausgehende Anrufe', () => {
       'ok|trunk-t2|491715551234||trunk-t1|+491715551234|+49301234567',
     )
     expect(routeOutbound(cfg, { ext: '10', fwd: '', num: '030555', cid: '' })).toBe('deny')
+  })
+})
+
+describe('Fremde Voicemail (*98)', () => {
+  it('nur mit Recht, und nie mit der Nebenstellennummer als PIN', () => {
+    const cfg = sampleConfig()
+    const s: RuntimeState = structuredClone(EMPTY_STATE)
+    expect(feature(cfg, s, '10', 'vmother', '').reply).toBe('error')
+    cfg.groups[0].permissions = ['voicemail_other']
+    const member = cfg.groups[0].members[0]
+    expect(feature(cfg, s, member, 'vmother', '').reply).toBe('on')
+    cfg.extensions[0].voicemail.pin = 'abc'
+    expect(generate(cfg, gen)['voicemail.conf']).not.toMatch(/^10 => 10,/m)
+    expect(generate(cfg, gen)['extensions.conf']).toMatch(/code=vmother/)
   })
 })

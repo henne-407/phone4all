@@ -3,6 +3,7 @@ import DownloadIcon from '@mui/icons-material/Download'
 import ErrorIcon from '@mui/icons-material/Error'
 import InfoIcon from '@mui/icons-material/Info'
 import WarningIcon from '@mui/icons-material/Warning'
+import DeleteIcon from '@mui/icons-material/Delete'
 import RestoreIcon from '@mui/icons-material/Restore'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
 import {
@@ -27,11 +28,13 @@ import {
   Typography,
 } from '@mui/material'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { MailSettings, RemoteSettings, SecuritySettings, SystemSettings, UpdateSettings, WatchdogSettings } from '../../../server/model'
+import type { MailSettings, RemoteSettings, SecuritySettings, StorageSettings, SystemSettings, UpdateSettings, WatchdogSettings } from '../../../server/model'
+import type { StorageReport } from '../../../server/storage'
 import { type UpdateInfo, type WatchEvent, type WatchdogResponse, api } from '../api'
-import { ChangesBar, ChipsInput, ConfirmDialog, confirmDiscard, FormGrid, Full, NumberField, PageHeader, PermissionChecks, Section, Select, useDraft } from '../components/common'
+import { bytes, ChangesBar, ChipsInput, ConfirmDialog, confirmDiscard, FormGrid, Full, NumberField, PageHeader, PermissionChecks, Section, Select, useDraft } from '../components/common'
 import { takeEditRequest } from '../router'
 import { usePbx } from '../state'
+import { CallApi, Features, Offsite, Webhooks } from './SystemExtras'
 import { useStatus } from '../useStatus'
 
 function General() {
@@ -65,6 +68,17 @@ function General() {
           <NumberField label="RTP bis" value={s.rtp_end} onChange={(v) => set({ rtp_end: v })} />
           <TextField label="Öffentliche Adresse (NAT)" value={s.external_address} onChange={(e) => set({ external_address: e.target.value.trim() })} helperText="Nur nötig, wenn Telefone von außen über den Router kommen" />
           <ChipsInput label="Lokale Netze" value={s.local_nets} onChange={(v) => set({ local_nets: v })} />
+          <Select
+            label="Verschlüsselte Sprache (SRTP) im LAN"
+            value={s.srtp}
+            onChange={(v) => set({ srtp: v })}
+            options={[
+              ['off', 'Aus'],
+              ['optional', 'Wenn das Telefon es anbietet'],
+              ['required', 'Pflicht (Telefone ohne SRTP klingeln nicht)'],
+            ]}
+            helperText="Wirksam erst mit SIP über TLS am Telefon (SIP-TLS-Port), sonst stehen die Schlüssel lesbar im Netz"
+          />
           <Full>
             <ChipsInput label="Codecs für Nebenstellen" value={s.codecs} onChange={(v) => set({ codecs: v })} options={['opus', 'g722', 'alaw', 'ulaw', 'gsm']} helperText="Reihenfolge = Vorrang. Opus und G.722 klingen deutlich besser (HD-Telefonie)." />
           </Full>
@@ -141,6 +155,79 @@ function Security() {
           <Full>
             <ChipsInput label="Nebenstellen nur aus diesen Netzen" value={s.extension_nets} onChange={(v) => set({ extension_nets: v })} helperText="Leer = von überall (z. B. Homeoffice). Mit 192.168.0.0/16 nur aus dem Büro-LAN." />
           </Full>
+          <Full>
+            <ChipsInput
+              label="Vertrauenswürdige Proxys"
+              value={s.trusted_proxies}
+              onChange={(v) => set({ trusted_proxies: v })}
+              helperText="Nur diesen Adressen glaubt die Anlage die Kopfzeile X-Forwarded-For (z. B. Newt von Pangolin). Standard: lokal und Docker-Netze."
+            />
+          </Full>
+          {status?.proxy_hints
+            .filter((h) => !s.trusted_proxies.includes(h.ip))
+            .map((h) => (
+              <Full key={h.ip}>
+                <Alert
+                  severity="info"
+                  action={
+                    <Button color="inherit" size="small" onClick={() => set({ trusted_proxies: [...s.trusted_proxies, h.ip] })}>
+                      Eintragen
+                    </Button>
+                  }
+                >
+                  {h.ip} schickt X-Forwarded-For (zuletzt {new Date(h.time).toLocaleString('de-DE')}). Ist das Ihr Reverse-Proxy, hier eintragen, damit Sperren die Adresse des Handys treffen und nicht den Proxy.
+                </Alert>
+              </Full>
+            ))}
+        </FormGrid>
+      </Section>
+      <Section
+        title="Schutz vor Gebührenbetrug"
+        description="Begrenzt den Schaden, falls ein Zugang in falsche Hände gerät: Betrüger rufen meist nachts mit vielen Gesprächen gleichzeitig teure Ziele an."
+      >
+        {config.security.outbound_stop ? (
+          <Alert
+            severity="error"
+            sx={{ mb: 2 }}
+            action={
+              <Button color="inherit" onClick={() => void saveSection('security', { ...config.security, outbound_stop: false })}>
+                Freigeben
+              </Button>
+            }
+          >
+            Notbremse aktiv: Gespräche nach außen sind gesperrt, nur Notrufe gehen durch.
+          </Alert>
+        ) : (
+          <Button color="error" variant="outlined" sx={{ mb: 2 }} onClick={() => void saveSection('security', { ...config.security, outbound_stop: true })}>
+            Notbremse ziehen
+          </Button>
+        )}
+        <FormGrid columns={3}>
+          <NumberField label="Gleichzeitig je Nebenstelle" value={s.max_calls_ext} onChange={(v) => set({ max_calls_ext: v })} min={0} helperText="Gespräche nach außen, 0 = unbegrenzt" />
+          <NumberField label="Gleichzeitig für die Anlage" value={s.max_calls_total} onChange={(v) => set({ max_calls_total: v })} min={0} helperText="0 = unbegrenzt" />
+          <NumberField label="Auslandsgespräche pro Tag" value={s.international_per_day} onChange={(v) => set({ international_per_day: v })} min={0} helperText="Danach greift die Notbremse, 0 = unbegrenzt" />
+          <Full>
+            <ChipsInput
+              label="Erlaubte Länder (Recht „international“)"
+              value={s.countries}
+              onChange={(v) => set({ countries: v })}
+              helperText="Ländervorwahlen ohne 00, z. B. 43 für Österreich, 1 für USA/Kanada. * = alle Länder."
+            />
+          </Full>
+          <Full>
+            <ChipsInput
+              label="Sonderrufnummern"
+              value={s.premium_prefixes}
+              onChange={(v) => set({ premium_prefixes: v })}
+              helperText="Nur für Nebenstellen mit „Sonderrufnummern erlaubt“. Vorwahlen wie 0900 oder 00881 (Satellit)."
+            />
+          </Full>
+          <Full>
+            <FormControlLabel control={<Switch checked={s.international_daytime} onChange={(e) => set({ international_daytime: e.target.checked })} />} label="Ausland nur von 6 bis 22 Uhr" />
+          </Full>
+          <Full>
+            <FormControlLabel control={<Switch checked={s.forward_international} onChange={(e) => set({ forward_international: e.target.checked })} />} label="Umleitungen und Rufabfolgen dürfen ins Ausland weiterleiten" />
+          </Full>
         </FormGrid>
       </Section>
       <Section title="Gesperrte Adressen">
@@ -161,7 +248,7 @@ function Security() {
           <Typography sx={{ color: 'text.secondary' }}>Keine.</Typography>
         )}
       </Section>
-      <ChangesBar dirty={d.dirty} onApply={() => saveSection('security', s)} onDiscard={d.reset} />
+      <ChangesBar dirty={d.dirty} onApply={() => saveSection('security', { ...s, outbound_stop: config.security.outbound_stop })} onDiscard={d.reset} />
     </>
   )
 }
@@ -172,7 +259,24 @@ function Backup() {
   const [files, setFiles] = useState(true)
   const [backups, setBackups] = useState<{ name: string; size: number; time: number }[]>([])
   const [restore, setRestore] = useState<string | null>(null)
-  const [importData, setImportData] = useState<unknown>(null)
+  const [importData, setImportData] = useState<{ format?: string } | null>(null)
+  const [exportPassword, setExportPassword] = useState('')
+  const [importPassword, setImportPassword] = useState('')
+  const encryptedImport = importData?.format === 'phone4all-pbx-encrypted'
+  const exportEncrypted = async (): Promise<void> => {
+    try {
+      const data = await api.post<unknown>('/api/export', { files, password: exportPassword })
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `phone4all-pbx-${new Date().toISOString().slice(0, 10)}-verschluesselt.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      setExportPassword('')
+    } catch (e) {
+      toast((e as Error).message, 'error')
+    }
+  }
   const ref = useRef<HTMLInputElement>(null)
   const load = (): void => void api.get<typeof backups>('/api/backups').then(setBackups)
   useEffect(load, [])
@@ -183,14 +287,27 @@ function Backup() {
           <FormControlLabel control={<Checkbox checked={secrets} onChange={(e) => setSecrets(e.target.checked)} />} label="Mit Passwörtern" />
           <FormControlLabel control={<Checkbox checked={files} onChange={(e) => setFiles(e.target.checked)} />} label="Mit Ansagen und Wartemusik" />
           <Box sx={{ flex: 1 }} />
-          <Button variant="contained" startIcon={<DownloadIcon />} href={`/api/export?secrets=${secrets ? 1 : 0}&files=${files ? 1 : 0}`}>
-            Exportieren
-          </Button>
+          {secrets ? (
+            <Button variant="contained" startIcon={<DownloadIcon />} disabled={exportPassword.length < 10} onClick={() => void exportEncrypted()}>
+              Exportieren
+            </Button>
+          ) : (
+            <Button variant="contained" startIcon={<DownloadIcon />} href={`/api/export?secrets=0&files=${files ? 1 : 0}`}>
+              Exportieren
+            </Button>
+          )}
         </Stack>
         {secrets && (
-          <Alert severity="warning" variant="outlined" sx={{ mt: 2 }}>
-            Die Datei enthält dann alle Passwörter im Klartext – sicher aufbewahren.
-          </Alert>
+          <TextField
+            type="password"
+            label="Passwort für die Datei"
+            value={exportPassword}
+            onChange={(e) => setExportPassword(e.target.value)}
+            helperText="Mindestens 10 Zeichen. Die Datei ist damit verschlüsselt; ohne das Passwort lässt sie sich nicht wieder einlesen."
+            autoComplete="new-password"
+            sx={{ mt: 2, maxWidth: 420 }}
+            fullWidth
+          />
         )}
       </Section>
       <Section title="Konfiguration importieren" description="Ersetzt die aktuelle Einrichtung. Vorher wird automatisch gesichert. Fehlende Passwörter werden aus der aktuellen Einrichtung übernommen oder neu erzeugt.">
@@ -216,7 +333,7 @@ function Backup() {
           Datei wählen …
         </Button>
       </Section>
-      <Section title="Automatische Sicherungen" description="Täglich sowie vor jedem Import, jeder Wiederherstellung und jedem Update. Die letzten 30 bleiben erhalten.">
+      <Section title="Automatische Sicherungen" description="Täglich sowie vor jedem Import, jeder Wiederherstellung und jedem Update. Erhalten bleiben die letzten 14 täglichen und je Anlass die letzten 10 übrigen. Mit gesichert werden „Nicht stören“ und Sofort-Umleitungen.">
         <Button sx={{ mb: 1 }} onClick={() => void api.post('/api/backups').then(load)}>
           Jetzt sichern
         </Button>
@@ -244,6 +361,7 @@ function Backup() {
           ))}
         </List>
       </Section>
+      <Offsite />
       <ConfirmDialog
         open={Boolean(restore)}
         title="Sicherung wiederherstellen?"
@@ -266,10 +384,14 @@ function Backup() {
         title="Konfiguration importieren?"
         text="Die aktuelle Einrichtung wird ersetzt (und vorher gesichert)."
         confirm="Importieren"
-        onClose={() => setImportData(null)}
-        onConfirm={() => {
-          const data = importData
+        onClose={() => {
           setImportData(null)
+          setImportPassword('')
+        }}
+        onConfirm={() => {
+          const data = encryptedImport ? { ...importData, password: importPassword } : importData
+          setImportData(null)
+          setImportPassword('')
           void api
             .post('/api/import', data)
             .then(reload)
@@ -277,7 +399,20 @@ function Backup() {
             .then(load)
             .catch((e: Error) => toast(e.message, 'error'))
         }}
-      />
+      >
+        {encryptedImport && (
+          <TextField
+            type="password"
+            label="Passwort der Datei"
+            value={importPassword}
+            onChange={(e) => setImportPassword(e.target.value)}
+            autoComplete="off"
+            sx={{ mt: 2 }}
+            fullWidth
+            autoFocus
+          />
+        )}
+      </ConfirmDialog>
     </>
   )
 }
@@ -347,6 +482,16 @@ function Updates() {
         {info?.error && (
           <Alert severity="warning" variant="outlined" sx={{ mb: 2 }}>
             Prüfung fehlgeschlagen: {info.error}
+          </Alert>
+        )}
+        {info?.last && (
+          <Alert severity={info.last.ok ? 'success' : 'error'} variant="outlined" sx={{ mb: 2 }}>
+            {new Date(info.last.time).toLocaleString('de-DE')}: {info.last.text}
+          </Alert>
+        )}
+        {info?.note && (
+          <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
+            {info.note}
           </Alert>
         )}
         {info && !info.canApply && (
@@ -426,6 +571,11 @@ function Access() {
       </Section>
       <Section title="Automatische Einrichtung der App" description="Die Phone4All-App sucht im lokalen Netz nach der Anlage (UDP-Port 15060).">
         <FormControlLabel control={<Switch checked={p.discovery} onChange={(e) => set({ discovery: e.target.checked })} />} label="Im lokalen Netz auffindbar" />
+        <FormControlLabel
+          control={<Switch checked={p.pin_remote} onChange={(e) => set({ pin_remote: e.target.checked })} />}
+          label="Einrichtung per PIN auch von außerhalb (sonst nur per Einrichtungslink)"
+          sx={{ display: 'flex' }}
+        />
       </Section>
       <Section
         title="Rechte in der App"
@@ -522,6 +672,16 @@ function Remote() {
   )
 }
 
+function Interfaces() {
+  return (
+    <>
+      <HomeAssistant />
+      <CallApi />
+      <Webhooks />
+    </>
+  )
+}
+
 function HomeAssistant() {
   const { config, saveSection, reload, toast } = usePbx()
   const [confirm, setConfirm] = useState(false)
@@ -539,7 +699,7 @@ function HomeAssistant() {
       .catch((e: Error) => toast(e.message, 'error'))
   return (
     <Section
-      title="Home Assistant"
+      title="Home Assistant und Schnittstelle"
       description="Verpasste Anrufe, abgemeldete SIP-Konten und andere Probleme in Home Assistant anzeigen und für Automationen nutzen. Die Integration „Phone4all“ liegt im Ordner custom_components des Projekts (über HACS installierbar)."
     >
       <FormControlLabel
@@ -553,7 +713,7 @@ function HomeAssistant() {
             }
           />
         }
-        label="Schnittstelle für Home Assistant einschalten"
+        label="Schnittstelle einschalten (Home Assistant, Anruf-API)"
       />
       {enabled && (
         <Stack sx={{ gap: 2, mt: 2 }}>
@@ -653,8 +813,12 @@ function Diagnose() {
   const d = useDraft<WatchdogSettings>(config.watchdog)
   const { draft: w, set } = d
   const [data, setData] = useState<WatchdogResponse | null>(null)
+  const [changes, setChanges] = useState<{ time: number; ip: string; action: string }[]>([])
   const [busy, setBusy] = useState(false)
-  const load = (): void => void api.get<WatchdogResponse>('/api/watchdog').then(setData).catch(() => undefined)
+  const load = (): void => {
+    void api.get<WatchdogResponse>('/api/watchdog').then(setData).catch(() => undefined)
+    void api.get<typeof changes>('/api/audit').then(setChanges).catch(() => undefined)
+  }
   useEffect(() => {
     load()
     const t = setInterval(load, 10000)
@@ -737,21 +901,143 @@ function Diagnose() {
           <Typography sx={{ color: 'text.secondary' }}>Keine Ereignisse.</Typography>
         )}
       </Section>
+      <Section title="Änderungsprotokoll" description="Anmeldungen und Änderungen in der Weboberfläche mit Adresse, neueste zuerst.">
+        {changes.length ? (
+          <List dense disablePadding sx={{ maxHeight: 420, overflow: 'auto' }}>
+            {changes.map((c, i) => (
+              <ListItem key={i} disableGutters>
+                <ListItemText primary={c.action} secondary={`${new Date(c.time).toLocaleString('de-DE')} · ${c.ip}`} />
+              </ListItem>
+            ))}
+          </List>
+        ) : (
+          <Typography sx={{ color: 'text.secondary' }}>Noch keine Einträge.</Typography>
+        )}
+      </Section>
       <ChangesBar dirty={d.dirty} onApply={() => saveSection('watchdog', w)} onDiscard={d.reset} />
+    </>
+  )
+}
+
+function Storage() {
+  const { config, saveSection, toast } = usePbx()
+  const d = useDraft<StorageSettings>(config.storage)
+  const { draft: st, set } = d
+  const [data, setData] = useState<StorageReport | null>(null)
+  const [remove, setRemove] = useState<string | null>(null)
+  const load = (): void => void api.get<StorageReport>('/api/storage').then(setData).catch((e: Error) => toast(e.message, 'error'))
+  useEffect(load, [])
+  const total = data?.areas.reduce((n, a) => n + a.bytes, 0) ?? 0
+  return (
+    <>
+      <Section
+        title="Belegung"
+        description="Was die Anlage im Datenordner ablegt. Wird die Platte knapp, meldet der Watchdog das unter Diagnose."
+        action={
+          <Button
+            onClick={() =>
+              void api
+                .post<{ recordings: number; voicemail: number; report: StorageReport }>('/api/storage/cleanup')
+                .then((r) => {
+                  setData(r.report)
+                  toast(`Aufgeräumt: ${r.recordings} Aufnahmen, ${r.voicemail} Voicemails`)
+                })
+                .catch((e: Error) => toast(e.message, 'error'))
+            }
+          >
+            Jetzt aufräumen
+          </Button>
+        }
+      >
+        {data && (
+          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' } }}>
+            {[...data.areas.map((a): [string, string] => [a.name, bytes(a.bytes)]), ['Zusammen', bytes(total)], ['Frei auf der Platte', data.free === null ? '–' : bytes(data.free)]].map(([l, v]) => (
+              <Box key={l}>
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                  {l}
+                </Typography>
+                <Typography variant="h6">{v}</Typography>
+              </Box>
+            ))}
+          </Box>
+        )}
+      </Section>
+      <Section title="Aufbewahrung" description="Ältere Aufnahmen und Voicemails löscht die Anlage einmal pro Stunde. 0 = unbegrenzt aufheben.">
+        <FormGrid>
+          <NumberField label="Aufnahmen aufheben (Tage)" value={st.recordings_days} min={0} onChange={(v) => set({ recordings_days: v })} helperText="Gesprächs- und Konferenzaufnahmen" />
+          <NumberField label="Voicemails aufheben (Tage)" value={st.voicemail_days} min={0} onChange={(v) => set({ voicemail_days: v })} helperText="Auch ungehörte Nachrichten" />
+        </FormGrid>
+      </Section>
+      <Section title="Aufnahmen" description="Alle Gesprächs- und Konferenzaufnahmen, neueste zuerst.">
+        {data?.recordings.length ? (
+          <List dense disablePadding sx={{ maxHeight: 520, overflow: 'auto' }}>
+            {data.recordings.map((r) => (
+              <ListItem
+                key={r.name}
+                divider
+                secondaryAction={
+                  <Stack direction="row">
+                    <Tooltip title="Herunterladen">
+                      <IconButton href={`/api/recordings/${r.name}?download`}>
+                        <DownloadIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Löschen">
+                      <IconButton onClick={() => setRemove(r.name)}>
+                        <DeleteIcon />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
+                }
+              >
+                <ListItemText
+                  primary={`${r.kind === 'conference' ? 'Konferenz' : 'Gespräch'} · ${new Date(r.time).toLocaleString('de-DE')}`}
+                  secondary={
+                    <>
+                      {bytes(r.size)}
+                      <audio controls preload="none" src={`/api/recordings/${r.name}`} style={{ height: 28, verticalAlign: 'middle', marginLeft: 8 }} />
+                    </>
+                  }
+                />
+              </ListItem>
+            ))}
+          </List>
+        ) : (
+          <Typography sx={{ color: 'text.secondary' }}>Keine Aufnahmen.</Typography>
+        )}
+      </Section>
+      <ConfirmDialog
+        open={Boolean(remove)}
+        title="Aufnahme löschen?"
+        text="Die Datei wird endgültig gelöscht."
+        confirm="Löschen"
+        onClose={() => setRemove(null)}
+        onConfirm={() => {
+          const name = remove
+          setRemove(null)
+          void api
+            .del(`/api/recordings/${name}`)
+            .then(load)
+            .catch((e: Error) => toast(e.message, 'error'))
+        }}
+      />
+      <ChangesBar dirty={d.dirty} onApply={() => saveSection('storage', st)} onDiscard={d.reset} />
     </>
   )
 }
 
 const TABS: [string, () => React.JSX.Element][] = [
   ['Allgemein', General],
+  ['Funktionen', Features],
   ['E-Mail', Mail],
   ['Sicherheit', Security],
   ['Sicherung', Backup],
+  ['Speicher', Storage],
   ['Aktualisierung', Updates],
   ['Zugang', Access],
   ['Fernzugriff', Remote],
   ['Diagnose', Diagnose],
-  ['Home Assistant', HomeAssistant],
+  ['Schnittstellen', Interfaces],
   ['Protokoll', Log],
 ]
 
@@ -774,7 +1060,7 @@ export default function System() {
   const Page = TABS[tab][1]
   return (
     <Box>
-      <PageHeader overline="System" title="Einstellungen und Wartung" description="Name, E-Mail, Sicherheit, Sicherungen, Updates, Diagnose und Home Assistant." />
+      <PageHeader overline="System" title="Einstellungen und Wartung" description="Name, Funktionen, E-Mail, Sicherheit, Sicherungen, Speicher, Updates, Diagnose und Schnittstellen." />
       <Tabs value={tab} onChange={(_e, v: number) => confirmDiscard() && setTab(v)} variant="scrollable" sx={{ mb: 2 }}>
         {TABS.map(([label]) => (
           <Tab key={label} label={label} />

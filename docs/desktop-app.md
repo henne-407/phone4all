@@ -103,8 +103,18 @@ nach Änderungen (siehe [App-Profile](telefonanlage.md#app-profile)).
 - Mit dem Recht *Telefonbuch bearbeiten* ändert und löscht die App Einträge im Telefonbuch
   der Anlage und legt neue an (*Im Telefonbuch von „…“ speichern*)
 - Anpassbare Startseite (Karten in bis zu drei Spalten): Status mit „Nicht stören“ und
-  Schnellwahl, Favoriten, letzte Anrufe, nächste Termine – ein-/ausblenden, sortieren,
+  Schnellwahl, Favoriten, letzte Anrufe, nächste Termine und – mit Phone4All-Telefonanlage –
+  *Kollegen*: wer frei ist, telefoniert, klingelt, „Nicht stören“ hat oder umgeleitet ist
+  (Klick ruft an), dazu geparkte Gespräche mit *Übernehmen* – ein-/ausblenden, sortieren,
   Startansicht wählbar
+- Mit Phone4All-Telefonanlage: **Voicemail** im Verlauf anhören, zurückrufen und löschen
+  (gehörte Nachrichten löschen auch die Anzeige an den Telefonen), Gespräche **parken**,
+  Anrufer im **CRM** öffnen (Adresse aus dem App-Profil) und mit dem Recht *Rufnummern
+  sperren* lästige Anrufer aus dem Verlauf heraus für die ganze Anlage sperren
+- Telefonnummern aus anderen Programmen wählen (Einstellungen → Allgemein → *Nummern aus
+  anderen Programmen wählen*): Phone4All öffnet auf Wunsch `tel:`-, `callto:`- und
+  `sip:`-Links aus Browser, CRM oder E-Mail; ein selbst gewähltes Tastenkürzel ruft die
+  markierte Nummer an (unter Linux reicht markieren, unter Windows und macOS vorher kopieren)
 - Wähltastatur mit Tastatureingabe, Kontaktvorschlägen und Wahlwiederholung
   (Anruftaste bei leerem Feld holt die letzte Nummer)
 - Kontakte (Name, Telefon, Mobil, weitere Nummern, Firma) mit Suche; Anrufer werden erkannt

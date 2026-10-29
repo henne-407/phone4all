@@ -7,6 +7,8 @@ export interface ReleaseAsset {
   name: string
   browser_download_url: string
   size: number
+  /** Prüfsumme, die GitHub zu jeder Datei angibt („sha256:…“) */
+  digest?: string | null
 }
 
 /** „v1.2.3“ / „1.2.3-beta.1“ vergleichen (> 0: a ist neuer). */

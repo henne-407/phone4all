@@ -44,7 +44,7 @@ export function inList(ip: string, list: string[]): boolean {
   })
 }
 
-/** Ereignis 'changed', wenn sich die Sperrliste ändert. */
+/** Ereignisse 'changed', wenn sich die Sperrliste ändert, und 'ban' (ip, Grund) bei neuer Sperre. */
 export class Guard extends EventEmitter {
   private failures = new Map<string, number[]>()
   bans: Ban[] = loadJson<Ban[]>(BANS_FILE, [])
@@ -85,10 +85,18 @@ export class Guard extends EventEmitter {
     }
   }
 
+  /** Sperre aus anderer Quelle (Weboberfläche, Einrichtung): beachtet Schalter und „Nie sperren“ */
+  report(ip: string, reason: string): void {
+    const s = this.settings()
+    if (!s.ban_enabled || !ip || inList(ip, ['127.0.0.1', '::1', ...s.whitelist]) || this.isBanned(ip)) return
+    this.ban(ip, reason, s.ban_minutes)
+  }
+
   ban(ip: string, reason: string, minutes: number): void {
     this.bans = [...this.bans.filter((b) => b.ip !== ip), { ip, reason, until: Date.now() + minutes * 60000 }]
     console.log(`Gesperrt: ${ip} – ${reason}`)
     this.persist()
+    this.emit('ban', ip, reason)
   }
 
   unban(ip: string): void {
@@ -98,6 +106,8 @@ export class Guard extends EventEmitter {
 
   private expire(): void {
     const now = Date.now()
+    const window = this.settings().ban_window * 60000
+    for (const [ip, list] of this.failures) if (!list.some((t) => t > now - window)) this.failures.delete(ip)
     if (this.bans.some((b) => b.until <= now)) {
       this.bans = this.bans.filter((b) => b.until > now)
       this.persist()

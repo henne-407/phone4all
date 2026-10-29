@@ -49,6 +49,8 @@ export interface PhoneUi {
   showPage(page: string): void
   newEvent(prefill: Partial<CalEvent>): void
   showCalendarEvent(): void
+  /** Gespräch angenommen (z. B. Anrufer im CRM öffnen) */
+  established(call: Call): void
 }
 
 function lastLine(data: string): string {
@@ -311,6 +313,7 @@ export class Phone {
     } else if (kind === 'CALL_ESTABLISHED' && call.state !== 'established') {
       call.state = 'established'
       call.established = Date.now()
+      this.ui.established(call)
       this.ui.withdraw(`call-${id}`)
       if (!call.mini) this.ui.closePopup(id)
       if (call.pendingTransfer) {
@@ -393,7 +396,8 @@ export class Phone {
   /** Das aktuelle Gespräch (nicht klingelnd), sonst ein klingelnder Anruf. */
   activeCall(exclude?: string): Call | null {
     const calls = [...this.calls.values()].filter((c) => c.id !== exclude)
-    calls.sort((a, b) => Number(a.state === 'incoming') - Number(b.state === 'incoming') || b.created - a.created)
+    // Gehaltene Gespräche erst nach dem laufenden (Anklopfen, Makeln)
+    calls.sort((a, b) => Number(a.state === 'incoming') - Number(b.state === 'incoming') || Number(a.held) - Number(b.held) || b.created - a.created)
     return calls[0] ?? null
   }
 
@@ -422,8 +426,10 @@ export class Phone {
   accept(id: string, via: 'window' | 'popup' | 'notification' = 'window'): void {
     const call = this.calls.get(id)
     if (!call || call.state !== 'incoming') return
-    const current = this.activeCall(id)
-    if (current && current.state !== 'incoming') this.engine.send('hangup', current.id)
+    // Anklopfen: laufende Gespräche halten statt auflegen
+    for (const other of this.calls.values()) {
+      if (other.id !== id && other.state === 'established' && !other.held) this.setHold(true, other.id)
+    }
     this.engine.callCommand(id, 'accept')
     call.mini = via !== 'window' && this.store.settings.mini_call
     if (call.mini) {
@@ -465,6 +471,16 @@ export class Phone {
     }
   }
 
+  /** Makeln: zum gehaltenen Gespräch wechseln, das bisherige wird gehalten */
+  switchTo(id: string): void {
+    const target = this.calls.get(id)
+    if (!target || target.state !== 'established') return
+    for (const other of this.calls.values()) {
+      if (other.id !== id && other.state === 'established' && !other.held) this.setHold(true, other.id)
+    }
+    this.setHold(false, id)
+  }
+
   sendDtmf(digit: string, id?: string): void {
     const call = this.call(id)
     if (call && /^[0-9*#]$/.test(digit)) this.engine.callCommand(call.id, 'sndcode', digit)
@@ -501,10 +517,12 @@ export class Phone {
     call.transferredTo = target
     this.engine.callCommand(call.id, 'transfer', target, (ok, data) => {
       if (ok) {
-        // Blind-Weiterleitung: baresip meldet nur Fehlschläge, den eigenen Teil beenden wir selbst
+        // Blind-Weiterleitung: Nach Erfolg beendet die Gegenstelle das Gespräch selbst. Ein
+        // Fehlschlag (TRANSFER_FAILED) setzt transferredTo zurück – dann bleibt der Anrufer dran.
+        // Kommt gar nichts, den eigenen Teil nach einer Weile selbst beenden.
         setTimeout(() => {
           if (this.calls.has(call.id) && call.transferredTo === target) this.engine.send('hangup', call.id)
-        }, 1500)
+        }, 8000)
       } else {
         call.transferredTo = null
         this.notifyInfo('Weiterleiten fehlgeschlagen', data.trim() ? lastLine(data) : '')

@@ -8,10 +8,12 @@ import {
   app as electronApp,
   dialog,
   ipcMain,
+  globalShortcut,
   powerMonitor,
   nativeImage,
   nativeTheme,
   screen,
+  shell,
   systemPreferences,
 } from 'electron'
 import { execFileSync } from 'node:child_process'
@@ -29,7 +31,8 @@ import { loadJson, saveJson } from './files'
 import { Messenger } from './messenger'
 import { DIRS, RINGTONE_DIR, resourcePath } from './paths'
 import { type Call, type NotifyOptions, Phone, type PhoneUi } from './phone'
-import { Provisioning } from './provisioning'
+import { isDialLink, numberFromLink, numberFromText, selectedText, setHotkey, setLinkHandler } from './links'
+import { Provisioning, crmUrl } from './provisioning'
 import { RINGTONES, ringtonePath } from './ringtones'
 import { Store } from './store'
 import { Updater } from './updater'
@@ -42,6 +45,7 @@ const DEFAULT_CARDS: [HomeCard, boolean][] = [
   ['favorites', true],
   ['recent', true],
   ['events', true],
+  ['team', true],
 ]
 
 // GNOME-Akzentfarben (org.gnome.desktop.interface accent-color)
@@ -134,6 +138,11 @@ export class App {
         this.send('new-event', prefill)
       },
       showCalendarEvent: () => this.showPage('calendar'),
+      established: (call) => {
+        // Anrufer von außen automatisch im CRM öffnen (App-Profil der Anlage)
+        const crm = this.store.settings.provisioning.crm
+        if (crm?.auto && call.direction === 'in' && call.number.replace(/\D/g, '').length > 5) this.openCrm(call.number, call.name)
+      },
     }
     this.phone = new Phone(this.store, this.calendar, ui)
     this.provisioning = new Provisioning(
@@ -198,7 +207,7 @@ export class App {
       () => this.store.settings.auto_update,
     )
     this.messenger = new Messenger({
-      url: () => this.provisioning.url,
+      url: () => this.provisioning.usableUrl,
       enabled: () => Boolean(this.store.settings.provisioning.messenger),
     })
     this.messenger.on('changed', () => {
@@ -242,6 +251,8 @@ export class App {
     this.provisioning.start()
     this.messenger.update()
     this.watchdog.start()
+    if (this.store.settings.links.handler && !process.env.SIP_TELEFON_SCREENSHOT) setLinkHandler(true)
+    this.applyHotkey()
     if (!process.env.SIP_TELEFON_SCREENSHOT) this.updater.start()
     // Nach dem Ruhezustand sind SIP-Verbindungen und NAT-Zuordnungen meist verloren
     powerMonitor.on('resume', () =>
@@ -252,13 +263,52 @@ export class App {
     )
   }
 
-  /** sip-telefon://-Link (Einrichtung durch die Telefonanlage); bestätigt wird in der Oberfläche. */
+  /** sip-telefon://-Link (Einrichtung durch die Telefonanlage); bestätigt wird in der Oberfläche. Wähl-Links (tel: …) wählen sofort. */
   openLink(link: string): void {
+    if (isDialLink(link)) {
+      const number = numberFromLink(link)
+      if (!number) return
+      this.present()
+      this.phone.dial(number)
+      return
+    }
     if (!link.startsWith('sip-telefon:')) return
     // Die Oberfläche holt den Link ab – beim Start auch erst, wenn sie geladen ist
     this.pendingLink = link
     this.present()
     this.send('pbx-link')
+  }
+
+  /** Tastenkürzel für „markierte Nummer wählen“ setzen; false = vom System oder einem anderen Programm belegt */
+  applyHotkey(): boolean {
+    return setHotkey(this.store.settings.links.hotkey, () =>
+      void selectedText().then((text) => {
+        const number = numberFromText(text)
+        if (!number) {
+          this.notify({ title: 'Keine Telefonnummer markiert', body: 'Nummer markieren (oder kopieren) und das Tastenkürzel erneut drücken.', tag: 'hotkey' })
+          return
+        }
+        this.present()
+        this.phone.dial(number)
+      }),
+    )
+  }
+
+  setLinks(values: { handler?: boolean; hotkey?: string }): boolean {
+    Object.assign(this.store.settings.links, values)
+    if (values.handler !== undefined) setLinkHandler(values.handler)
+    const ok = values.hotkey === undefined || this.applyHotkey()
+    if (!ok) this.store.settings.links.hotkey = ''
+    this.store.saveSettings()
+    this.stateChanged()
+    return ok
+  }
+
+  /** Anrufer im CRM der Firma öffnen (Adresse aus dem App-Profil) */
+  openCrm(number: string, name: string): void {
+    const crm = this.store.settings.provisioning.crm
+    if (!crm) return
+    void shell.openExternal(crmUrl(crm.url, number, name))
   }
 
   takePendingLink(): string | null {
@@ -271,7 +321,8 @@ export class App {
 
   private registerIpc(): void {
     ipcMain.handle('api', (_e, method: keyof Api, ...args: unknown[]) => {
-      const fn = this.api[method] as (...a: unknown[]) => unknown
+      // Nur eigene Funktionen der Schnittstelle, nichts aus der Prototypkette
+      const fn = Object.hasOwn(this.api, method) ? (this.api[method] as (...a: unknown[]) => unknown) : undefined
       if (typeof fn !== 'function') throw new Error(`Unbekannte Funktion: ${String(method)}`)
       return fn(...args)
     })
@@ -297,7 +348,9 @@ export class App {
         secureStorage: this.store.secureStorage,
       },
       reg: this.phone.reg,
-      banner: this.phone.banner,
+      banner: this.provisioning.invalid
+        ? { text: `Die Telefonanlage „${s.provisioning.pbx}“ kennt den Einrichtungslink nicht mehr (erneuert oder Nebenstelle gelöscht).`, button: 'Neu einrichten', action: 'preferences' }
+        : this.phone.banner,
       calls: [...this.phone.calls.values()].map(({ declined: _d, pendingTransfer: _p, ...info }) => info),
       settings: s,
       hasPassword: Boolean(this.store.getPassword()),
@@ -328,6 +381,8 @@ export class App {
         unread: this.messenger.unread,
         video: Boolean(s.provisioning.messenger && s.provisioning.video),
       },
+      team: this.provisioning.active ? this.provisioning.team : null,
+      voicemail: this.provisioning.active ? this.provisioning.voicemail : null,
     }
   }
 
@@ -402,6 +457,12 @@ export class App {
   // -- Fenster -------------------------------------------------------------
 
   private loadRenderer(win: BrowserWindow, hash: string): void {
+    // Keine neuen Fenster und kein Wegnavigieren (etwa durch einen Link im Chat)
+    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    win.webContents.on('will-navigate', (e, url) => {
+      const page = (u: string): string => u.replace(/[?#].*$/, '')
+      if (page(url) !== page(win.webContents.getURL())) e.preventDefault()
+    })
     if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}#${hash}`)
     else void win.loadFile(path.join(__dirname, '../renderer/index.html'), { hash })
   }
@@ -455,7 +516,6 @@ export class App {
         this.quit()
       }
     })
-    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   }
 
   mainWindow(): BrowserWindow | null {
@@ -722,6 +782,7 @@ export class App {
   quit(): void {
     if (this.quitting) return
     this.quitting = true
+    globalShortcut.unregisterAll()
     this.watchdog.stop()
     this.updater.stop()
     this.messenger.stop()

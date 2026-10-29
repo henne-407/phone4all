@@ -12,6 +12,7 @@ import type { AppHomeCard, AppPage, AppPermission, CentralCalendar, Extension, P
 import { SETTINGS } from './paths'
 import { type IceServer, appEndpoint, publicBase, videoEnabled, videoEndpoint, websocketUrl } from './remote'
 import { appPermissions } from './routing'
+import { parkingNumbers } from './store'
 
 export const DISCOVERY_PORT = 15060
 export const PROVISIONING_FORMAT = 'phone4all-provisioning'
@@ -53,6 +54,12 @@ export interface ProvisioningProfile {
   remote: RemoteAccount | null
   /** Videoanrufe im Messenger (Benutzer <nummer>-video, ruft sip:<raum>@<domain>), null = aus */
   video: RemoteAccount | null
+  /** Gespräche parken: Weiterleiten auf number parkt, slots holen zurück (null = aus) */
+  parking: { number: string; slots: string[] } | null
+  /** Anrufer im CRM öffnen: Adresse mit {nummer}, {e164}, {name} (null = aus) */
+  crm: { url: string; auto: boolean } | null
+  /** Voicemail in der App unter <url>/voicemail; Besetztanzeige unter <url>/presence */
+  voicemail: boolean
   /** Ändert sich mit jeder Änderung am Profil; die App fragt <url>/revision ab */
   revision: string
 }
@@ -88,6 +95,11 @@ function policy(cfg: PbxConfig, ext: Extension): AppPolicy | null {
   return { pages: p.pages, start_tab: p.start_tab, home_cards: p.home_cards, lock_layout: p.lock_layout, lock_account: p.lock_account }
 }
 
+function crm(cfg: PbxConfig, ext: Extension): { url: string; auto: boolean } | null {
+  const p = cfg.appprofiles.find((x) => x.id === ext.app_profile)
+  return p?.crm_url.trim() ? { url: p.crm_url.trim(), auto: p.crm_auto } : null
+}
+
 /** Basis für Links an Telefone: die öffentliche Adresse, sonst die aufgerufene */
 export function linkBase(cfg: PbxConfig, requestBase: string): string {
   return publicBase(cfg) || requestBase
@@ -101,20 +113,22 @@ export function baseUrl(host: string | undefined, cfg: PbxConfig, proto = 'http'
   return `http://${cfg.system.sip_host || 'localhost'}:${SETTINGS.httpPort}`
 }
 
-export function provisioningUrl(base: string, ext: Extension): string {
-  return `${base}/provision/${ext.provision_token}`
+/** Profiladresse zu einem Token (Einladungslink oder Gerät) */
+export function provisioningUrl(base: string, token: string): string {
+  return `${base}/provision/${token}`
 }
 
-/** Link, der die App öffnet (Protokoll sip-telefon://) */
+/** Link, der die App öffnet (Protokoll sip-telefon://), mit dem Einladungstoken */
 export function appLink(base: string, ext: Extension): string {
-  return `sip-telefon://provision?url=${encodeURIComponent(provisioningUrl(base, ext))}`
+  return `sip-telefon://provision?url=${encodeURIComponent(provisioningUrl(base, ext.provision_token))}`
 }
 
 /**
- * @param base Adresse, unter der die Anlage aufgerufen wurde
- * @param ice  STUN/TURN-Server für die Mobil-App
+ * @param base  Adresse, unter der die Anlage aufgerufen wurde
+ * @param ice   STUN/TURN-Server für die Mobil-App
+ * @param token Token des Geräts; die App ruft ihr Profil danach unter dieser Adresse ab
  */
-export function profile(cfg: PbxConfig, ext: Extension, base: string, ice: IceServer[] = []): ProvisioningProfile {
+export function profile(cfg: PbxConfig, ext: Extension, base: string, ice: IceServer[] = [], token = ''): ProvisioningProfile {
   const pub = linkBase(cfg, base)
   const domain = cfg.system.sip_host.trim() || new URL(base).hostname.replace(/^\[|\]$/g, '')
   const permissions = appPermissions(cfg, ext.number)
@@ -141,11 +155,12 @@ export function profile(cfg: PbxConfig, ext: Extension, base: string, ice: IceSe
       transport: 'udp',
       outbound: '',
       stun: '',
-      mediaenc: '',
+      // baresip: srtp = wenn möglich, srtp-mand = Pflicht
+      mediaenc: cfg.system.srtp === 'required' ? 'srtp-mand' : cfg.system.srtp === 'optional' ? 'srtp' : '',
       regint: 300,
     },
     password: ext.secret,
-    url: provisioningUrl(pub, ext),
+    url: token ? provisioningUrl(pub, token) : '',
     phonebook,
     features: {
       voicemail: '*97',
@@ -171,6 +186,9 @@ export function profile(cfg: PbxConfig, ext: Extension, base: string, ice: IceSe
       videoEnabled(cfg) && messengerUsers(cfg).some((e) => e.id === ext.id)
         ? { websocket: websocketUrl(base.replace(/\/+$/, '')), user: videoEndpoint(ext.number), domain, ice_servers: cfg.remote.enabled ? ice : [] }
         : null,
+    parking: cfg.parking.enabled ? { number: cfg.parking.number, slots: parkingNumbers(cfg).slice(1) } : null,
+    crm: crm(cfg, ext),
+    voicemail: ext.voicemail.enabled,
   }
   const revision = createHash('sha256').update(JSON.stringify(result)).digest('hex').slice(0, 16)
   return { ...result, revision }
@@ -206,8 +224,9 @@ function esc(s: string): string {
 }
 
 /** Kleine Seite für den Link aus der Einladungs-E-Mail */
-export function landingPage(cfg: PbxConfig, ext: Extension, base: string): string {
+export function landingPage(cfg: PbxConfig, ext: Extension, base: string, now = Date.now()): string {
   const link = appLink(base, ext)
+  const pin = ext.provision_pin && ext.provision_pin_expires > now ? ext.provision_pin : ''
   return `<!doctype html>
 <html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(cfg.system.name)} – Telefon einrichten</title>
@@ -224,7 +243,19 @@ dt{opacity:.7;font-size:14px}dd{margin:0 0 12px;font-size:18px;font-family:ui-mo
 <div class="card"><h2>Mit Phone4All</h2>
 <p>Phone4All installieren (Computer, Android oder iPhone) und dann auf diese Schaltfläche tippen – die App richtet sich selbst ein.</p>
 <p><a class="btn" href="${esc(link)}">In Phone4All einrichten</a></p>
-<p>Alternativ in der App unter Einstellungen → Konto → „Von Telefonanlage einrichten“ diese Angaben eintragen:</p>
-<dl><dt>Anlage</dt><dd>${esc(base)}</dd><dt>Nebenstelle</dt><dd>${esc(ext.number)}</dd><dt>Einrichtungs-PIN</dt><dd>${esc(ext.provision_pin)}</dd></dl>
+<p>Der Link gilt bis ${esc(new Date(ext.provision_expires).toLocaleString('de-DE'))}. Jedes Gerät erhält dabei einen eigenen Zugang.</p>
+${pin ? `<p>Alternativ im Netz der Anlage in der App unter Einstellungen → Konto → „Von Telefonanlage einrichten“ diese Angaben eintragen:</p>
+<dl><dt>Anlage</dt><dd>${esc(base)}</dd><dt>Nebenstelle</dt><dd>${esc(ext.number)}</dd><dt>Einrichtungs-PIN</dt><dd>${esc(pin)}</dd></dl>` : ''}
 </div></main></body></html>`
+}
+
+/** Seite für einen abgelaufenen Einladungslink */
+export function expiredPage(cfg: PbxConfig): string {
+  return `<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(cfg.system.name)} – Link abgelaufen</title>
+<style>:root{color-scheme:light dark}body{font:16px/1.5 Roboto,system-ui,sans-serif;max-width:520px;margin:24px auto;padding:0 16px}</style>
+</head><body><h1>Link abgelaufen</h1>
+<p>Dieser Einrichtungslink gilt nicht mehr. Bitte bei der Verwaltung der Anlage <b>${esc(cfg.system.name)}</b> eine neue Einladung anfordern.</p>
+</body></html>`
 }

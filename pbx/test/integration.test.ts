@@ -5,7 +5,7 @@ import { integrationReport, validToken } from '../server/integration'
 import type { UpdateInfo } from '../server/updates'
 import { sampleConfig } from './helpers'
 
-const update: UpdateInfo = { current: '0.3.0', latest: null, available: false, canApply: false, reason: '', project: '', checked: 0, error: '' }
+const update: UpdateInfo = { current: '0.3.0', latest: null, available: false, canApply: false, reason: '', project: '', checked: 0, error: '', last: null, note: '' }
 
 function status(extra: Partial<PbxStatus> = {}): PbxStatus {
   return { asterisk: 'running', message: '', uptime: '120', endpoints: [], registrations: [], calls: [], ...extra }
@@ -71,7 +71,7 @@ describe('Home-Assistant-Schnittstelle', () => {
 
   it('prüft den Zugriffsschlüssel', () => {
     const cfg = sampleConfig()
-    cfg.integration = { enabled: true, token: 'abc123' }
+    cfg.integration = { enabled: true, token: 'abc123', call_api: false }
     expect(validToken(cfg, 'Bearer abc123')).toBe(true)
     expect(validToken(cfg, 'Bearer abc124')).toBe(false)
     expect(validToken(cfg, 'abc123')).toBe(false)

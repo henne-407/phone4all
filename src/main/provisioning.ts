@@ -14,13 +14,16 @@ import type {
   Contact,
   HomeCard,
   PageName,
+  ParkedCall,
   PbxCalendar,
   PbxForward,
   PbxForwardChange,
   PbxFound,
   PbxPermission,
   PbxPreview,
+  TeamMember,
   VideoAccount,
+  VoicemailMessage,
 } from '../shared/types'
 import { loadJson, saveJson } from './files'
 import type { Store } from './store'
@@ -31,8 +34,10 @@ const PROFILE_FORMAT = 'phone4all-provisioning'
 const REFRESH_INTERVAL = 6 * 60 * 60 * 1000
 /** So oft fragt die App, ob sich Profil oder zentrale Termine geändert haben */
 const POLL_INTERVAL = 2 * 60 * 1000
+/** Besetztanzeige und Voicemail: kurze Abfrage alle paar Sekunden (nur im LAN bzw. über den Proxy) */
+const PRESENCE_INTERVAL = 4000
 const PAGES: PageName[] = ['home', 'dial', 'contacts', 'calendar', 'history', 'messenger']
-const CARDS: HomeCard[] = ['status', 'today', 'favorites', 'recent', 'events']
+const CARDS: HomeCard[] = ['status', 'today', 'favorites', 'recent', 'events', 'team']
 const URL_SECRET = 'pbx:url'
 
 export interface PbxProfile {
@@ -49,6 +54,9 @@ export interface PbxProfile {
   permissions: PbxPermission[]
   messenger: boolean
   video: VideoAccount | null
+  parking: { number: string; slots: string[] } | null
+  crm: { url: string; auto: boolean } | null
+  voicemail: boolean
   revision: string
 }
 
@@ -69,7 +77,59 @@ function parseVideo(data: unknown): VideoAccount | null {
   }
 }
 
-const PERMISSIONS: PbxPermission[] = ['forward', 'forward_external', 'forward_rules', 'calendar_edit', 'phonebook_edit']
+const PERMISSIONS: PbxPermission[] = ['forward', 'forward_external', 'forward_rules', 'calendar_edit', 'phonebook_edit', 'block_numbers']
+
+function parseParking(data: unknown): PbxProfile['parking'] {
+  const p = data as { number?: unknown; slots?: unknown } | null
+  if (!p || typeof p.number !== 'string' || !/^\d+$/.test(p.number) || !Array.isArray(p.slots)) return null
+  return { number: p.number, slots: p.slots.map(String).filter((x) => /^\d+$/.test(x)) }
+}
+
+function parseCrm(data: unknown): PbxProfile['crm'] {
+  const c = data as { url?: unknown; auto?: unknown } | null
+  if (!c || typeof c.url !== 'string' || !/^https?:\/\//i.test(c.url)) return null
+  return { url: c.url, auto: c.auto === true }
+}
+
+/** Antwort von …/presence prüfen */
+export function parsePresence(data: unknown): { extensions: TeamMember[]; parked: ParkedCall[]; revision: string; voicemail: { unread: number; revision: string } | null } | null {
+  const p = data as { extensions?: unknown; parked?: unknown; revision?: unknown; voicemail?: { unread?: unknown; revision?: unknown } | null } | null
+  if (!p || !Array.isArray(p.extensions) || !Array.isArray(p.parked)) return null
+  const states = ['idle', 'ringing', 'busy', 'offline']
+  return {
+    revision: String(p.revision ?? ''),
+    extensions: p.extensions
+      .filter((e) => e && typeof e.number === 'string')
+      .map((e) => ({
+        number: e.number,
+        name: String(e.name ?? ''),
+        state: states.includes(e.state) ? e.state : 'offline',
+        dnd: e.dnd === true,
+        forward: String(e.forward ?? ''),
+      })),
+    parked: p.parked
+      .filter((c) => c && typeof c.slot === 'string')
+      .map((c) => ({
+        slot: c.slot,
+        number: String(c.number ?? ''),
+        name: String(c.name ?? ''),
+        by: String(c.by ?? ''),
+        since: Number(c.since) || 0,
+        until: Number(c.until) || 0,
+      })),
+    voicemail: p.voicemail ? { unread: Number(p.voicemail.unread) || 0, revision: String(p.voicemail.revision ?? '') } : null,
+  }
+}
+
+/** Platzhalter der CRM-Adresse füllen: {nummer}, {e164}, {name} */
+export function crmUrl(template: string, number: string, name: string, countryCode = '49'): string {
+  const digits = number.replace(/[^\d+]/g, '')
+  const e164 = digits.startsWith('+') ? digits : digits.startsWith('00') ? `+${digits.slice(2)}` : digits.startsWith('0') ? `+${countryCode}${digits.slice(1)}` : digits
+  return template
+    .replace(/\{nummer\}/g, encodeURIComponent(digits))
+    .replace(/\{e164\}/g, encodeURIComponent(e164))
+    .replace(/\{name\}/g, encodeURIComponent(name))
+}
 
 /** Rechte aus dem Profil; ältere Anlagen kennen keine und erlauben alles wie bisher */
 export function parsePermissions(data: unknown): PbxPermission[] {
@@ -128,13 +188,12 @@ export function parseProfile(data: unknown): PbxProfile {
     throw new Error('Die Antwort ist kein Profil einer Phone4all-Telefonanlage.')
   }
   if (typeof p.password !== 'string' || p.password.includes(';')) throw new Error('Das Profil enthält kein gültiges Passwort.')
-  if (!['udp', 'tcp', 'tls'].includes(p.account.transport)) p.account.transport = 'udp'
   return {
     format: PROFILE_FORMAT,
     version: Number(p.version) || 1,
     pbx: { name: String(p.pbx?.name ?? 'Telefonanlage'), version: String(p.pbx?.version ?? '') },
     extension: String(p.extension ?? p.account.user),
-    account: p.account,
+    account: parseAccount(p.account),
     password: p.password,
     url: typeof p.url === 'string' && /^https?:\/\//.test(p.url) ? p.url : '',
     phonebook: Array.isArray(p.phonebook) ? p.phonebook.filter((e) => e && typeof e.phone === 'string') : [],
@@ -143,7 +202,39 @@ export function parseProfile(data: unknown): PbxProfile {
     permissions: parsePermissions(p.permissions),
     messenger: p.messenger === true,
     video: p.messenger === true ? parseVideo(p.video) : null,
+    parking: parseParking(p.parking),
+    crm: parseCrm(p.crm),
+    voicemail: p.voicemail === true,
     revision: String(p.revision ?? ''),
+  }
+}
+
+/**
+ * Nur bekannte Felder übernehmen; sie landen in der Kontozeile von baresip, daher keine
+ * Zeichen, mit denen sich weitere Parameter oder Zeilen einschmuggeln ließen.
+ */
+export function parseAccount(raw: Partial<AccountSettings>): AccountSettings {
+  const text = (v: unknown, pattern = /^[\w.:@[\]-]*$/): string => {
+    const s = String(v ?? '').trim()
+    if (!pattern.test(s)) throw new Error('Das Profil enthält ungültige Kontodaten.')
+    return s
+  }
+  const num = (v: unknown, max: number): number => {
+    const n = Number(v)
+    return Number.isInteger(n) && n >= 0 && n <= max ? n : 0
+  }
+  return {
+    display_name: String(raw.display_name ?? '').replace(/["<>;\r\n\\]/g, '').slice(0, 80),
+    user: text(raw.user),
+    domain: text(raw.domain),
+    auth_user: text(raw.auth_user),
+    port: num(raw.port, 65535),
+    local_port: num(raw.local_port, 65535),
+    transport: raw.transport === 'tcp' || raw.transport === 'tls' ? raw.transport : 'udp',
+    outbound: text(raw.outbound, /^[\w.:@[\];=-]*$/),
+    stun: text(raw.stun),
+    mediaenc: ['srtp', 'srtp-mand', 'srtp-mandf', 'dtls_srtp', 'zrtp'].includes(String(raw.mediaenc)) ? String(raw.mediaenc) : '',
+    regint: num(raw.regint, 86400) || 300,
   }
 }
 
@@ -223,12 +314,20 @@ export function discover(timeout = 1500): Promise<PbxFound[]> {
   })
 }
 
+/** Die Anlage kennt den Einrichtungslink nicht (mehr): erneuert oder Nebenstelle gelöscht */
+export class LinkInvalidError extends Error {
+  constructor() {
+    super('Der Einrichtungslink ist ungültig oder wurde erneuert.')
+  }
+}
+
 async function request(url: string, body?: unknown): Promise<PbxProfile> {
   let r: Response
   try {
     r = await fetch(url, {
       method: body ? 'POST' : 'GET',
-      headers: body ? { 'Content-Type': 'application/json' } : {},
+      // Name für die Geräteliste der Anlage
+      headers: { 'X-Device-Name': encodeURIComponent(os.hostname()), ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(10000),
     })
@@ -237,7 +336,7 @@ async function request(url: string, body?: unknown): Promise<PbxProfile> {
   }
   const data = (await r.json().catch(() => null)) as { error?: string } | null
   if (!r.ok) {
-    if (r.status === 404) throw new Error('Der Einrichtungslink ist ungültig oder wurde erneuert.')
+    if (r.status === 404) throw new LinkInvalidError()
     throw new Error(data?.error || `Die Telefonanlage antwortet mit Fehler ${r.status}.`)
   }
   return parseProfile(data)
@@ -271,10 +370,19 @@ export class Provisioning {
   private pending: PbxProfile | null = null
   private timer: NodeJS.Timeout | null = null
   private poller: NodeJS.Timeout | null = null
+  private presenceTimer: NodeJS.Timeout | null = null
+  private presenceRevision = ''
   private revision = { profile: '', events: '' }
+  /** Kollegen und geparkte Gespräche (null = Anlage kennt das nicht oder ist nicht erreichbar) */
+  team: { extensions: TeamMember[]; parked: ParkedCall[] } | null = null
+  /** Neue Voicemails und Änderungsstand (null = keine Voicemail) */
+  voicemail: { unread: number; version: string } | null = null
   phonebook: Omit<Contact, 'id'>[]
   /** Umleitungen der Nebenstelle (null = Anlage kennt sie nicht oder nicht erreichbar) */
   forward: PbxForward | null = null
+  /** Die Anlage kennt den Link nicht mehr (zweimal hintereinander 404): neu einrichten */
+  invalid = false
+  private notFound = 0
 
   constructor(
     private host: ProvisioningHost,
@@ -292,7 +400,86 @@ export class Provisioning {
     this.timer.unref()
     this.poller = setInterval(() => void this.poll(), POLL_INTERVAL)
     this.poller.unref()
+    this.presenceTimer = setInterval(() => void this.pollPresence(), PRESENCE_INTERVAL)
+    this.presenceTimer.unref()
     void this.refresh()
+  }
+
+  /** Besetztanzeige, geparkte Gespräche und Stand der Voicemail */
+  async pollPresence(): Promise<void> {
+    const url = this.url
+    if (!url) return this.setPresence(null)
+    try {
+      const r = await fetch(`${url}/presence`, { signal: AbortSignal.timeout(3500) })
+      // Ältere Anlage: kein Fehler, nur keine Anzeige
+      if (r.status === 404) return this.setPresence(null)
+      if (!r.ok) return
+      this.setPresence(parsePresence(await r.json()))
+    } catch {
+      // nicht erreichbar: Anzeige leeren, damit niemand einem alten Stand traut
+      this.setPresence(null)
+    }
+  }
+
+  private setPresence(p: ReturnType<typeof parsePresence>): void {
+    const vm = p?.voicemail && this.host.store.settings.provisioning.voicemail ? { unread: p.voicemail.unread, version: p.voicemail.revision } : null
+    const revision = p ? `${p.revision}|${JSON.stringify(vm)}` : ''
+    if (revision === this.presenceRevision) return
+    this.presenceRevision = revision
+    this.team = p ? { extensions: p.extensions, parked: p.parked } : null
+    this.voicemail = vm
+    this.host.stateChanged()
+  }
+
+  // -- Voicemail ------------------------------------------------------------------
+
+  private async call(path: string, method = 'GET', body?: object): Promise<Response> {
+    const url = this.url
+    if (!url) throw new Error('Keine Telefonanlage verbunden.')
+    let r: Response
+    try {
+      r = await fetch(`${url}${path}`, {
+        method,
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(15000),
+      })
+    } catch {
+      throw new Error('Die Telefonanlage ist nicht erreichbar.')
+    }
+    if (!r.ok) {
+      const data = (await r.json().catch(() => null)) as { error?: string } | null
+      throw new Error(data?.error || `Die Telefonanlage antwortet mit Fehler ${r.status}.`)
+    }
+    return r
+  }
+
+  async voicemailList(): Promise<VoicemailMessage[]> {
+    const data = (await (await this.call('/voicemail')).json()) as VoicemailMessage[]
+    return Array.isArray(data) ? data.filter((m) => m && typeof m.id === 'string') : []
+  }
+
+  /** WAV-Datei einer Nachricht */
+  async voicemailAudio(id: string): Promise<Uint8Array> {
+    return new Uint8Array(await (await this.call(`/voicemail/${encodeURIComponent(id)}`)).arrayBuffer())
+  }
+
+  /** Als gehört markieren; liefert die neue Liste */
+  async voicemailRead(id: string): Promise<VoicemailMessage[]> {
+    const list = (await (await this.call(`/voicemail/${encodeURIComponent(id)}`, 'PUT', {})).json()) as VoicemailMessage[]
+    void this.pollPresence()
+    return list
+  }
+
+  async voicemailDelete(id: string): Promise<VoicemailMessage[]> {
+    const list = (await (await this.call(`/voicemail/${encodeURIComponent(id)}`, 'DELETE')).json()) as VoicemailMessage[]
+    void this.pollPresence()
+    return list
+  }
+
+  /** Anrufer für die ganze Anlage sperren (Recht block_numbers) */
+  async blockNumber(number: string, note: string): Promise<void> {
+    await this.call('/blocklist', 'POST', { number, note })
   }
 
   /** Die Anlage verwaltet die Kontodaten (App-Profil) */
@@ -305,13 +492,29 @@ export class Provisioning {
     return this.active ? this.host.store.getSecret(URL_SECRET) : ''
   }
 
+  /** Adresse für Dienste, die mit ungültigem Link nur Fehlversuche erzeugen (Messenger) */
+  get usableUrl(): string {
+    return this.invalid ? '' : this.url
+  }
+
+  /** Antwort der Anlage auf Link-Abfragen auswerten; meldet Wechsel an die Oberfläche */
+  private linkStatus(found: boolean): void {
+    this.notFound = found ? 0 : this.notFound + 1
+    const invalid = this.notFound >= 2
+    if (invalid === this.invalid) return
+    this.invalid = invalid
+    this.host.stateChanged()
+  }
+
   /** Fragt nur den Änderungsstand ab und lädt bei Bedarf Profil oder Termine nach. */
   async poll(): Promise<void> {
     const url = this.url
     if (!url) return
     try {
       const r = await fetch(`${url}/revision`, { signal: AbortSignal.timeout(10000) })
+      if (r.status === 404) return this.linkStatus(false)
       if (!r.ok) return
+      this.linkStatus(true)
       const rev = (await r.json()) as { profile?: string; events?: string }
       if (rev.profile && rev.profile !== this.revision.profile) await this.refresh()
       if (rev.events && this.revision.events && rev.events !== this.revision.events) this.host.eventsChanged()
@@ -379,7 +582,8 @@ export class Provisioning {
     try {
       r = await fetch(`${url}/phonebook${id ? `/${encodeURIComponent(id)}` : ''}`, {
         method,
-        headers: body ? { 'Content-Type': 'application/json' } : {},
+        // Name für die Geräteliste der Anlage
+      headers: { 'X-Device-Name': encodeURIComponent(os.hostname()), ...(body ? { 'Content-Type': 'application/json' } : {}) },
         body: body ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(10000),
       })
@@ -414,6 +618,8 @@ export class Provisioning {
     if (!this.pending) throw new Error('Kein Profil zum Übernehmen.')
     const secure = this.applyProfile(this.pending, true)
     this.pending = null
+    this.notFound = 0
+    this.invalid = false
     void this.loadForward()
     return secure
   }
@@ -423,10 +629,26 @@ export class Provisioning {
     if (this.accountLocked) throw new Error('Die Telefonanlage verwaltet dieses Konto. Bitte in der Anlage das App-Profil ändern.')
     const { store } = this.host
     store.deleteSecret(URL_SECRET)
-    store.settings.provisioning = { pbx: '', extension: '', server: '', updated: 0, policy: null, calendars: [], permissions: [], messenger: false, video: null }
+    store.settings.provisioning = {
+      pbx: '',
+      extension: '',
+      server: '',
+      updated: 0,
+      policy: null,
+      calendars: [],
+      permissions: [],
+      messenger: false,
+      video: null,
+      parking: null,
+      crm: null,
+      voicemail: false,
+    }
     store.saveSettings()
     this.revision = { profile: '', events: '' }
     this.forward = null
+    this.notFound = 0
+    this.invalid = false
+    this.setPresence(null)
     this.setPhonebook([])
     this.host.calendarsChanged()
     this.host.stateChanged()
@@ -438,10 +660,12 @@ export class Provisioning {
     if (!this.active || !url) return
     try {
       const p = await request(url)
+      this.linkStatus(true)
       this.applyProfile(p, false)
       await this.loadForward()
-    } catch {
-      // Anlage gerade nicht erreichbar: beim nächsten Mal wieder versuchen
+    } catch (e) {
+      // Link erneuert: melden; sonst ist die Anlage gerade nicht erreichbar
+      if (e instanceof LinkInvalidError) this.linkStatus(false)
     }
   }
 
@@ -463,9 +687,13 @@ export class Provisioning {
       permissions: p.permissions,
       messenger: p.messenger,
       video: p.video,
+      parking: p.parking,
+      crm: p.crm,
+      voicemail: p.voicemail,
     }
     this.revision.profile = p.revision
-    store.settings.registered = true
+    // Nur bei der Einrichtung anmelden – wer sich bewusst abgemeldet hat, bleibt es
+    if (initial) store.settings.registered = true
     store.saveSettings()
     if (JSON.stringify(p.phonebook) !== JSON.stringify(this.phonebook)) this.setPhonebook(p.phonebook)
     if (calendarsChanged || initial) this.host.calendarsChanged()

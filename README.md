@@ -95,7 +95,7 @@ Telefonbuch per LDAP.
 
 ### 🏠 Home Assistant
 
-Verpasste Anrufe, abgemeldete SIP-Konten und Störungen als Sensoren und Ereignisse, mit
+Verpasste Anrufe, Notrufe, abgemeldete SIP-Konten und Störungen als Sensoren und Ereignisse, mit
 fertigem Blueprint für Benachrichtigungen aufs Handy. Installation über HACS.
 
 [Anleitung](docs/home-assistant.md)
@@ -136,8 +136,9 @@ holen sich ihre Einrichtung selbst.
 - Gruppen: alle gleichzeitig, nacheinander, Warteschlange
 - Rufabfolgen als Diagramm, per Drag & Drop bearbeitbar
 - Zeitsteuerung mit Feiertagen je Bundesland
-- Sprachmenüs, Ansagen im Browser aufnehmen
-- Voicemail per E-Mail, Konferenzräume, Aufzeichnung
+- Sprachmenüs, Ansagen im Browser aufnehmen oder aus Text sprechen
+- Voicemail per E-Mail und in den Apps, Konferenzräume, Aufzeichnung
+- Anrufsperren, Gespräche parken, Besetztanzeige
 
 </td>
 <td width="50%" valign="top">
@@ -148,7 +149,8 @@ holen sich ihre Einrichtung selbst.
 - Zentrales Telefonbuch, auch per LDAP
 - Zentrale Kalender für alle Apps
 - Messenger: Einzel- und Gruppenchats mit Dateien und Videoanrufen
-- App-Profile: was die Apps zeigen
+- App-Profile: was die Apps zeigen, CRM beim Anruf öffnen
+- Webhooks und Anrufe über die Schnittstelle
 
 </td>
 </tr>
@@ -158,7 +160,8 @@ holen sich ihre Einrichtung selbst.
 **Betrieb**
 - Watchdog mit Selbstheilung und Diagnose
 - Online-Updates, stabil oder Beta
-- Tägliche Sicherung, Export und Import
+- Tägliche Sicherung, auch verschlüsselt auf WebDAV oder S3
+- Benachrichtigung bei Notrufen
 - Sperre nach Fehlanmeldungen, TLS/SRTP
 
 </td>

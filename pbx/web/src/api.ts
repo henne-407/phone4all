@@ -77,6 +77,8 @@ export interface StatusResponse {
   update: UpdateInfo
   version: string
   remote: { enabled: boolean; turn: 'off' | 'running' | 'missing' | 'error'; connections: number }
+  /** Absender mit X-Forwarded-For, die nicht als Proxy eingetragen sind */
+  proxy_hints: { ip: string; time: number }[]
   watchdog: WatchdogStatus
 }
 
@@ -89,6 +91,8 @@ export interface UpdateInfo {
   project: string
   checked: number
   error: string
+  last: { ok: boolean; time: number; text: string } | null
+  note: string
 }
 
 export interface CallRecord {
@@ -99,7 +103,7 @@ export interface CallRecord {
   fromName: string
   to: string
   answeredBy: string
-  status: 'answered' | 'missed' | 'busy' | 'failed'
+  status: 'answered' | 'missed' | 'busy' | 'failed' | 'blocked'
   duration: number
   recordings: string[]
 }

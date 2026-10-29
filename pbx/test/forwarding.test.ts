@@ -110,7 +110,7 @@ describe('Rechte in der App', () => {
     expect(info.cfu).toBe('20')
     expect(info.active).toBe('20')
     expect(info.targets.map((t) => t.number)).toEqual(['11', '12', '20'])
-    expect(info.permissions).toContain('forward_external')
+    expect(info.permissions).not.toContain('forward_external')
   })
 })
 

@@ -5,7 +5,7 @@
  */
 
 export type AppPage = 'home' | 'dial' | 'contacts' | 'calendar' | 'history'
-export type AppHomeCard = 'status' | 'today' | 'favorites' | 'recent' | 'events'
+export type AppHomeCard = 'status' | 'today' | 'favorites' | 'recent' | 'events' | 'team'
 
 export interface AppPolicy {
   pages: AppPage[]
@@ -49,6 +49,49 @@ export interface Profile {
   calendars: { id: string; name: string; color: string; writable: boolean }[]
   remote: RemoteAccount | null
   revision: string
+  /** Rechte in der App (ältere Anlagen: fehlt) */
+  permissions?: string[]
+  /** Parken: Weiterleiten an number parkt (null = aus) */
+  parking?: { number: string; slots: string[] } | null
+  /** Anrufer im CRM öffnen: Adresse mit {nummer}, {e164}, {name} */
+  crm?: { url: string; auto: boolean } | null
+  /** Voicemail der Nebenstelle in der App */
+  voicemail?: boolean
+}
+
+export interface TeamMember {
+  number: string
+  name: string
+  state: 'idle' | 'ringing' | 'busy' | 'offline'
+  dnd: boolean
+  /** Umleitung: interne Nummer oder „extern“ */
+  forward: string
+}
+
+export interface ParkedCall {
+  slot: string
+  number: string
+  name: string
+  by: string
+  since: number
+  until: number
+}
+
+export interface Presence {
+  revision: string
+  extensions: TeamMember[]
+  parked: ParkedCall[]
+  voicemail: { revision: string; unread: number } | null
+}
+
+export interface VoicemailMessage {
+  id: string
+  folder: 'INBOX' | 'Old'
+  unread: boolean
+  time: number
+  number: string
+  name: string
+  duration: number
 }
 
 export interface CalendarEvent {
@@ -102,16 +145,23 @@ export function parseSetupInput(input: string): SetupTarget | null {
 
 export class SetupError extends Error {}
 
+/** Name für die Geräteliste der Anlage (setzt die App beim Start) */
+let deviceName = ''
+
+export function setDeviceName(name: string): void {
+  deviceName = encodeURIComponent(name.slice(0, 40))
+}
+
 async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
-    res = await fetch(url, { ...init, headers: { Accept: 'application/json', ...(init?.headers ?? {}) } })
+    res = await fetch(url, { ...init, headers: { Accept: 'application/json', ...(deviceName ? { 'X-Device-Name': deviceName } : {}), ...(init?.headers ?? {}) } })
   } catch {
     throw new SetupError('Die Telefonanlage ist nicht erreichbar. Adresse und Internetverbindung prüfen.')
   }
   const body = (await res.json().catch(() => null)) as (T & { error?: string }) | null
   if (!res.ok) {
-    if (res.status === 404) throw new SetupError(body?.error || 'Der Einrichtungslink ist ungültig oder wurde erneuert.')
+    if (res.status === 404) throw new SetupError(body?.error || 'Der Einrichtungslink ist ungültig, wurde erneuert oder das Gerät wurde abgemeldet.')
     throw new SetupError(body?.error || `Fehler ${res.status} von der Telefonanlage.`)
   }
   if (!body) throw new SetupError('Unerwartete Antwort – ist das wirklich eine Phone4all-Telefonanlage?')
@@ -162,6 +212,41 @@ export async function saveEvent(p: Profile, ev: CalendarEvent): Promise<void> {
 
 export async function deleteEvent(p: Profile, ev: CalendarEvent): Promise<void> {
   await getJson(`${p.url}/events/${encodeURIComponent(ev.calendar)}/${encodeURIComponent(ev.uid)}`, { method: 'DELETE' })
+}
+
+/** Besetztanzeige, geparkte Gespräche und Stand der Voicemail; null = ältere Anlage */
+export async function fetchPresence(p: Profile): Promise<Presence | null> {
+  const res = await fetch(`${p.url}/presence`, { headers: { Accept: 'application/json' } })
+  if (!res.ok) return null
+  const r = (await res.json().catch(() => null)) as Presence | null
+  return r && Array.isArray(r.extensions) && Array.isArray(r.parked) ? r : null
+}
+
+export async function fetchVoicemail(p: Profile): Promise<VoicemailMessage[]> {
+  return getJson<VoicemailMessage[]>(`${p.url}/voicemail`)
+}
+
+export async function markVoicemail(p: Profile, id: string): Promise<VoicemailMessage[]> {
+  return getJson<VoicemailMessage[]>(`${p.url}/voicemail/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+}
+
+export async function deleteVoicemail(p: Profile, id: string): Promise<VoicemailMessage[]> {
+  return getJson<VoicemailMessage[]>(`${p.url}/voicemail/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+/** Anrufer für die ganze Anlage sperren (Recht „Rufnummern sperren“) */
+export async function blockNumber(p: Profile, number: string, note: string): Promise<void> {
+  await getJson(`${p.url}/blocklist`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ number, note }) })
+}
+
+/** Platzhalter der CRM-Adresse füllen: {nummer}, {e164}, {name} */
+export function crmUrl(template: string, number: string, name: string, countryCode = '49'): string {
+  const digits = number.replace(/[^\d+]/g, '')
+  const e164 = digits.startsWith('+') ? digits : digits.startsWith('00') ? `+${digits.slice(2)}` : digits.startsWith('0') ? `+${countryCode}${digits.slice(1)}` : digits
+  return template
+    .replace(/\{nummer\}/g, encodeURIComponent(digits))
+    .replace(/\{e164\}/g, encodeURIComponent(e164))
+    .replace(/\{name\}/g, encodeURIComponent(name))
 }
 
 /** Seiten, die die App zeigt (Vorgabe der Anlage oder alle) */

@@ -122,13 +122,28 @@ function turnSecret(): string {
   return s
 }
 
-/** IPv4-Adressen dieses Rechners – nur dorthin darf der TURN-Server weiterleiten */
-export function localAddresses(): string[] {
-  const list = Object.values(os.networkInterfaces())
-    .flat()
-    .filter((a) => a && a.family === 'IPv4')
-    .map((a) => a!.address)
+/** Virtuelle Netze (Docker, VPN): dorthin darf das TURN-Relais nie weiterleiten */
+const VIRTUAL_IFACE = /^(docker|br-|veth|virbr|vnet|kube|cni|flannel|cali|tailscale|wg|zt|tun|tap|lo)/
+
+/** IPv4-Adressen der echten Netzwerkkarten dieses Rechners */
+export function localAddresses(ifaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces()): string[] {
+  const list = Object.entries(ifaces)
+    .filter(([name]) => !VIRTUAL_IFACE.test(name))
+    .flatMap(([, addrs]) => addrs ?? [])
+    .filter((a) => a.family === 'IPv4' && !a.internal)
+    .map((a) => a.address)
   return [...new Set(list.filter((ip) => ip !== '127.0.0.1'))]
+}
+
+/**
+ * Wohin das TURN-Relais weiterleiten darf: nur die Adresse, unter der Asterisk die Sprache
+ * annimmt (SIP-Adresse der Anlage), sonst die Adressen der echten Netzwerkkarten. Alles
+ * andere auf dem Rechner (NAS-Oberfläche, Freigaben, Docker-Netze) bleibt unerreichbar.
+ */
+export function turnPeers(cfg: PbxConfig, local: string[] = localAddresses()): string[] {
+  const host = cfg.system.sip_host.trim()
+  if (net.isIPv4(host) && local.includes(host)) return [host]
+  return local
 }
 
 export function turnConf(cfg: PbxConfig, secret: string, peers: string[], runUser: string): string {
@@ -145,6 +160,8 @@ export function turnConf(cfg: PbxConfig, secret: string, peers: string[], runUse
     'no-dtls',
     'no-cli',
     'no-multicast-peers',
+    // WebRTC braucht nur UDP-Relais; TCP-Relais (RFC 6062) wäre ein Tunnel zu beliebigen Diensten
+    'no-tcp-relay',
     'stale-nonce=600',
     'user-quota=12',
     'total-quota=240',
@@ -208,7 +225,7 @@ export class Turn {
       this.state = 'missing'
       return
     }
-    const conf = turnConf(cfg, this.secret, localAddresses(), SETTINGS.runUser)
+    const conf = turnConf(cfg, this.secret, turnPeers(cfg), SETTINGS.runUser)
     if (conf === this.conf && this.proc) return
     this.stop()
     this.conf = conf

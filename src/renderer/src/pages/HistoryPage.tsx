@@ -1,5 +1,6 @@
 /** Anrufverlauf mit Filtern; in breiten Fenstern mit Statistik-Seitenleiste. */
 
+import BlockIcon from '@mui/icons-material/Block'
 import CallIcon from '@mui/icons-material/Call'
 import CallMadeIcon from '@mui/icons-material/CallMade'
 import CallMissedIcon from '@mui/icons-material/CallMissed'
@@ -9,9 +10,16 @@ import HistoryIcon from '@mui/icons-material/History'
 import MoreIcon from '@mui/icons-material/MoreVert'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
 import {
+  Badge,
   Box,
+  Button,
   Card,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   IconButton,
   List,
   ListItem,
@@ -33,10 +41,15 @@ import type { HistoryRow } from '../../../shared/types'
 import { api } from '../api'
 import { emit } from '../bus'
 import { ContactAvatar, EmptyState } from '../components/common'
+import { VoicemailList } from '../components/VoicemailList'
 import { useApp } from '../state'
 
 export function HistoryItem({ entry }: { entry: HistoryRow }) {
+  const { state, toast } = useApp()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const [block, setBlock] = useState(false)
+  // Sperren in der Anlage: nur Anrufer von außen, nur mit Recht
+  const canBlock = state.settings.provisioning.permissions.includes('block_numbers') && entry.direction === 'in' && entry.number.replace(/\D/g, '').length > 5
   const name = entry.contactName || entry.name || entry.number
   const details = [formatTime(entry.time)]
   if (entry.missed) details.push('Verpasst')
@@ -92,7 +105,38 @@ export function HistoryItem({ entry }: { entry: HistoryRow }) {
             Als Kontakt speichern
           </MenuItem>
         )}
+        {canBlock && (
+          <MenuItem
+            onClick={() => {
+              setAnchor(null)
+              setBlock(true)
+            }}
+          >
+            <ListItemIcon>
+              <BlockIcon />
+            </ListItemIcon>
+            Nummer sperren …
+          </MenuItem>
+        )}
       </Menu>
+      <Dialog open={block} onClose={() => setBlock(false)} maxWidth="xs">
+        <DialogTitle>{name} sperren?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>Anrufe von {entry.number} kommen danach bei niemandem in der Telefonanlage mehr durch. Aufheben lässt sich die Sperre in der Weboberfläche der Anlage.</DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBlock(false)}>Abbrechen</Button>
+          <Button
+            color="error"
+            onClick={() => {
+              setBlock(false)
+              void api.pbxBlock(entry.number, name !== entry.number ? name : '').then((r) => toast(r.ok ? 'Nummer gesperrt' : r.error))
+            }}
+          >
+            Sperren
+          </Button>
+        </DialogActions>
+      </Dialog>
     </ListItem>
   )
 }
@@ -174,9 +218,11 @@ function SidePanel({ history }: { history: HistoryRow[] }) {
 }
 
 export function HistoryPage({ wide }: { wide: boolean }) {
-  const { history } = useApp()
+  const { state, history } = useApp()
   const [filter, setFilter] = useState('all')
-  const fn = FILTERS.find(([k]) => k === filter)![2]
+  const voicemail = state.voicemail
+  const showVoicemail = filter === 'voicemail' && voicemail
+  const fn = FILTERS.find(([k]) => k === filter)?.[2] ?? (() => true)
   const entries = history.filter(fn)
 
   useEffect(() => {
@@ -196,8 +242,20 @@ export function HistoryPage({ wide }: { wide: boolean }) {
               onClick={() => setFilter(key)}
             />
           ))}
+          {voicemail && (
+            <Badge color="error" badgeContent={voicemail.unread} overlap="rectangular">
+              <Chip
+                label="Voicemail"
+                variant={filter === 'voicemail' ? 'filled' : 'outlined'}
+                color={filter === 'voicemail' ? 'secondary' : 'default'}
+                onClick={() => setFilter('voicemail')}
+              />
+            </Badge>
+          )}
         </Stack>
-        {entries.length ? (
+        {showVoicemail ? (
+          <VoicemailList wide={wide} />
+        ) : entries.length ? (
           <Box sx={{ overflowY: 'auto', flex: 1, px: 2, pb: 2 }}>
             <Card sx={{ maxWidth: wide ? 900 : 560, mx: 'auto' }}>
               <List disablePadding>

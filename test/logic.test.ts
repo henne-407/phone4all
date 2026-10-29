@@ -296,6 +296,16 @@ describe('Einrichtung durch die Telefonanlage', () => {
     expect(() => parseProfile({ ...profile, password: 'a;b' })).toThrow()
   })
 
+  it('übernimmt nur bekannte und unverdächtige Kontofelder', () => {
+    const p = parseProfile({ ...profile, account: { ...profile.account, display_name: 'Anna "<x>";', extra: 'böse', regint: -5, mediaenc: 'srtp-mand' } })
+    expect(p.account).not.toHaveProperty('extra')
+    expect(p.account.display_name).toBe('Anna x')
+    expect(p.account.regint).toBe(300)
+    expect(p.account.mediaenc).toBe('srtp-mand')
+    expect(() => parseProfile({ ...profile, account: { ...profile.account, domain: 'pbx;outbound=sip:evil' } })).toThrow(/ungültige Kontodaten/)
+    expect(() => parseProfile({ ...profile, account: { ...profile.account, stun: 'a\nb' } })).toThrow()
+  })
+
   it('übernimmt Ansichten und Kalender der Anlage', () => {
     const p = parseProfile({
       ...profile,

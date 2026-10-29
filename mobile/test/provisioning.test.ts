@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { type Profile, checkProfile, fetchProfile, normalizeBase, parseSetupInput, setupWithPin, visiblePages } from '../src/provisioning'
+import { type Profile, checkProfile, crmUrl, fetchPresence, fetchProfile, normalizeBase, parseSetupInput, setupWithPin, visiblePages } from '../src/provisioning'
 
 const profile = (extra: Partial<Profile> = {}): Profile => ({
   format: 'phone4all-provisioning',
@@ -72,5 +72,19 @@ describe('Profil', () => {
     expect(visiblePages(profile())).toEqual(['home', 'dial', 'contacts', 'calendar', 'history'])
     const app = { pages: ['dial', 'contacts'] as const, start_tab: 'dial' as const, home_cards: [], lock_layout: false, lock_account: true }
     expect(visiblePages(profile({ app: { ...app, pages: [...app.pages] } }))).toEqual(['dial', 'contacts'])
+  })
+})
+
+describe('Welle 1', () => {
+  it('liest die Besetztanzeige; ältere Anlagen liefern null', async () => {
+    const body = { revision: '1', extensions: [{ number: '11', name: 'Bert', state: 'busy', dnd: false, forward: '' }], parked: [], voicemail: { revision: 'v', unread: 1 } }
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status: 200 })))
+    expect((await fetchPresence(profile()))?.extensions[0].state).toBe('busy')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'Nicht gefunden' }), { status: 404 })))
+    expect(await fetchPresence(profile())).toBeNull()
+  })
+
+  it('füllt die CRM-Adresse', () => {
+    expect(crmUrl('https://crm/s?t={e164}&n={nummer}&q={name}', '030 123456', 'Anna Müller')).toBe('https://crm/s?t=%2B4930123456&n=030123456&q=Anna%20M%C3%BCller')
   })
 })

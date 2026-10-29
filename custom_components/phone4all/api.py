@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Any
 
 import aiohttp
@@ -26,11 +27,17 @@ class Phone4allUnsupported(Phone4allError):
     """Die Anlage ist zu alt und kennt die Schnittstelle nicht."""
 
 
+# IP-Adresse (auch [IPv6]) mit optionalem Port, oder ein Name mit dem Port der Anlage im LAN
+_LAN_HOST = re.compile(r"^(\d{1,3}(\.\d{1,3}){3}|\[[0-9a-fA-F:.]+\])(:\d+)?$|:8080$")
+
+
 def normalize_url(url: str) -> str:
-    """„pbx.example.de/“ → „https://pbx.example.de“."""
+    """„pbx.example.de/“ → „https://pbx.example.de“, „192.168.1.5:8080“ → „http://192.168.1.5:8080“."""
     url = url.strip().rstrip("/")
     if "://" not in url:
-        url = f"https://{url}"
+        # Im LAN spricht die Anlage nur HTTP; HTTPS gibt es erst über den Reverse-Proxy
+        host = url.split("/", 1)[0]
+        url = f"http://{url}" if _LAN_HOST.search(host) else f"https://{url}"
     return url
 
 

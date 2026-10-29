@@ -77,7 +77,7 @@ export function listSounds(kind: SoundKind): { name: string; size: number }[] {
 }
 
 export function soundFile(kind: string, name: string): string {
-  if (!/^[\w.-]+$/.test(name)) throw new HttpError(400, 'Ungültiger Dateiname.')
+  if (!/^[\w-][\w.-]*$/.test(name)) throw new HttpError(400, 'Ungültiger Dateiname.')
   const file = path.join(soundDir(kind), name)
   if (!fs.existsSync(file)) throw new HttpError(404, 'Datei nicht gefunden.')
   return file

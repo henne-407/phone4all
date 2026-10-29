@@ -12,7 +12,7 @@ export interface DirectoryEntry {
 }
 
 /** Kontakte aus externen Quellen (CardDAV, SQL …); setzt der Abgleich beim Start */
-export const external = { entries: (): DirectoryEntry[] => [] }
+export const external = { entries: (): DirectoryEntry[] => [], revision: (): number => 0 }
 
 /** Einträge in fester Reihenfolge; exclude = ID der eigenen Nebenstelle */
 export function directory(cfg: PbxConfig, exclude = ''): DirectoryEntry[] {

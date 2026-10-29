@@ -9,7 +9,7 @@ function ConferenceForm({ value, onChange }: { value: Conference; onChange: (v: 
       <TextField label="Rufnummer" value={value.number} onChange={(e) => set('number', e.target.value.replace(/\D/g, ''))} required autoFocus helperText="z. B. 800" />
       <TextField label="Name" value={value.name} onChange={(e) => set('name', e.target.value)} />
       <TextField label="PIN für Teilnehmer" value={value.pin} onChange={(e) => set('pin', e.target.value.replace(/\D/g, ''))} helperText="Leer = ohne PIN" />
-      <TextField label="PIN für Moderation" value={value.admin_pin} onChange={(e) => set('admin_pin', e.target.value.replace(/\D/g, ''))} helperText="Moderatoren dürfen Teilnehmer stummschalten" />
+      <TextField label="PIN für Moderation" value={value.admin_pin} onChange={(e) => set('admin_pin', e.target.value.replace(/\D/g, ''))} helperText="Moderatoren dürfen Teilnehmer stummschalten. Ohne Teilnehmer-PIN drücken alle anderen bei der Abfrage einfach #" />
       <NumberField label="Höchstens Teilnehmer (0 = 50)" value={value.max_members} onChange={(v) => set('max_members', v)} />
       <Full>
         <FormControlLabel control={<Switch checked={value.record} onChange={(e) => set('record', e.target.checked)} />} label="Konferenz aufzeichnen (nur mit Einwilligung aller)" />

@@ -4,7 +4,7 @@
  * Asterisk-Konfigurationsdateien erzeugt. Wird auch von der Weboberfläche importiert.
  */
 
-export const CONFIG_VERSION = 1
+export const CONFIG_VERSION = 2
 
 /** Wohin ein Anruf geht (Ziel in Anrufabläufen, Fallbacks, Sprachmenüs …). */
 export type DestinationType =
@@ -46,12 +46,30 @@ export interface Extension {
    */
   forward: { busy: string; noanswer: string; rules: ForwardRule[] }
   record: boolean
-  /** Einrichtungs-PIN für die App (zusammen mit der Nebenstelle) */
+  /** Einrichtungs-PIN für die App (zusammen mit der Nebenstelle), gilt einmal */
   provision_pin: string
-  /** Geheimer Teil des Einrichtungslinks */
+  /** PIN gültig bis (ms seit 1970); 0 = abgelaufen oder schon benutzt */
+  provision_pin_expires: number
+  /** Geheimer Teil des Einladungslinks (QR-Code, E-Mail); jedes Gerät bekommt daraus ein eigenes Token */
   provision_token: string
+  /** Einladungslink gültig bis (ms seit 1970); 0 = abgelaufen */
+  provision_expires: number
+  /** Eingerichtete Apps; jede hat ein eigenes Token und lässt sich einzeln abmelden */
+  devices: AppDevice[]
   /** App-Profil (Ansichten der Phone4All-App), leer = ohne Vorgaben */
   app_profile: string
+}
+
+/** Eine eingerichtete App (Desktop oder Handy) einer Nebenstelle */
+export interface AppDevice {
+  id: string
+  name: string
+  /** Geheimer Teil der Profiladresse dieses Geräts */
+  token: string
+  created: number
+  /** Zuletzt gesehen (ms seit 1970) und von welcher Adresse */
+  seen: number
+  ip: string
 }
 
 /** Umleitung, die sich nach Zeit oder Zustand selbst einschaltet. */
@@ -70,7 +88,7 @@ export interface ForwardRule {
 }
 
 /** Was eine Nebenstelle in der App selbst einstellen darf */
-export type AppPermission = 'forward' | 'forward_external' | 'forward_rules' | 'calendar_edit' | 'phonebook_edit'
+export type AppPermission = 'forward' | 'forward_external' | 'forward_rules' | 'calendar_edit' | 'phonebook_edit' | 'voicemail_other' | 'block_numbers'
 
 export const APP_PERMISSIONS: [AppPermission, string, string][] = [
   ['forward', 'Umleitung schalten', 'In der App die Sofort-Umleitung ein- und ausschalten'],
@@ -78,6 +96,8 @@ export const APP_PERMISSIONS: [AppPermission, string, string][] = [
   ['forward_rules', 'Umleitungsregeln bearbeiten', 'Weiterleitung bei besetzt/keine Antwort und Regeln nach Zeit'],
   ['calendar_edit', 'Zentrale Kalender bearbeiten', 'Termine in beschreibbaren zentralen Kalendern anlegen und ändern'],
   ['phonebook_edit', 'Telefonbuch bearbeiten', 'Einträge im zentralen Telefonbuch anlegen und ändern'],
+  ['voicemail_other', 'Fremde Voicemail abhören', 'Mit *98 andere Mailboxen abhören (mit deren PIN)'],
+  ['block_numbers', 'Rufnummern sperren', 'Anrufer aus dem Verlauf auf die Sperrliste der Anlage setzen'],
 ]
 
 export type GroupMode = 'all' | 'sequential' | 'queue'
@@ -211,6 +231,86 @@ export interface Announcement {
   next: Destination
 }
 
+/** Gesperrte Rufnummer für eingehende Anrufe */
+export interface BlockedNumber {
+  id: string
+  /** Rufnummer wie eingegeben; endet sie auf *, gilt sie für alle Nummern mit diesem Anfang */
+  number: string
+  note: string
+  /** ISO-Datum der Sperre */
+  created: string
+  /** Nebenstelle, die gesperrt hat (leer = Weboberfläche) */
+  by: string
+}
+
+/** Eingehende Anrufe sperren (Liste unter blocklist) */
+export interface BlockingSettings {
+  /** Anrufe ohne Rufnummer annehmen oder abweisen */
+  anonymous: 'allow' | 'reject'
+}
+
+/** Gespräche parken (res_parking): Weiterleiten auf number parkt, number+1 … holt zurück */
+export interface ParkingSettings {
+  enabled: boolean
+  number: string
+  slots: number
+  /** Danach klingelt es wieder bei dem, der geparkt hat */
+  seconds: number
+}
+
+/** Wer erfährt, dass jemand 110 oder 112 gewählt hat */
+export interface EmergencySettings {
+  /** E-Mail-Adressen (leer = keine E-Mail) */
+  notify_email: string
+  /** Nebenstellen, die eine Nachricht im Messenger bekommen */
+  notify_exts: string[]
+}
+
+/** Sicherung zusätzlich auf einem anderen Speicher (WebDAV oder S3) */
+export interface OffsiteSettings {
+  enabled: boolean
+  type: 'webdav' | 's3'
+  /** WebDAV: Adresse des Ordners · S3: Adresse des Dienstes, z. B. https://s3.eu-central-1.amazonaws.com */
+  url: string
+  /** WebDAV: Benutzer · S3: Access Key */
+  user: string
+  /** WebDAV: Passwort · S3: Secret Key */
+  password: string
+  /** Nur S3 */
+  bucket: string
+  region: string
+  /** Unterordner bzw. Präfix */
+  folder: string
+  /** So viele Sicherungen bleiben am Ziel */
+  keep: number
+  /** Verschlüsseln mit diesem Kennwort (leer = unverschlüsselt) */
+  passphrase: string
+}
+
+export type WebhookEvent = 'call.ringing' | 'call.answered' | 'call.ended' | 'call.missed' | 'voicemail.new' | 'call.blocked' | 'emergency'
+
+export const WEBHOOK_EVENTS: [WebhookEvent, string][] = [
+  ['call.ringing', 'Anruf klingelt'],
+  ['call.answered', 'Anruf angenommen'],
+  ['call.ended', 'Anruf beendet'],
+  ['call.missed', 'Anruf verpasst'],
+  ['voicemail.new', 'Neue Voicemail'],
+  ['call.blocked', 'Anruf gesperrt'],
+  ['emergency', 'Notruf gewählt'],
+]
+
+/** Webhook: die Anlage meldet Ereignisse per HTTP POST */
+export interface Webhook {
+  id: string
+  name: string
+  url: string
+  enabled: boolean
+  /** Leer = alle Ereignisse */
+  events: WebhookEvent[]
+  /** Schlüssel für die Signatur (X-Phone4all-Signature), vergibt der Server */
+  secret: string
+}
+
 export interface PhonebookEntry {
   id: string
   name: string
@@ -237,6 +337,8 @@ export interface SystemSettings {
   codecs: string[]
   /** Zeitzone für Zeitsteuerung und Voicemail */
   timezone: string
+  /** Verschlüsselte Sprache (SRTP) für Telefone im LAN: aus, wenn das Telefon es anbietet, oder Pflicht */
+  srtp: 'off' | 'optional' | 'required'
 }
 
 export interface MailSettings {
@@ -256,7 +358,35 @@ export interface SecuritySettings {
   whitelist: string[] // IPs/Netze, die nie gesperrt werden
   /** Nebenstellen nur aus diesen Netzen zulassen (leer = überall) */
   extension_nets: string[]
+  /** Reverse-Proxys (z. B. Newt von Pangolin), deren X-Forwarded-For gilt */
+  trusted_proxies: string[]
+  // -- Schutz vor Gebührenbetrug
+  /** Notbremse: keine Gespräche nach außen außer Notruf */
+  outbound_stop: boolean
+  /** Gleichzeitige Gespräche nach außen je Nebenstelle und für die ganze Anlage (0 = unbegrenzt) */
+  max_calls_ext: number
+  max_calls_total: number
+  /** Sonderrufnummern (Vorwahlen wie 0900 oder 00881), nur mit Recht „Sonderrufnummern“ */
+  premium_prefixes: string[]
+  /** Länder für das Recht „international“ (Ländervorwahlen ohne 00, leer = alle) */
+  countries: string[]
+  /** Ausland nur zwischen 6 und 22 Uhr */
+  international_daytime: boolean
+  /** Auslandsgespräche pro Tag, danach greift die Notbremse (0 = unbegrenzt) */
+  international_per_day: number
+  /** Umleitungen und Rufabfolgen dürfen ins Ausland weiterleiten */
+  forward_international: boolean
 }
+
+/** Gebührenpflichtige Sonderrufnummern in Deutschland und Satellitennetze */
+export const DEFAULT_PREMIUM_PREFIXES = ['0900', '0137', '0138', '0180', '0181', '019', '012', '0700', '032', '031', '00870', '00881', '00882', '00883', '00979']
+
+/** EU, EWR, Schweiz, Großbritannien und Nachbarn auf dem Balkan */
+export const DEFAULT_COUNTRIES = [
+  '30', '31', '32', '33', '34', '351', '352', '353', '354', '356', '357', '358', '359', '36', '370', '371', '372',
+  '376', '377', '378', '381', '382', '385', '386', '387', '389', '39', '40', '41', '420', '421', '423', '43', '44',
+  '45', '46', '47', '48',
+]
 
 export interface UpdateSettings {
   channel: 'stable' | 'beta'
@@ -287,11 +417,17 @@ export interface WatchdogSettings {
   notify_email: string
 }
 
+/** Speicher: wie lange Aufnahmen und Voicemails aufbewahrt werden (0 = unbegrenzt) */
+export interface StorageSettings {
+  recordings_days: number
+  voicemail_days: number
+}
+
 // Zustand und Ereignisse des Watchdogs (server/watchdog.ts), auch für die Weboberfläche
 
 /** ok: wieder in Ordnung, info: Maßnahme, warning/error: Störung */
 export type WatchLevel = 'ok' | 'info' | 'warning' | 'error'
-export type CheckId = 'asterisk' | 'trunks' | 'disk'
+export type CheckId = 'asterisk' | 'trunks' | 'disk' | 'security' | 'backup'
 export type CheckLevel = 'ok' | 'warning' | 'error'
 
 export interface WatchEvent {
@@ -324,6 +460,8 @@ export interface IntegrationSettings {
   enabled: boolean
   /** Zugriffsschlüssel (Bearer-Token), vergibt der Server */
   token: string
+  /** Anrufe über POST /api/integration/call starten */
+  call_api: boolean
 }
 
 /** Messenger: Chats zwischen den Nebenstellen (server/messenger.ts) */
@@ -331,10 +469,14 @@ export interface MessengerSettings {
   enabled: boolean
   /** Größte Datei, die man verschicken kann (MB) */
   max_file_mb: number
-  /** Alte Nachrichten werden nur gelöscht, wenn weniger Speicher frei ist (MB) */
+  /** Kontingent: Belegen Nachrichten und Anhänge mehr, werden die ältesten gelöscht (MB) */
+  max_storage_mb: number
+  /** Notbremse: Ist weniger frei, wird höchstens die Hälfte des Messengers gelöscht (MB) */
   min_free_mb: number
   /** Videoanrufe in den Chats (WebRTC über /ws, Konferenzraum je Unterhaltung) */
   video: boolean
+  /** Speicher für Anhänge je Nebenstelle (MB, 0 = unbegrenzt) */
+  quota_mb: number
 }
 
 /** Unterhaltung: Einzelchat (zwei Nebenstellen) oder Gruppe */
@@ -372,7 +514,7 @@ export interface ChatMessage {
 
 /** Seiten und Startkarten der Phone4All-App (wie dort benannt) */
 export type AppPage = 'home' | 'dial' | 'contacts' | 'calendar' | 'history' | 'messenger'
-export type AppHomeCard = 'status' | 'today' | 'favorites' | 'recent' | 'events'
+export type AppHomeCard = 'status' | 'today' | 'favorites' | 'recent' | 'events' | 'team'
 
 export const APP_PAGES: [AppPage, string][] = [
   ['home', 'Start'],
@@ -389,6 +531,7 @@ export const APP_HOME_CARDS: [AppHomeCard, string][] = [
   ['favorites', 'Favoriten'],
   ['recent', 'Letzte Anrufe'],
   ['events', 'Nächste Termine'],
+  ['team', 'Kollegen und geparkte Gespräche'],
 ]
 
 /** Vorgaben für die Ansichten der App, Nebenstellen wählen ein Profil */
@@ -405,6 +548,10 @@ export interface AppProfile {
   lock_account: boolean
   /** Sichtbare zentrale Kalender (leer = alle) */
   calendars: string[]
+  /** Anrufer im CRM öffnen: Adresse mit {nummer}, {e164}, {name} (leer = aus) */
+  crm_url: string
+  /** Beim Annehmen automatisch öffnen (sonst nur per Knopf) */
+  crm_auto: boolean
 }
 
 /** Zentraler Kalender; Termine liegen in data/calendars/<id>.json */
@@ -493,6 +640,8 @@ export interface PbxConfig {
   conferences: Conference[]
   announcements: Announcement[]
   phonebook: PhonebookEntry[]
+  blocklist: BlockedNumber[]
+  webhooks: Webhook[]
   contactsources: ContactSource[]
   appprofiles: AppProfile[]
   calendars: CentralCalendar[]
@@ -501,12 +650,18 @@ export interface PbxConfig {
   security: SecuritySettings
   updates: UpdateSettings
   /** discovery: im Netz auffindbar · permissions: Rechte aller Nebenstellen in der App */
-  provisioning: { discovery: boolean; permissions: AppPermission[] }
+  /** pin_remote: Einrichtung per PIN auch von außerhalb der lokalen Netze */
+  provisioning: { discovery: boolean; permissions: AppPermission[]; pin_remote: boolean }
   remote: RemoteSettings
   watchdog: WatchdogSettings
   integration: IntegrationSettings
   ldap: LdapSettings
   messenger: MessengerSettings
+  storage: StorageSettings
+  blocking: BlockingSettings
+  parking: ParkingSettings
+  emergency: EmergencySettings
+  offsite: OffsiteSettings
 }
 
 export const HANGUP: Destination = { type: 'hangup', target: '' }
@@ -528,6 +683,7 @@ export const DEFAULT_CONFIG: PbxConfig = {
     language: 'de',
     codecs: ['opus', 'g722', 'alaw', 'ulaw'],
     timezone: 'Europe/Berlin',
+    srtp: 'off',
   },
   extensions: [],
   groups: [],
@@ -539,6 +695,8 @@ export const DEFAULT_CONFIG: PbxConfig = {
   conferences: [],
   announcements: [],
   phonebook: [],
+  blocklist: [],
+  webhooks: [],
   contactsources: [],
   appprofiles: [],
   calendars: [],
@@ -551,15 +709,30 @@ export const DEFAULT_CONFIG: PbxConfig = {
     ban_minutes: 60,
     whitelist: ['127.0.0.1'],
     extension_nets: [],
+    trusted_proxies: ['127.0.0.1', '::1', '172.16.0.0/12'],
+    outbound_stop: false,
+    max_calls_ext: 2,
+    max_calls_total: 6,
+    premium_prefixes: DEFAULT_PREMIUM_PREFIXES,
+    countries: DEFAULT_COUNTRIES,
+    international_daytime: false,
+    international_per_day: 30,
+    forward_international: false,
   },
   updates: { channel: 'stable', auto: false, hour: 3 },
-  // Wie bisher: Umleiten (*21) und Schreiben in zentrale Kalender darf jede Nebenstelle
-  provisioning: { discovery: true, permissions: ['forward', 'forward_external', 'forward_rules', 'calendar_edit'] },
+  // Umleiten (*21) und Schreiben in zentrale Kalender darf jede Nebenstelle; nach außen
+  // umleiten nur mit Freigabe (Schutz vor Umleitungsbetrug mit erbeuteten Zugängen)
+  provisioning: { discovery: true, permissions: ['forward', 'forward_rules', 'calendar_edit'], pin_remote: false },
   remote: { enabled: true, public_url: '', turn: true, turn_port: 3478, turn_host: '' },
   watchdog: { auto_repair: true, trunk_grace: 3, notify_email: '' },
-  integration: { enabled: false, token: '' },
+  storage: { recordings_days: 0, voicemail_days: 0 },
+  integration: { enabled: false, token: '', call_api: false },
   ldap: { enabled: false, port: 389, password: '' },
-  messenger: { enabled: true, max_file_mb: 25, min_free_mb: 2048, video: true },
+  messenger: { enabled: true, max_file_mb: 25, max_storage_mb: 5120, min_free_mb: 200, video: true, quota_mb: 500 },
+  blocking: { anonymous: 'allow' },
+  parking: { enabled: true, number: '700', slots: 8, seconds: 120 },
+  emergency: { notify_email: '', notify_exts: [] },
+  offsite: { enabled: false, type: 'webdav', url: '', user: '', password: '', bucket: '', region: '', folder: 'phone4all', keep: 30, passphrase: '' },
 }
 
 /** Listen der Konfiguration, die die Weboberfläche einheitlich bearbeitet. */
@@ -574,6 +747,8 @@ export const COLLECTIONS = [
   'conferences',
   'announcements',
   'phonebook',
+  'blocklist',
+  'webhooks',
   'contactsources',
   'appprofiles',
   'calendars',
@@ -581,7 +756,10 @@ export const COLLECTIONS = [
 ] as const
 export type CollectionName = (typeof COLLECTIONS)[number]
 
-export const SECTIONS = ['system', 'mail', 'security', 'updates', 'provisioning', 'remote', 'watchdog', 'integration', 'ldap', 'messenger'] as const
+export const SECTIONS = [
+  'system', 'mail', 'security', 'updates', 'provisioning', 'remote', 'watchdog', 'integration', 'ldap', 'messenger', 'storage',
+  'blocking', 'parking', 'emergency', 'offsite',
+] as const
 export type SectionName = (typeof SECTIONS)[number]
 
 export const DESTINATION_LABELS: Record<DestinationType, string> = {
@@ -633,7 +811,10 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         forward: { busy: '', noanswer: '', rules: [] },
         record: false,
         provision_pin: '',
+        provision_pin_expires: 0,
         provision_token: '',
+        provision_expires: 0,
+        devices: [],
         app_profile: '',
       } satisfies Omit<Extension, 'id'>
     case 'groups':
@@ -715,6 +896,10 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
       return { name: '', file: '', next: HANGUP } satisfies Omit<Announcement, 'id'>
     case 'phonebook':
       return { name: '', company: '', phone: '', mobile: '' } satisfies Omit<PhonebookEntry, 'id'>
+    case 'blocklist':
+      return { number: '', note: '', created: '', by: '' } satisfies Omit<BlockedNumber, 'id'>
+    case 'webhooks':
+      return { name: '', url: '', enabled: true, events: [], secret: '' } satisfies Omit<Webhook, 'id'>
     case 'appprofiles':
       return {
         name: '',
@@ -724,6 +909,8 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         lock_layout: false,
         lock_account: true,
         calendars: [],
+        crm_url: '',
+        crm_auto: false,
       } satisfies Omit<AppProfile, 'id'>
     case 'calendars':
       return {
@@ -767,7 +954,8 @@ export function withDefaults(raw: Partial<PbxConfig>): PbxConfig {
     const list = Array.isArray(raw[kind]) ? (raw[kind] as unknown as Record<string, unknown>[]) : []
     const blank = blankItem(kind)
     cfg[kind] = list.map((item) => {
-      const merged: Record<string, unknown> = { ...blank, ...item }
+      // Kopie, damit sich Einträge keine leeren Listen teilen
+      const merged: Record<string, unknown> = { ...structuredClone(blank), ...item }
       for (const [k, v] of Object.entries(blank)) {
         if (v && typeof v === 'object' && !Array.isArray(v) && item[k] && typeof item[k] === 'object') {
           merged[k] = { ...v, ...(item[k] as object) }
@@ -776,6 +964,8 @@ export function withDefaults(raw: Partial<PbxConfig>): PbxConfig {
       return merged
     }) as never
   }
+  // Version 1: Der Messenger löschte schon unter 2 GB freiem Speicher (alter Standard)
+  if ((raw.version ?? 1) < 2 && cfg.messenger.min_free_mb === 2048) cfg.messenger.min_free_mb = 200
   cfg.version = CONFIG_VERSION
   return cfg
 }
