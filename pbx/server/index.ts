@@ -11,6 +11,7 @@ import { readCalls, tailLog } from './cdr'
 import { describeAgent, gigasetFile, requestMac } from './dect'
 import { loadJson, saveJson } from './files'
 import { type ForwardChange, ForwardError, applyCfu, applyRules, check as checkForward, forwardInfo } from './forwarding'
+import { localTime } from './holidays'
 import { integrationReport, validToken } from './integration'
 import { LdapServer } from './ldap'
 import { HttpError, type Request, Router, makeRequest, sendFile, sendJson, sendText, serveStatic } from './http'
@@ -909,7 +910,10 @@ async function main(): Promise<void> {
   let lastBackup = ''
   let lastAutoUpdate = ''
   const tick = async (): Promise<void> => {
-    const today = new Date().toISOString().slice(0, 10)
+    // Tag und Stunde in der Zeitzone der Anlage (der Container läuft meist in UTC)
+    const local = localTime(new Date(), store.config.system.timezone)
+    const today = local.date
+    auth.prune()
     if (lastBackup !== today) {
       lastBackup = today
       store.backup('taeglich')
@@ -921,7 +925,7 @@ async function main(): Promise<void> {
     messengerCleanup()
     const u = store.config.updates
     const info = await updater.check(u.channel)
-    if (u.auto && info.available && info.canApply && new Date().getHours() === u.hour && lastAutoUpdate !== today) {
+    if (u.auto && info.available && info.canApply && Math.floor(local.minutes / 60) === u.hour && lastAutoUpdate !== today) {
       if ((await asterisk.activeCalls()) === 0) {
         lastAutoUpdate = today
         store.backup('vor-update')
@@ -931,6 +935,9 @@ async function main(): Promise<void> {
   }
   setTimeout(() => void tick().catch(() => undefined), 10000)
   setInterval(() => void tick().catch(() => undefined), 3600000)
+  // Der TURN-Server erlaubt nur die eigenen Adressen als Ziel – nach einem Adresswechsel
+  // (DHCP, neues VLAN) die Konfiguration nachziehen, nicht erst bei der nächsten Änderung
+  setInterval(() => turn.apply(store.config), 5 * 60000).unref()
 
   const shutdown = async (): Promise<void> => {
     watchdog.stop()
