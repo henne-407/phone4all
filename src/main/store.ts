@@ -39,7 +39,8 @@ export const DEFAULT_SETTINGS: Settings = {
   autostart: false,
   watchdog: true,
   auto_update: true,
-  provisioning: { pbx: '', extension: '', server: '', updated: 0, policy: null, calendars: [], permissions: [], messenger: false, video: null },
+  links: { handler: false, hotkey: '' },
+  provisioning: { pbx: '', extension: '', server: '', updated: 0, policy: null, calendars: [], permissions: [], messenger: false, video: null, parking: null, crm: null, voicemail: false },
 }
 
 type SecretEntry = { enc: string } | { plain: string }

@@ -553,6 +553,8 @@ function GeneralTab() {
         />
       </Group>
 
+      <LinksGroup />
+
       <Group title="Audio">
         <Row>
           <ListItemText
@@ -566,6 +568,80 @@ function GeneralTab() {
         </ListItemButton>
       </Group>
     </>
+  )
+}
+
+// -- Wähl-Links -------------------------------------------------------------------------
+
+const MAC = window.bridge.platform === 'darwin'
+
+/** Tastendruck → Electron-Accelerator („CommandOrControl+Shift+D“); null = nur Modifikator oder keiner */
+function accelerator(e: React.KeyboardEvent): string | null {
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return null
+  const mods = [e.ctrlKey || e.metaKey ? 'CommandOrControl' : '', e.altKey ? 'Alt' : '', e.shiftKey ? 'Shift' : ''].filter(Boolean)
+  if (!mods.length) return null
+  const key = /^Key[A-Z]$/.test(e.code) ? e.code.slice(3) : /^Digit\d$/.test(e.code) ? e.code.slice(5) : /^F\d{1,2}$/.test(e.key) ? e.key : ''
+  return key ? [...mods, key].join('+') : null
+}
+
+function showAccelerator(a: string): string {
+  return a.replace('CommandOrControl', MAC ? '⌘' : 'Strg').replace('Shift', MAC ? '⇧' : 'Umschalt').replace('Alt', MAC ? '⌥' : 'Alt').replace(/\+/g, ' + ')
+}
+
+function LinksGroup() {
+  const { state, toast } = useApp()
+  const { links } = state.settings
+  const [recording, setRecording] = useState(false)
+  const setHotkey = (hotkey: string): void =>
+    void api.setLinks({ hotkey }).then((ok) => {
+      if (!ok) toast('Dieses Tastenkürzel ist schon belegt. Bitte ein anderes wählen.')
+      else if (hotkey) toast(`Tastenkürzel ${showAccelerator(hotkey)} wählt jetzt markierte Nummern`)
+    })
+  return (
+    <Group title="Nummern aus anderen Programmen wählen">
+      <SwitchRow
+        title="Telefon-Links mit Phone4All öffnen"
+        subtitle="Klick auf eine Nummer im Browser, im CRM oder in E-Mails (tel:, callto:, sip:) ruft direkt an"
+        checked={links.handler}
+        onChange={(v) => void api.setLinks({ handler: v })}
+      />
+      <Row
+        action={
+          links.hotkey ? (
+            <Button onClick={() => setHotkey('')}>Aus</Button>
+          ) : (
+            <Button onClick={() => setRecording(true)}>Festlegen</Button>
+          )
+        }
+      >
+        <ListItemText
+          primary={links.hotkey ? `Tastenkürzel: ${showAccelerator(links.hotkey)}` : 'Tastenkürzel für markierte Nummer'}
+          secondary={
+            window.bridge.platform === 'linux'
+              ? 'Nummer irgendwo markieren und das Tastenkürzel drücken – Phone4All ruft an'
+              : 'Nummer markieren, kopieren und das Tastenkürzel drücken – Phone4All ruft an'
+          }
+        />
+      </Row>
+      <Dialog open={recording} onClose={() => setRecording(false)}>
+        <DialogContent
+          tabIndex={0}
+          autoFocus
+          onKeyDown={(e) => {
+            e.preventDefault()
+            if (e.key === 'Escape') return setRecording(false)
+            const a = accelerator(e)
+            if (!a) return
+            setRecording(false)
+            setHotkey(a)
+          }}
+          sx={{ outline: 'none', textAlign: 'center', py: 4 }}
+        >
+          <Typography variant="h6">Tastenkombination drücken</Typography>
+          <Typography sx={{ color: 'text.secondary', mt: 1 }}>z. B. {MAC ? '⌘ + ⇧ + D' : 'Strg + Umschalt + D'} · Esc bricht ab</Typography>
+        </DialogContent>
+      </Dialog>
+    </Group>
   )
 }
 
