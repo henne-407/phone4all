@@ -50,10 +50,26 @@ export interface Extension {
   provision_pin: string
   /** PIN gültig bis (ms seit 1970); 0 = abgelaufen oder schon benutzt */
   provision_pin_expires: number
-  /** Geheimer Teil des Einrichtungslinks */
+  /** Geheimer Teil des Einladungslinks (QR-Code, E-Mail); jedes Gerät bekommt daraus ein eigenes Token */
   provision_token: string
+  /** Einladungslink gültig bis (ms seit 1970); 0 = abgelaufen */
+  provision_expires: number
+  /** Eingerichtete Apps; jede hat ein eigenes Token und lässt sich einzeln abmelden */
+  devices: AppDevice[]
   /** App-Profil (Ansichten der Phone4All-App), leer = ohne Vorgaben */
   app_profile: string
+}
+
+/** Eine eingerichtete App (Desktop oder Handy) einer Nebenstelle */
+export interface AppDevice {
+  id: string
+  name: string
+  /** Geheimer Teil der Profiladresse dieses Geräts */
+  token: string
+  created: number
+  /** Zuletzt gesehen (ms seit 1970) und von welcher Adresse */
+  seen: number
+  ip: string
 }
 
 /** Umleitung, die sich nach Zeit oder Zustand selbst einschaltet. */
@@ -678,6 +694,8 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         provision_pin: '',
         provision_pin_expires: 0,
         provision_token: '',
+        provision_expires: 0,
+        devices: [],
         app_profile: '',
       } satisfies Omit<Extension, 'id'>
     case 'groups':
@@ -811,7 +829,8 @@ export function withDefaults(raw: Partial<PbxConfig>): PbxConfig {
     const list = Array.isArray(raw[kind]) ? (raw[kind] as unknown as Record<string, unknown>[]) : []
     const blank = blankItem(kind)
     cfg[kind] = list.map((item) => {
-      const merged: Record<string, unknown> = { ...blank, ...item }
+      // Kopie, damit sich Einträge keine leeren Listen teilen
+      const merged: Record<string, unknown> = { ...structuredClone(blank), ...item }
       for (const [k, v] of Object.entries(blank)) {
         if (v && typeof v === 'object' && !Array.isArray(v) && item[k] && typeof item[k] === 'object') {
           merged[k] = { ...v, ...(item[k] as object) }

@@ -533,7 +533,7 @@ export class MessengerHub {
     const allowed = messengerUsers(cfg)
     for (const c of [...this.clients]) {
       const ext = allowed.find((e) => e.number === c.ext)
-      if (!ext || ext.provision_token !== c.token) c.conn.close(4003, 'Kein Zugriff mehr')
+      if (!ext || !ext.devices.some((d) => d.token === c.token)) c.conn.close(4003, 'Kein Zugriff mehr')
     }
     this.broadcast({ t: 'users', users: this.users() })
   }

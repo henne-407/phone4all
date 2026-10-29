@@ -1,4 +1,5 @@
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import LogoutIcon from '@mui/icons-material/Logout'
 import MailOutlineIcon from '@mui/icons-material/MailOutlined'
 import PersonIcon from '@mui/icons-material/Person'
 import RefreshIcon from '@mui/icons-material/Refresh'
@@ -12,6 +13,9 @@ import {
   FormControlLabel,
   IconButton,
   InputAdornment,
+  List,
+  ListItem,
+  ListItemText,
   Stack,
   Switch,
   TextField,
@@ -20,9 +24,9 @@ import {
 } from '@mui/material'
 import QRCode from 'qrcode'
 import { useEffect, useState } from 'react'
-import type { Extension, Permission } from '../../../server/model'
+import type { AppDevice, Extension, Permission } from '../../../server/model'
 import { api } from '../api'
-import { CollectionPage, FormGrid, Full, Initials, NumberField, NumberPicker, Select, StatusDot, internalNumberOptions } from '../components/common'
+import { CollectionPage, ConfirmDialog, FormGrid, Full, Initials, NumberField, NumberPicker, Select, StatusDot, internalNumberOptions } from '../components/common'
 import { ForwardRules } from '../components/ForwardRules'
 import { usePbx } from '../state'
 import { useStatus } from '../useStatus'
@@ -44,13 +48,29 @@ function copy(text: string, toast: (t: string) => void): void {
   void navigator.clipboard.writeText(text).then(() => toast('Kopiert'))
 }
 
+type Device = Omit<AppDevice, 'token'>
+
+interface ProvisioningInfo {
+  setup: string
+  app: string
+  pin: string
+  pin_expires: number
+  link_expires: number
+  base: string
+  devices: Device[]
+}
+
+function when(ms: number): string {
+  return ms ? new Date(ms).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : 'noch nie'
+}
+
 function Provisioning({ ext }: { ext: Extension }) {
   const { toast, reload } = usePbx()
-  const [info, setInfo] = useState<{ setup: string; app: string; pin: string; pin_expires: number; base: string } | null>(null)
+  const [info, setInfo] = useState<ProvisioningInfo | null>(null)
   const [qr, setQr] = useState('')
-  useEffect(() => {
-    void api.get<typeof info>(`/api/extensions/${ext.id}/provisioning`).then(setInfo)
-  }, [ext.id, ext.provision_token, ext.provision_pin, ext.provision_pin_expires])
+  const [logout, setLogout] = useState<Device | 'all' | null>(null)
+  const load = (): void => void api.get<ProvisioningInfo>(`/api/extensions/${ext.id}/provisioning`).then(setInfo)
+  useEffect(load, [ext.id, ext.provision_token, ext.provision_pin, ext.provision_pin_expires])
   useEffect(() => {
     if (info) void QRCode.toDataURL(info.setup, { margin: 1, width: 360 }).then(setQr)
   }, [info])
@@ -58,6 +78,7 @@ function Provisioning({ ext }: { ext: Extension }) {
   const invite = async (): Promise<void> => {
     try {
       await api.post(`/api/extensions/${ext.id}/invite`)
+      load()
       toast(`Einladung an ${ext.email} gesendet`)
     } catch (e) {
       toast((e as Error).message, 'error')
@@ -71,7 +92,20 @@ function Provisioning({ ext }: { ext: Extension }) {
   const renew = async (): Promise<void> => {
     await api.post(`/api/extensions/${ext.id}/renew?what=link`)
     await reload()
-    toast('Neuer Link und neue PIN erstellt; der alte Link gilt nicht mehr.')
+    toast('Neuer Link und neue PIN erstellt; der alte Link gilt nicht mehr. Eingerichtete Geräte bleiben angemeldet.')
+  }
+  const signOut = async (): Promise<void> => {
+    const target = logout
+    setLogout(null)
+    if (!target) return
+    try {
+      if (target === 'all') await api.post(`/api/extensions/${ext.id}/renew?what=devices`)
+      else await api.del(`/api/extensions/${ext.id}/devices/${target.id}`)
+      load()
+      toast(target === 'all' ? 'Alle Geräte abgemeldet' : `„${target.name}“ abgemeldet`)
+    } catch (e) {
+      toast((e as Error).message, 'error')
+    }
   }
   return (
     <Box>
@@ -89,7 +123,13 @@ function Provisioning({ ext }: { ext: Extension }) {
       <FormGrid>
         <TextField
           label="Einrichtungslink"
-          value={info.setup}
+          value={info.link_expires ? info.setup : 'abgelaufen'}
+          error={!info.link_expires}
+          helperText={
+            info.link_expires
+              ? `Gilt bis ${new Date(info.link_expires).toLocaleString('de-DE')}; jedes Gerät erhält einen eigenen Zugang`
+              : 'Für weitere Geräte den Link erneuern oder eine Einladung senden'
+          }
           slotProps={{
             input: {
               readOnly: true,
@@ -130,13 +170,55 @@ function Provisioning({ ext }: { ext: Extension }) {
         <Button variant="outlined" startIcon={<MailOutlineIcon />} disabled={!ext.email} onClick={() => void invite()}>
           Einladung per E-Mail
         </Button>
-        <Button href={info.app} variant="outlined">
+        <Button href={info.app} variant="outlined" disabled={!info.link_expires}>
           Hier in Phone4All öffnen
         </Button>
         <Button startIcon={<RefreshIcon />} onClick={() => void renew()}>
           Link erneuern
         </Button>
       </Stack>
+      <Typography variant="subtitle1" sx={{ mt: 3, mb: 0.5 }}>
+        Eingerichtete Geräte
+      </Typography>
+      {info.devices.length === 0 ? (
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+          Noch keine App eingerichtet.
+        </Typography>
+      ) : (
+        <List dense disablePadding>
+          {info.devices.map((d) => (
+            <ListItem
+              key={d.id}
+              disableGutters
+              secondaryAction={
+                <Tooltip title="Abmelden">
+                  <IconButton edge="end" aria-label={`${d.name} abmelden`} onClick={() => setLogout(d)}>
+                    <LogoutIcon />
+                  </IconButton>
+                </Tooltip>
+              }
+            >
+              <ListItemText
+                primary={d.name}
+                secondary={`Eingerichtet ${when(d.created)} · zuletzt ${when(d.seen)}${d.ip ? ` von ${d.ip}` : ''}`}
+              />
+            </ListItem>
+          ))}
+        </List>
+      )}
+      {info.devices.length > 1 && (
+        <Button color="error" startIcon={<LogoutIcon />} onClick={() => setLogout('all')} sx={{ mt: 1 }}>
+          Alle Geräte abmelden
+        </Button>
+      )}
+      <ConfirmDialog
+        open={logout !== null}
+        title={logout === 'all' ? 'Alle Geräte abmelden?' : `„${logout?.name ?? ''}“ abmelden?`}
+        text="Die App kann danach weder Profil, Telefonbuch noch Chat abrufen und muss neu eingerichtet werden. Das SIP-Passwort bleibt; bei einem verlorenen Gerät zusätzlich das Passwort erneuern."
+        confirm="Abmelden"
+        onClose={() => setLogout(null)}
+        onConfirm={() => void signOut()}
+      />
     </Box>
   )
 }

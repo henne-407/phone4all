@@ -21,7 +21,7 @@ import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, type P
 import { cleanNumber } from './numbers'
 import { PATHS, SETTINGS } from './paths'
 import { PROVIDERS } from './providers'
-import { appLink, baseUrl, landingPage, linkBase, profile, startDiscovery, visibleCalendars } from './provisioning'
+import { appLink, baseUrl, expiredPage, landingPage, linkBase, profile, startDiscovery, visibleCalendars } from './provisioning'
 import { Turn, WsProxy, appEndpoint, webrtcEnabled } from './remote'
 import {
   appPermissions,
@@ -38,7 +38,21 @@ import {
 import { Guard, inList } from './security'
 import { SourceSync } from './sources/sync'
 import { listSounds, saveSound, soundDir, soundFile, type SoundKind } from './sounds'
-import { ConfigStore, type ExportFile, ValidationError, consumePin, fillSecrets, newPin, newSecret, pinValid, renewPin } from './store'
+import {
+  ConfigStore,
+  type ExportFile,
+  ValidationError,
+  addDevice,
+  consumePin,
+  fillSecrets,
+  findDevice,
+  linkValid,
+  newPin,
+  newSecret,
+  pinValid,
+  renewLink,
+  renewPin,
+} from './store'
 import type { DectBase } from './model'
 import { Updater } from './updates'
 import { type WatchEvent, Watchdog } from './watchdog'
@@ -259,10 +273,55 @@ function requestBase(r: Request): string {
   return baseUrl(host, store.config, (r.raw.headers['x-forwarded-proto'] as string | undefined) ?? 'http')
 }
 
-/** Profil der Nebenstelle mit Zugangsdaten für den TURN-Server */
-function extProfile(r: Request, ext: Extension) {
+/** Profil der Nebenstelle für ein Gerät, mit Zugangsdaten für den TURN-Server */
+function extProfile(r: Request, ext: Extension, token: string) {
   const base = requestBase(r)
-  return profile(store.config, ext, base, turn.iceServers(store.config, linkBase(store.config, base), appEndpoint(ext.number)))
+  return profile(store.config, ext, base, turn.iceServers(store.config, linkBase(store.config, base), appEndpoint(ext.number)), token)
+}
+
+/** Name eines neuen Geräts: von der App mitgeschickt, sonst aus der Kennung geraten */
+function deviceName(r: Request): string {
+  let sent = String(r.raw.headers['x-device-name'] ?? '')
+  try {
+    sent = decodeURIComponent(sent)
+  } catch {
+    // unverändert
+  }
+  sent = sent.replace(/[^\p{L}\p{N} ._()'-]/gu, '').trim().slice(0, 40)
+  if (sent) return sent
+  const ua = String(r.raw.headers['user-agent'] ?? '')
+  if (/android|okhttp/i.test(ua)) return 'Android'
+  if (/iphone|ipad|darwin|cfnetwork/i.test(ua)) return 'iPhone'
+  return 'Desktop-App'
+}
+
+/** Neues Gerät für die Nebenstelle anlegen und sein Profil liefern */
+function newDeviceProfile(r: Request, extId: string, how: string) {
+  let token = ''
+  let name = ''
+  try {
+    store.update((draft) => {
+      const device = addDevice(draft.extensions.find((e) => e.id === extId)!, deviceName(r), r.ip)
+      token = device.token
+      name = device.name
+    })
+  } catch (e) {
+    if (e instanceof ValidationError) throw new HttpError(409, e.message)
+    throw e
+  }
+  const ext = store.config.extensions.find((e) => e.id === extId)!
+  securityAlert(`device:${ext.number}:${token}`, `Neues Gerät „${name}“ für Nebenstelle ${ext.number} ${how} (von ${r.ip}).`, 'info')
+  return extProfile(r, ext, token)
+}
+
+/** Zuletzt gesehen merken (höchstens alle 10 Minuten in die Konfiguration schreiben) */
+function touchDevice(token: string, ip: string): void {
+  const found = findDevice(store.config, token)
+  if (!found || (Date.now() - found.device.seen < 600000 && found.device.ip === ip)) return
+  store.update((draft) => {
+    const d = findDevice(draft, token)?.device
+    if (d) Object.assign(d, { seen: Date.now(), ip })
+  })
 }
 
 pub.get('/api/session', (r) => ({
@@ -307,17 +366,28 @@ pub.get('/health', (r) => {
   })
 })
 
-/** Die App ruft ihr Profil mit dem geheimen Token ab (auch zum Auffrischen). */
+/**
+ * Die App ruft ihr Profil ab (auch zum Auffrischen). Mit dem Token des Einladungslinks
+ * bekommt sie ein eigenes Geräte-Token; danach fragt sie nur noch unter dieser Adresse.
+ */
 pub.get('/provision/:token', (r) => {
-  const ext = store.config.extensions.find((e) => e.provision_token && e.provision_token === r.params.token)
-  if (!ext) throw new HttpError(404, 'Unbekannter Einrichtungslink.')
-  return extProfile(r, ext)
+  const token = r.params.token
+  if (findDevice(store.config, token)) {
+    const ext = tokenExtension(token, r.ip)
+    return extProfile(r, ext, token)
+  }
+  const invited = store.config.extensions.find((e) => e.provision_token && e.provision_token === token)
+  if (!invited) throw new HttpError(404, 'Unbekannter Einrichtungslink.')
+  if (!linkValid(invited)) throw new HttpError(410, 'Der Einrichtungslink ist abgelaufen. Bitte bei der Verwaltung eine neue Einladung anfordern.')
+  return newDeviceProfile(r, invited.id, 'über den Einladungslink eingerichtet')
 })
 
-function tokenExtension(token: string): Extension {
-  const ext = store.config.extensions.find((e) => e.provision_token && e.provision_token === token)
-  if (!ext) throw new HttpError(404, 'Unbekannter Einrichtungslink.')
-  return ext
+/** Nebenstelle zum Token eines eingerichteten Geräts */
+function tokenExtension(token: string, ip = ''): Extension {
+  const found = findDevice(store.config, token)
+  if (!found) throw new HttpError(404, 'Unbekannter Einrichtungslink.')
+  if (ip) touchDevice(token, ip)
+  return found.ext
 }
 
 function range(r: Request): [number, number] {
@@ -331,8 +401,8 @@ function range(r: Request): [number, number] {
 
 /** Die App fragt regelmäßig, ob sich Profil oder Termine geändert haben. */
 pub.get('/provision/:token/revision', (r) => {
-  const ext = tokenExtension(r.params.token)
-  return { profile: extProfile(r, ext).revision, events: String(calendars.revision) }
+  const ext = tokenExtension(r.params.token, r.ip)
+  return { profile: extProfile(r, ext, r.params.token).revision, events: String(calendars.revision) }
 })
 
 /** Termine der zentralen Kalender, die diese Nebenstelle sieht */
@@ -497,9 +567,9 @@ pub.post('/provision', async (r) => {
   }
   pinFailures.delete(ext.id)
   // Einmal benutzt: Für das nächste Gerät erzeugt die Verwaltung eine neue PIN
+  const result = newDeviceProfile(r, ext.id, 'per PIN eingerichtet')
   store.update((draft) => consumePin(draft.extensions.find((e) => e.id === ext.id)!))
-  securityAlert(`pinok:${ext.number}`, `Nebenstelle ${ext.number} per PIN eingerichtet (von ${r.ip}).`, 'info')
-  return extProfile(r, store.config.extensions.find((e) => e.id === ext.id)!)
+  return result
 })
 
 /** Seite für den Link aus der Einladungs-E-Mail */
@@ -508,6 +578,7 @@ pub.get('/setup/:token', (r) => {
   if (!ext) throw new HttpError(404, 'Unbekannter Einrichtungslink.')
   r.res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'")
   r.res.setHeader('Referrer-Policy', 'no-referrer')
+  if (!linkValid(ext)) return sendText(r.res, 410, expiredPage(store.config), 'text/html; charset=utf-8')
   sendText(r.res, 200, landingPage(store.config, ext, linkBase(store.config, requestBase(r))), 'text/html; charset=utf-8')
 })
 
@@ -604,11 +675,26 @@ api.post('/api/extensions/:id/renew', (r) => {
     if (!ext) throw new HttpError(404, 'Nebenstelle nicht gefunden.')
     if (what === 'secret') ext.secret = newSecret()
     else if (what === 'pin') renewPin(ext)
+    else if (what === 'devices') ext.devices = []
     else {
-      ext.provision_token = newSecret(32)
+      // Neuer Einladungslink; eingerichtete Geräte bleiben angemeldet
+      renewLink(ext)
       renewPin(ext)
     }
     fillSecrets(ext)
+  })
+  applySoon()
+  return store.config.extensions.find((e) => e.id === r.params.id)
+})
+
+/** Eine eingerichtete App abmelden (verlorenes Handy, alter Rechner) */
+api.delete('/api/extensions/:id/devices/:device', (r) => {
+  store.update((draft) => {
+    const ext = draft.extensions.find((e) => e.id === r.params.id)
+    if (!ext) throw new HttpError(404, 'Nebenstelle nicht gefunden.')
+    const before = ext.devices.length
+    ext.devices = ext.devices.filter((d) => d.id !== r.params.device)
+    if (ext.devices.length === before) throw new HttpError(404, 'Gerät nicht gefunden.')
   })
   applySoon()
   return store.config.extensions.find((e) => e.id === r.params.id)
@@ -624,6 +710,8 @@ api.get('/api/extensions/:id/provisioning', (r) => {
     app: appLink(base, ext),
     pin: ext.provision_pin,
     pin_expires: pinValid(ext) ? ext.provision_pin_expires : 0,
+    link_expires: linkValid(ext) ? ext.provision_expires : 0,
+    devices: ext.devices.map(({ id, name, created, seen, ip }) => ({ id, name, created, seen, ip })),
   }
 })
 
@@ -631,9 +719,13 @@ api.post('/api/extensions/:id/invite', async (r) => {
   let ext = store.config.extensions.find((e) => e.id === r.params.id)
   if (!ext) throw new HttpError(404, 'Nebenstelle nicht gefunden.')
   if (!ext.email) throw new HttpError(400, 'Für diese Nebenstelle ist keine E-Mail-Adresse eingetragen.')
-  // Abgelaufene oder benutzte PIN: für die Einladung eine neue erzeugen
-  if (!pinValid(ext)) {
-    store.update((draft) => renewPin(draft.extensions.find((e) => e.id === r.params.id)!))
+  // Abgelaufener Link oder benutzte PIN: für die Einladung neu erzeugen
+  if (!pinValid(ext) || !linkValid(ext)) {
+    store.update((draft) => {
+      const e = draft.extensions.find((x) => x.id === r.params.id)!
+      if (!pinValid(e)) renewPin(e)
+      if (!linkValid(e)) renewLink(e)
+    })
     ext = store.config.extensions.find((e) => e.id === r.params.id)!
   }
   const base = linkBase(store.config, requestBase(r))
@@ -648,6 +740,7 @@ api.post('/api/extensions/:id/invite', async (r) => {
       '',
       'Mit der App Phone4All öffnen Sie einfach diesen Link – die App richtet sich selbst ein:',
       `${base}/setup/${ext.provision_token}`,
+      `(gilt bis ${new Date(ext.provision_expires).toLocaleString('de-DE')}; jedes Gerät erhält dabei einen eigenen Zugang)`,
       '',
       'Oder in der App unter Einstellungen → Konto → „Von Telefonanlage einrichten“:',
       `  Anlage:          ${base}`,
@@ -966,15 +1059,16 @@ async function main(): Promise<void> {
     if (!m) return ws.upgrade(req, socket, head)
     const ip = clientIp(req)
     if (isBlocked(ip)) return reject(socket, 429, 'Too Many Requests')
-    const ext = store.config.extensions.find((e) => e.provision_token && e.provision_token === decodeURIComponent(m[1]))
-    if (!ext) {
+    const found = findDevice(store.config, decodeURIComponent(m[1]))
+    if (!found) {
       auth.failed(ip, 'Ungültige Einrichtungslinks', m[1])
       return reject(socket, 404, 'Not Found')
     }
+    const { ext, device } = found
     if (!messengerUsers(store.config).some((e) => e.id === ext.id)) return reject(socket, 403, 'Forbidden')
     const conn = upgrade(req, socket)
     if (!conn) return reject(socket, 400, 'Bad Request')
-    messenger.attach(ext.number, ext.provision_token, conn)
+    messenger.attach(ext.number, device.token, conn)
   })
   server.listen(SETTINGS.httpPort, () => console.log(`Weboberfläche auf Port ${SETTINGS.httpPort}`))
   startDiscovery(() => store.config)

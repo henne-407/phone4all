@@ -37,7 +37,8 @@ anmelden: Desktop-App, Mobil-App, Tischtelefon, DECT-Mobilteil. Ein Anruf klinge
 | Voicemail, Voicemail-PIN | Anrufbeantworter; *Nachricht als Anhang per E-Mail* |
 | Gespräche aufzeichnen | Aufnahmen erscheinen in der Anrufliste |
 | App-Profil | was die Apps zeigen (siehe [App-Profile](#app-profile)) |
-| Einrichtungslink, Einrichtungs-PIN, QR-Code | automatische Einrichtung der Apps; *Einladung per E-Mail* schickt beides an die Person |
+| Einrichtungslink, Einrichtungs-PIN, QR-Code | automatische Einrichtung der Apps; *Einladung per E-Mail* schickt beides an die Person; beides gilt 72 Stunden |
+| Eingerichtete Geräte | jede App mit eigenem Zugang, zuletzt gesehen und von wo; einzeln oder alle abmelden (z. B. verlorenes Handy) |
 
 Die Liste zeigt, welche Geräte angemeldet sind und ob *Nicht stören* oder eine
 Rufumleitung aktiv ist (beides lässt sich hier auch ausschalten). Eine Sofort-Umleitung

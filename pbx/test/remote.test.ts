@@ -45,7 +45,7 @@ describe('Zugriff von unterwegs', () => {
     const cfg = sampleConfig()
     cfg.remote.public_url = 'https://telefon.example.de/'
     const ice = [{ urls: ['turn:telefon.example.de:3478?transport=tcp'], username: 'u', credential: 'c' }]
-    const p = profile(cfg, cfg.extensions[0], 'http://192.168.1.5:8080', ice)
+    const p = profile(cfg, cfg.extensions[0], 'http://192.168.1.5:8080', ice, 'Geraet123')
     expect(p.url).toMatch(/^https:\/\/telefon\.example\.de\/provision\//)
     expect(p.remote).toEqual({ websocket: 'wss://telefon.example.de/ws', user: '10-app', domain: 'telefon.example.de', ice_servers: ice })
     // Telefone im LAN melden sich weiter direkt an

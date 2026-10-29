@@ -7,7 +7,8 @@ process.env.PBX_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'p4a-sec-'))
 
 const { Auth, limitKey } = await import('../server/auth')
 const { Guard } = await import('../server/security')
-const { consumePin, pinValid, renewPin, PIN_HOURS } = await import('../server/store')
+const { addDevice, consumePin, findDevice, linkValid, migrateDevices, pinValid, renewLink, renewPin, MAX_APP_DEVICES, PIN_HOURS } = await import('../server/store')
+const { withDefaults } = await import('../server/model')
 const { MessengerHub, MessengerStore } = await import('../server/messenger')
 const { ext, sampleConfig } = await import('./helpers')
 
@@ -66,6 +67,47 @@ describe('Einrichtungs-PIN', () => {
     consumePin(e)
     expect(pinValid(e)).toBe(false)
     expect(e.provision_pin).not.toBe(old)
+  })
+})
+
+describe('Geräte-Token', () => {
+  it('gibt jedem Gerät ein eigenes Token und begrenzt die Anzahl', () => {
+    const cfg = sampleConfig()
+    const e = cfg.extensions[0]
+    const a = addDevice(e, 'Handy', '192.0.2.7')
+    const b = addDevice(e, 'Laptop', '192.0.2.8')
+    expect(a.token).not.toBe(b.token)
+    expect(a.token).toHaveLength(32)
+    expect(findDevice(cfg, b.token)).toEqual({ ext: e, device: b })
+    expect(findDevice(cfg, e.provision_token)).toBeNull()
+    expect(findDevice(cfg, '')).toBeNull()
+    // andere Nebenstellen teilen die Liste nicht
+    expect(cfg.extensions[1].devices).toEqual([])
+    for (let i = 2; i < MAX_APP_DEVICES; i++) addDevice(e, `G${i}`, '')
+    expect(() => addDevice(e, 'zu viel', '')).toThrow(/schon 10 Geräte/)
+  })
+
+  it('befristet den Einladungslink', () => {
+    const e = sampleConfig().extensions[0]
+    const now = Date.now()
+    renewLink(e, now)
+    expect(linkValid(e, now + 1000)).toBe(true)
+    expect(linkValid(e, now + PIN_HOURS * 3600000 + 1)).toBe(false)
+  })
+
+  it('übernimmt das alte gemeinsame Token als Gerät', () => {
+    const raw = { extensions: [{ id: 'e10', number: '10', provision_token: 'ALT' }, { id: 'e11', number: '11', provision_token: 'NEU', devices: [] }] }
+    const cfg = withDefaults(raw as never)
+    migrateDevices(raw.extensions, cfg.extensions)
+    expect(cfg.extensions[0].devices).toHaveLength(1)
+    expect(cfg.extensions[0].devices[0].token).toBe('ALT')
+    expect(cfg.extensions[0].provision_token).not.toBe('ALT')
+    expect(linkValid(cfg.extensions[0])).toBe(false)
+    expect(findDevice(cfg, 'ALT')?.ext.number).toBe('10')
+    // schon umgestellt: unverändert
+    expect(cfg.extensions[1].provision_token).toBe('NEU')
+    expect(cfg.extensions[1].devices).toEqual([])
+    expect(cfg.extensions[0].devices).not.toBe(cfg.extensions[1].devices)
   })
 })
 

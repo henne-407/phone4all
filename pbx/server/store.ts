@@ -7,6 +7,7 @@ import path from 'node:path'
 import { loadJson, saveJson, writeAtomic } from './files'
 import {
   COLLECTIONS,
+  type AppDevice,
   type CollectionName,
   DECT_MAX_HANDSETS,
   DEFAULT_CONFIG,
@@ -53,6 +54,54 @@ export function pinValid(ext: Extension, now = Date.now()): boolean {
   return Boolean(ext.provision_pin) && ext.provision_pin_expires > now
 }
 
+/** Neuer Einladungslink, gültig für PIN_HOURS Stunden; eingerichtete Geräte bleiben */
+export function renewLink(ext: Extension, now = Date.now()): void {
+  ext.provision_token = newSecret(32)
+  ext.provision_expires = now + PIN_HOURS * 3600000
+}
+
+export function linkValid(ext: Extension, now = Date.now()): boolean {
+  return Boolean(ext.provision_token) && ext.provision_expires > now
+}
+
+/** Höchstzahl eingerichteter Apps je Nebenstelle */
+export const MAX_APP_DEVICES = 10
+
+/** Neues Gerät mit eigenem Token anlegen */
+export function addDevice(ext: Extension, name: string, ip: string, now = Date.now()): AppDevice {
+  if (ext.devices.length >= MAX_APP_DEVICES) {
+    throw new ValidationError(`Für die Nebenstelle ${ext.number} sind schon ${MAX_APP_DEVICES} Geräte eingerichtet. Bitte in der Verwaltung alte Geräte abmelden.`)
+  }
+  const device: AppDevice = { id: newId(), name: name || 'Gerät', token: newSecret(32), created: now, seen: now, ip }
+  ext.devices.push(device)
+  return device
+}
+
+/** Nebenstelle und Gerät zu einem Geräte-Token */
+export function findDevice(cfg: PbxConfig, token: string): { ext: Extension; device: AppDevice } | null {
+  if (!token) return null
+  for (const ext of cfg.extensions) {
+    const device = ext.devices.find((d) => d.token === token)
+    if (device) return { ext, device }
+  }
+  return null
+}
+
+/**
+ * Bis 0.8.1 hatte jede Nebenstelle ein einziges, dauerhaftes Token für alle Geräte.
+ * Bereits eingerichtete Apps behalten es als gemeinsames Gerät; der Einladungslink wird neu.
+ */
+export function migrateDevices(raw: unknown, exts: Extension[], now = Date.now()): void {
+  const list = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : []
+  for (const ext of exts) {
+    const old = list.find((x) => x.id === ext.id)
+    if (!old || Array.isArray(old.devices) || !ext.provision_token) continue
+    ext.devices = [{ id: newId(), name: 'Bisher eingerichtete Geräte', token: ext.provision_token, created: now, seen: 0, ip: '' }]
+    ext.provision_token = newSecret(32)
+    ext.provision_expires = 0
+  }
+}
+
 export function newPin(digits = 6): string {
   return Array.from({ length: digits }, () => randomInt(10)).join('')
 }
@@ -60,7 +109,7 @@ export function newPin(digits = 6): string {
 /** Fehlende Geheimnisse ergänzen (neue Nebenstellen, Import ohne Passwörter). */
 export function fillSecrets(ext: Extension): void {
   if (!ext.secret) ext.secret = newSecret()
-  if (!ext.provision_token) ext.provision_token = newSecret(32)
+  if (!ext.provision_token) renewLink(ext)
   if (!/^\d{6,}$/.test(ext.provision_pin)) renewPin(ext)
   if (!ext.voicemail.pin) ext.voicemail.pin = newPin(4)
 }
@@ -241,6 +290,7 @@ export function stripSecrets(cfg: PbxConfig): PbxConfig {
     e.secret = ''
     e.provision_token = ''
     e.provision_pin = ''
+    e.devices = []
     e.voicemail.pin = ''
   }
   for (const t of c.trunks) t.password = ''
@@ -260,8 +310,10 @@ export class ConfigStore {
 
   constructor() {
     const fresh = !fs.existsSync(PATHS.config)
-    this.config = withDefaults(loadJson<Partial<PbxConfig>>(PATHS.config, structuredClone(DEFAULT_CONFIG)))
+    const raw = loadJson<Partial<PbxConfig>>(PATHS.config, structuredClone(DEFAULT_CONFIG))
+    this.config = withDefaults(raw)
     const before = JSON.stringify(this.config)
+    migrateDevices(raw.extensions, this.config.extensions)
     for (const e of this.config.extensions) fillSecrets(e)
     for (const b of this.config.dect) fillDectSecrets(b)
     this.state = { dnd: {}, cfu: {}, ...loadJson<Partial<RuntimeState>>(PATHS.state, {}) }
@@ -304,6 +356,10 @@ export class ConfigStore {
         saved = { ...list[i], ...item }
         if (kind === 'trunks' && !item.password) saved.password = list[i].password
         if (kind === 'extensions' && !item.secret) saved.secret = list[i].secret
+        // Einladungslink, PIN und Geräte vergibt nur der Server (die Oberfläche hat evtl. einen alten Stand)
+        if (kind === 'extensions') {
+          for (const k of ['provision_token', 'provision_expires', 'provision_pin', 'provision_pin_expires', 'devices']) saved[k] = list[i][k]
+        }
         // Link und PIN der Basis vergibt nur der Server
         if (kind === 'dect') {
           saved.token = list[i].token
@@ -398,12 +454,17 @@ export class ConfigStore {
       throw new ValidationError('Das ist keine Konfigurationsdatei der Telefonanlage.')
     }
     const incoming = withDefaults(data.config)
+    migrateDevices(data.config.extensions, incoming.extensions)
     // Ohne Passwörter exportiert: vorhandene Geheimnisse übernehmen, sonst neu erzeugen
     for (const e of incoming.extensions) {
       const old = this.config.extensions.find((x) => x.id === e.id || x.number === e.number)
       if (old) {
         e.secret ||= old.secret
-        e.provision_token ||= old.provision_token
+        if (!e.provision_token) {
+          e.provision_token = old.provision_token
+          e.provision_expires = old.provision_expires
+        }
+        if (!e.devices.length) e.devices = old.devices
         e.provision_pin ||= old.provision_pin
         e.voicemail.pin ||= old.voicemail.pin
       }

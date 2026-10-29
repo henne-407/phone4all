@@ -228,7 +228,8 @@ async function request(url: string, body?: unknown): Promise<PbxProfile> {
   try {
     r = await fetch(url, {
       method: body ? 'POST' : 'GET',
-      headers: body ? { 'Content-Type': 'application/json' } : {},
+      // Name für die Geräteliste der Anlage
+      headers: { 'X-Device-Name': encodeURIComponent(os.hostname()), ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(10000),
     })
@@ -237,7 +238,7 @@ async function request(url: string, body?: unknown): Promise<PbxProfile> {
   }
   const data = (await r.json().catch(() => null)) as { error?: string } | null
   if (!r.ok) {
-    if (r.status === 404) throw new Error('Der Einrichtungslink ist ungültig oder wurde erneuert.')
+    if (r.status === 404) throw new Error('Der Einrichtungslink ist ungültig, wurde erneuert oder das Gerät wurde abgemeldet.')
     throw new Error(data?.error || `Die Telefonanlage antwortet mit Fehler ${r.status}.`)
   }
   return parseProfile(data)
@@ -379,7 +380,8 @@ export class Provisioning {
     try {
       r = await fetch(`${url}/phonebook${id ? `/${encodeURIComponent(id)}` : ''}`, {
         method,
-        headers: body ? { 'Content-Type': 'application/json' } : {},
+        // Name für die Geräteliste der Anlage
+      headers: { 'X-Device-Name': encodeURIComponent(os.hostname()), ...(body ? { 'Content-Type': 'application/json' } : {}) },
         body: body ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(10000),
       })

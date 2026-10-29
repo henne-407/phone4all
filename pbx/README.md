@@ -125,17 +125,27 @@ Jede Nebenstelle hat einen Einrichtungslink und eine Einrichtungs-PIN
 3. Den Einrichtungslink kopieren und in der App einfügen.
 
 Die App übernimmt Server, Benutzer, Passwort, die zentralen Kontakte und Kalender und
-das App-Profil. Danach fragt sie alle zwei Minuten nach Änderungen. Ein erneuerter
-Link macht den alten ungültig.
+das App-Profil. Danach fragt sie alle zwei Minuten nach Änderungen.
+
+Link und PIN gelten 72 Stunden, die PIN nur einmal und nur im Netz der Anlage
+(Ausnahme: *Einrichtung per PIN auch von außerhalb* unter *System*). Jedes Gerät bekommt bei der Einrichtung
+ein eigenes Token; die Liste *Eingerichtete Geräte* zeigt, wann es zuletzt von welcher
+Adresse gefragt hat, und meldet einzelne oder alle Geräte ab. Ein erneuerter Link macht
+nur den alten Link ungültig, eingerichtete Geräte bleiben angemeldet. Geräte aus
+Versionen bis 0.8.1 erscheinen gemeinsam als *Bisher eingerichtete Geräte*.
 
 ### Schnittstelle für die App
 
-Alle Adressen hängen am Einrichtungslink der Nebenstelle (`/provision/<token>`), der
-Token ist zugleich die Berechtigung.
+`GET /provision/<einladung>` (Token aus Link, QR-Code oder E-Mail) und
+`POST /provision` mit `{ extension, pin }` legen ein Gerät an und liefern das Profil.
+Dessen `url` (`/provision/<geräte-token>`) ist die Adresse des Geräts; alle weiteren
+Anfragen hängen daran, der Token ist zugleich die Berechtigung. Der Kopfeintrag
+`X-Device-Name` (URL-kodiert) benennt das Gerät in der Liste. Ein abgelaufener Link
+antwortet mit 410, ein abgemeldetes Gerät mit 404.
 
 | Anfrage | Ergebnis |
 | --- | --- |
-| `GET /provision/<token>` | Profil: Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `permissions`, `messenger`, `remote`, `video`, `revision` |
+| `GET /provision/<token>` | Profil (auch zum Auffrischen): Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `permissions`, `messenger`, `remote`, `video`, `revision` |
 | `GET /provision/<token>/revision` | `{ profile, events }` – ändert sich, sobald Profil oder Termine sich ändern |
 | `GET /provision/<token>/events?start=…&end=…&calendar=…` | Termine im Zeitraum (höchstens 400 Tage) |
 | `PUT /provision/<token>/events/<kalender>/<uid>` | Termin anlegen oder ändern (nur beschreibbare Kalender) |
