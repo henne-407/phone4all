@@ -363,37 +363,35 @@ X-Phone4all-Signature: sha256=…
 
 export function CallApi() {
   const { config, saveSection, toast } = usePbx()
-  const { enabled, call_api } = config.integration
+  const { enabled, call_api, control } = config.integration
+  const save = (patch: { call_api?: boolean; control?: boolean }): void =>
+    void saveSection('integration', patch)
+      .then(() => toast('Gespeichert'))
+      .catch((err: Error) => toast(err.message, 'error'))
   return (
     <Section
-      title="Anrufe über die Schnittstelle"
-      description="Andere Programme (CRM, Hausautomation, eigene Skripte) können einen Anruf auslösen: Erst klingelt das Telefon der Nebenstelle, nach dem Abheben wählt die Anlage die Nummer."
+      title="Anrufe und Schalten über die Schnittstelle"
+      description="Andere Programme (CRM, Home Assistant, eigene Skripte) können einen Anruf auslösen – erst klingelt das Telefon der Nebenstelle, nach dem Abheben wählt die Anlage die Nummer – oder eine Ansage aus Text an eine Nebenstelle oder Gruppe schicken (z. B. „Der Wassermelder im Keller hat ausgelöst“). Mit „Schalten“ dürfen sie auch Nicht stören, Umleitungen und Zeitsteuerungen umstellen."
     >
-      <FormControlLabel
-        control={
-          <Switch
-            checked={call_api}
-            disabled={!enabled}
-            onChange={(e) =>
-              void saveSection('integration', { call_api: e.target.checked })
-                .then(() => toast('Gespeichert'))
-                .catch((err: Error) => toast(err.message, 'error'))
-            }
-          />
-        }
-        label="Anrufe über die Schnittstelle erlauben"
-      />
+      <FormControlLabel control={<Switch checked={call_api} disabled={!enabled} onChange={(e) => save({ call_api: e.target.checked })} />} label="Anrufe und Ansagen über die Schnittstelle erlauben" />
+      <FormControlLabel control={<Switch checked={control} disabled={!enabled} onChange={(e) => save({ control: e.target.checked })} />} label="Schalten über die Schnittstelle erlauben (Nicht stören, Umleitung, Zeitsteuerung)" />
       {!enabled && (
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
           Dafür oben die Schnittstelle einschalten – sie nutzt denselben Zugriffsschlüssel.
         </Typography>
       )}
-      {enabled && call_api && (
+      {enabled && (call_api || control) && (
         <Box component="pre" sx={{ mt: 2, p: 2, bgcolor: 'background.default', borderRadius: 2, fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-          {`curl -X POST ${window.location.origin}/api/integration/call \\
-  -H "Authorization: Bearer <Zugriffsschlüssel>" \\
-  -H "Content-Type: application/json" \\
-  -d '{"extension":"10","number":"030123456"}'`}
+          {[
+            call_api && `curl -X POST ${window.location.origin}/api/integration/call \\
+  -H "Authorization: Bearer <Zugriffsschlüssel>" -H "Content-Type: application/json" \\
+  -d '{"extension":"10","number":"030123456"}'`,
+            call_api && `curl -X POST ${window.location.origin}/api/integration/announce … -d '{"target":"20","text":"Der Wassermelder hat ausgelöst"}'`,
+            control && `curl -X POST ${window.location.origin}/api/integration/dnd … -d '{"extension":"10","enabled":true}'`,
+            control && `curl -X POST ${window.location.origin}/api/integration/timecondition … -d '{"id":"<ID>","mode":"closed"}'`,
+          ]
+            .filter(Boolean)
+            .join('\n\n')}
         </Box>
       )}
     </Section>

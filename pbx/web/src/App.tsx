@@ -9,6 +9,7 @@ import DashboardIcon from '@mui/icons-material/Dashboard'
 import DialpadIcon from '@mui/icons-material/Dialpad'
 import GroupsIcon from '@mui/icons-material/Groups'
 import HistoryIcon from '@mui/icons-material/History'
+import InsightsIcon from '@mui/icons-material/Insights'
 import LogoutIcon from '@mui/icons-material/Logout'
 import MenuIcon from '@mui/icons-material/Menu'
 import PersonIcon from '@mui/icons-material/Person'
@@ -56,6 +57,7 @@ import Ivrs from './pages/Ivrs'
 import Messenger from './pages/Messenger'
 import Outbound from './pages/Outbound'
 import Phonebook from './pages/Phonebook'
+import Stats from './pages/Stats'
 import System from './pages/System'
 import TimeConditions from './pages/TimeConditions'
 import Trunks from './pages/Trunks'
@@ -111,6 +113,7 @@ const NAV: [string, NavItem[]][] = [
     'Auswertung und System',
     [
       { key: 'calls', label: 'Anrufliste', icon: <HistoryIcon />, page: <Calls /> },
+      { key: 'stats', label: 'Auswertungen', icon: <InsightsIcon />, page: <Stats /> },
       { key: 'system', label: 'System', icon: <SettingsIcon />, page: <System /> },
     ],
   ],

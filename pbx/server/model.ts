@@ -330,7 +330,7 @@ export interface OffsiteSettings {
   passphrase: string
 }
 
-export type WebhookEvent = 'call.ringing' | 'call.answered' | 'call.ended' | 'call.missed' | 'voicemail.new' | 'call.blocked' | 'emergency'
+export type WebhookEvent = 'call.ringing' | 'call.answered' | 'call.ended' | 'call.missed' | 'voicemail.new' | 'call.blocked' | 'emergency' | 'door.ring'
 
 export const WEBHOOK_EVENTS: [WebhookEvent, string][] = [
   ['call.ringing', 'Anruf klingelt'],
@@ -340,6 +340,7 @@ export const WEBHOOK_EVENTS: [WebhookEvent, string][] = [
   ['voicemail.new', 'Neue Voicemail'],
   ['call.blocked', 'Anruf gesperrt'],
   ['emergency', 'Notruf gewählt'],
+  ['door.ring', 'Türsprechstelle klingelt'],
 ]
 
 /** Webhook: die Anlage meldet Ereignisse per HTTP POST */

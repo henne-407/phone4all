@@ -39,11 +39,20 @@ export function emergencyText(cfg: PbxConfig, c: EmergencyCall): string {
   return `Notruf: ${c.name || 'Nebenstelle'} (${c.extension}) hat am ${when} die ${c.number} gewählt.`
 }
 
-/** Die letzten Notrufe (für Home Assistant), höchstens 10 */
-export class EmergencyLog {
-  calls: EmergencyCall[] = []
+/** Klingeln an einer Türsprechstelle (für Home Assistant) */
+export interface DoorRing {
+  id: string
+  time: string
+  extension: string
+  name: string
+}
 
-  add(c: EmergencyCall): void {
+/** Die letzten Notrufe (für Home Assistant), höchstens 10 */
+export class EmergencyLog<T extends { id: string } = EmergencyCall> {
+  calls: T[] = []
+
+  add(c: T): void {
+    if (this.calls.some((x) => x.id === c.id)) return
     this.calls = [c, ...this.calls].slice(0, 10)
   }
 }

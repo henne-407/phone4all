@@ -211,3 +211,73 @@ async def test_emergency(hass: HomeAssistant, aioclient_mock: AiohttpClientMocke
     event = hass.states.get("event.buro_emergency_call")
     assert event.attributes["event_type"] == "emergency_call"
     assert event.attributes["number"] == "110"
+
+
+async def test_door_ring(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) -> None:
+    report = deepcopy(REPORT)
+    report["door"] = [{"id": "d1", "time": "2026-10-24T06:00:00.000Z", "extension": "90", "name": "Haustür"}]
+    await setup(hass, aioclient_mock, report)
+    rings = async_capture_events(hass, "phone4all_door_ring")
+
+    report["door"].insert(0, {"id": "d2", "time": "2026-10-24T09:00:00.000Z", "extension": "90", "name": "Haustür"})
+    await refresh(hass, aioclient_mock, report)
+    await refresh(hass, aioclient_mock, report)
+    assert [e.data["call_id"] for e in rings] == ["d2"]
+    event = hass.states.get("event.buro_door_bell")
+    assert event.attributes["event_type"] == "door_ring"
+    assert event.attributes["extension"] == "90"
+
+
+CONTROL_REPORT = {
+    **REPORT,
+    "extensions": [
+        {"number": "10", "name": "Anna", "devices": 1, "dnd": False, "forward": "", "door": False},
+        {"number": "90", "name": "Haustür", "devices": 1, "dnd": False, "forward": "", "door": True},
+    ],
+    "timeconditions": [{"id": "tc1", "name": "Öffnungszeiten", "override": "auto", "open": True}],
+}
+
+
+async def test_switch_and_select(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) -> None:
+    report = deepcopy(CONTROL_REPORT)
+    await setup(hass, aioclient_mock, report)
+    # Türsprechstelle bekommt keinen Schalter
+    assert hass.states.get("switch.buro_do_not_disturb_10_anna").state == STATE_OFF
+    assert not [s for s in hass.states.async_entity_ids("switch") if "90" in s]
+    assert hass.states.get("select.buro_time_condition_offnungszeiten").state == "auto"
+
+    report["extensions"][0]["dnd"] = True
+    report["timeconditions"][0]["override"] = "closed"
+    aioclient_mock.clear_requests()
+    aioclient_mock.post(f"{URL}/api/integration/dnd", json={"ok": True, "dnd": True}, headers=JSON)
+    aioclient_mock.post(f"{URL}/api/integration/timecondition", json={"ok": True}, headers=JSON)
+    aioclient_mock.get(STATUS, json=report, headers=JSON)
+    await hass.services.async_call("switch", "turn_on", {"entity_id": "switch.buro_do_not_disturb_10_anna"}, blocking=True)
+    await hass.services.async_call("select", "select_option", {"entity_id": "select.buro_time_condition_offnungszeiten", "option": "closed"}, blocking=True)
+    posts = [(str(url), body) for method, url, body, _h in aioclient_mock.mock_calls if method == "POST"]
+    assert posts == [
+        (f"{URL}/api/integration/dnd", {"extension": "10", "enabled": True}),
+        (f"{URL}/api/integration/timecondition", {"id": "tc1", "mode": "closed"}),
+    ]
+    await hass.async_block_till_done()
+    assert hass.states.get("switch.buro_do_not_disturb_10_anna").state == STATE_ON
+    assert hass.states.get("select.buro_time_condition_offnungszeiten").state == "closed"
+
+
+async def test_services(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) -> None:
+    import pytest
+    from homeassistant.exceptions import HomeAssistantError
+
+    await setup(hass, aioclient_mock, deepcopy(CONTROL_REPORT))
+    aioclient_mock.post(f"{URL}/api/integration/announce", json={"ok": True}, headers=JSON)
+    aioclient_mock.post(f"{URL}/api/integration/forward", status=403, json={"error": "Schalten über die Schnittstelle ist ausgeschaltet."}, headers=JSON)
+    aioclient_mock.post(f"{URL}/api/integration/call", status=401, json={"error": "Bitte anmelden."}, headers=JSON)
+    await hass.services.async_call(DOMAIN, "announce", {"target": "20", "message": "Wasser im Keller"}, blocking=True)
+    body = [b for m, u, b, _h in aioclient_mock.mock_calls if m == "POST"][0]
+    assert body == {"target": "20", "text": "Wasser im Keller", "voice": ""}
+    with pytest.raises(HomeAssistantError, match="ausgeschaltet"):
+        await hass.services.async_call(DOMAIN, "set_forward", {"extension": "10", "target": "11"}, blocking=True)
+    # Alte Anlage ohne die Aktion: kein Neu-Anmelden verlangen
+    with pytest.raises(HomeAssistantError, match="aktualisieren"):
+        await hass.services.async_call(DOMAIN, "call", {"extension": "10", "number": "030123"}, blocking=True)
+    assert not hass.config_entries.flow.async_progress()

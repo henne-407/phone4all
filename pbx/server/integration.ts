@@ -7,9 +7,10 @@
 import { timingSafeEqual } from 'node:crypto'
 import type { PbxStatus } from './asterisk'
 import type { CallRecord } from './cdr'
-import type { EmergencyCall } from './emergency'
+import type { DoorRing, EmergencyCall } from './emergency'
 import type { PbxConfig } from './model'
-import type { RuntimeState } from './routing'
+import { closedReason } from './holidays'
+import { type RuntimeState, activeForward, dndActive } from './routing'
 import type { UpdateInfo } from './updates'
 
 /** Version der Schnittstelle; steigt nur bei inkompatiblen Änderungen */
@@ -53,7 +54,9 @@ export interface IntegrationReport {
   version: string
   asterisk: { state: PbxStatus['asterisk']; message: string; uptime: number }
   trunks: TrunkReport[]
-  extensions: { number: string; name: string; devices: number; dnd: boolean; forward: string }[]
+  extensions: { number: string; name: string; devices: number; dnd: boolean; forward: string; door: boolean }[]
+  /** Zeitsteuerungen: Umschaltung (auto/open/closed) und ob gerade geöffnet */
+  timeconditions: { id: string; name: string; override: 'auto' | 'open' | 'closed'; open: boolean }[]
   active_calls: number
   missed: { today: number; calls: MissedCall[] }
   problems: Problem[]
@@ -61,12 +64,15 @@ export interface IntegrationReport {
   bans: number
   /** Letzte Notrufe (110/112) aus der Anlage, neueste zuerst */
   emergency: EmergencyCall[]
+  /** Letzte Klingelzeichen an Türsprechstellen, neueste zuerst */
+  door: DoorRing[]
 }
 
 /** Weitere Angaben, die nicht aus Asterisk kommen */
 export interface ReportExtras {
   emergency: EmergencyCall[]
   problems: Problem[]
+  door?: DoorRing[]
 }
 
 /** CDR-Zeit „2026-10-24 14:05:00“ (Ortszeit des Containers) als ISO-Zeitpunkt */
@@ -140,8 +146,15 @@ export function integrationReport(
       number: e.number,
       name: e.name,
       devices: status.endpoints.find((s) => s.number === e.number)?.contacts.length ?? 0,
-      dnd: !!state.dnd[e.number],
-      forward: state.cfu[e.number] ?? '',
+      dnd: dndActive(cfg, state, e.number, now),
+      forward: activeForward(cfg, state, e.number, now),
+      door: e.door.enabled,
+    })),
+    timeconditions: cfg.timeconditions.map((t) => ({
+      id: t.id,
+      name: t.name,
+      override: t.override,
+      open: closedReason(t, now, cfg.system.state, cfg.system.timezone) === null,
     })),
     active_calls: status.calls.length,
     missed: { today: missed.filter((m) => sameLocalDay(m.time, now)).length, calls: missed.slice(0, MISSED_LIMIT) },
@@ -149,6 +162,7 @@ export function integrationReport(
     update: { available: update.available, current: update.current, latest: update.latest?.version ?? '' },
     bans,
     emergency: extras.emergency,
+    door: extras.door ?? [],
   }
 }
 

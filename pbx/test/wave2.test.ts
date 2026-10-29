@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import type { CallRecord } from '../server/cdr'
 import { CallTracker, type GroupMissedCall } from '../server/events'
 import { applyRules, forwardInfo } from '../server/forwarding'
 import { extensionsConf } from '../server/generate/dialplan'
@@ -24,6 +25,7 @@ import {
   pagePlan,
   ringPlan,
 } from '../server/routing'
+import { callsCsv, computeStats, parseQueueLog } from '../server/stats'
 import { validate } from '../server/store'
 import { gen, sampleConfig } from './helpers'
 
@@ -234,5 +236,65 @@ describe('Verpasste Gruppenanrufe', () => {
     t.onAmi({ Event: 'DialBegin', Linkedid: 'L2', DestChannel: 'PJSIP/trunk-t1-00000003', DialString: '+49309999999@trunk-t1' })
     t.onAmi({ Event: 'DialEnd', Linkedid: 'L2', DestChannel: 'PJSIP/trunk-t1-00000003', DialStatus: 'ANSWER' })
     expect(events.at(-1)).toMatchObject({ event: 'call.answered', data: { direction: 'out', from: '11', to: '+49309999999' } })
+  })
+})
+
+describe('Auswertungen', () => {
+  const call = (patch: Partial<CallRecord>): CallRecord => ({
+    id: Math.random().toString(36),
+    start: '2026-10-26 09:15:00',
+    direction: 'in',
+    from: '0301111111',
+    fromName: '',
+    to: '030 1234567',
+    answeredBy: '10',
+    status: 'answered',
+    duration: 60,
+    recordings: [],
+    ...patch,
+  })
+
+  it('zählt je Stunde, Wochentag, Nummer und Nebenstelle', () => {
+    const cfg = sampleConfig()
+    const calls = [
+      call({}),
+      call({ status: 'missed', answeredBy: '' }),
+      call({ answeredBy: 'Voicemail', duration: 20 }),
+      call({ start: '2026-10-27 14:00:00', to: '030 1234568', answeredBy: '11', duration: 120 }),
+      call({ direction: 'out', from: '10', to: '0170', duration: 30 }),
+      call({ direction: 'internal', from: '10', to: '11' }),
+      call({ status: 'blocked' }),
+      call({ start: '2026-11-05 09:00:00' }),
+    ]
+    const r = computeStats(cfg, calls, [], new Date('2026-10-26T00:00:00').getTime(), new Date('2026-11-02T00:00:00').getTime())
+    expect(r.totals).toEqual({ inbound: 4, answered: 2, missed: 2, voicemail: 1, outbound: 1, internal: 1, avg_talk: 90 })
+    expect(r.by_hour[9]).toEqual({ total: 3, answered: 1 })
+    expect(r.by_weekday[0]).toEqual({ total: 3, answered: 1 })
+    expect(r.by_weekday[1]).toEqual({ total: 1, answered: 1 })
+    expect(r.by_number[0]).toEqual({ number: '030 1234567', total: 3, answered: 1 })
+    expect(r.by_extension).toEqual([
+      { number: '10', name: 'Person 10', answered: 1, outbound: 1, talk: 90 },
+      { number: '11', name: 'Person 11', answered: 1, outbound: 0, talk: 120 },
+    ])
+    const csv = callsCsv(calls, new Date('2026-10-26T00:00:00').getTime(), new Date('2026-10-27T00:00:00').getTime())
+    expect(csv.split('\r\n')[0]).toBe('Beginn;Richtung;Von;Name;An;Angenommen von;Status;Dauer (s)')
+    expect(csv.split('\r\n')[1]).toBe('2026-10-26 09:15:00;eingehend;0301111111;;030 1234567;10;angenommen;60')
+  })
+
+  it('wertet Wartezeiten der Warteschlangen aus', () => {
+    const cfg = sampleConfig()
+    cfg.groups[0].mode = 'queue'
+    const t = Math.floor(new Date('2026-10-26T10:00:00').getTime() / 1000)
+    const log = parseQueueLog(
+      [
+        `${t}|c1|p4a-g1|NONE|ENTERQUEUE||0301111111|1`,
+        `${t + 12}|c1|p4a-g1|Local/10@p4a-qmember/n|CONNECT|12|c1-x|3`,
+        `${t + 20}|c2|p4a-g1|NONE|ENTERQUEUE||0302222222|1`,
+        `${t + 50}|c2|p4a-g1|NONE|ABANDON|1|1|30`,
+        'kaputt',
+      ].join('\n'),
+    )
+    const r = computeStats(cfg, [], log, new Date('2026-10-26T00:00:00').getTime(), new Date('2026-10-27T00:00:00').getTime())
+    expect(r.queues).toEqual([{ id: 'g1', name: 'Zentrale', calls: 2, answered: 1, abandoned: 1, avg_wait: 21, max_wait: 30 }])
   })
 })

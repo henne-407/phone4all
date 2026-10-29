@@ -11,9 +11,9 @@ import { CalendarStore } from './calendars'
 import { external } from './directory'
 import { AuditLog, auditText } from './audit'
 import { Auth, SESSION_COOKIE, SESSION_MAX_AGE } from './auth'
-import { readCalls, tailLog } from './cdr'
+import { readAllCalls, readCalls, readQueueLog, tailLog } from './cdr'
 import { describeAgent, gigasetFile, requestMac } from './dect'
-import { EmergencyLog, emergencyCall, emergencyText, isEmergency } from './emergency'
+import { type DoorRing, EmergencyLog, emergencyCall, emergencyText, isEmergency } from './emergency'
 import { CallTracker, type GroupMissedCall, type PbxEvent, Webhooks } from './events'
 import { loadJson, saveJson } from './files'
 import { type ForwardChange, ForwardError, applyCfu, applyMobile, applyRules, check as checkForward, forwardInfo } from './forwarding'
@@ -53,7 +53,7 @@ import {
 } from './routing'
 import { Guard, inList } from './security'
 import { SourceSync } from './sources/sync'
-import { listSounds, saveSound, soundDir, soundFile, type SoundKind } from './sounds'
+import { listSounds, saveSound, soundDir, soundFile, type SoundKind, toTelephoneWav } from './sounds'
 import { expire, moveMailbox, recordingFile, removeMailbox, report as storageReport } from './storage'
 import {
   ConfigStore,
@@ -75,6 +75,7 @@ import {
   renewPin,
 } from './store'
 import { Tts, TtsError, VOICES } from './tts'
+import { callsCsv, computeStats, parseQueueLog } from './stats'
 import type { DectBase, PbxConfig } from './model'
 import { Updater } from './updates'
 import { VoicemailBox } from './voicemail'
@@ -108,6 +109,7 @@ const tracker = new CallTracker()
 const webhooks = new Webhooks(() => store.config)
 const voicemail = new VoicemailBox(PATHS.spool)
 const emergencies = new EmergencyLog()
+const doorRings = new EmergencyLog<DoorRing>()
 const tts = new Tts(PATHS.tts)
 const missed = new MissedList(PATHS.missed)
 let offsiteStatus: OffsiteStatus = { time: 0, ok: true, file: '', error: '' }
@@ -126,6 +128,15 @@ store.hooks = {
 
 tracker.on('event', (e: PbxEvent) => {
   void Promise.all(webhooks.dispatch(e))
+  // Türsprechstelle ruft an: für Home Assistant und als eigenes Ereignis
+  if (e.event === 'call.ringing') {
+    const d = e.data as { call: string; from: string }
+    const door = store.config.extensions.find((x) => x.door.enabled && x.number === d.from)
+    if (door && !doorRings.calls.some((r) => r.id === d.call)) {
+      doorRings.add({ id: d.call, time: e.time, extension: door.number, name: door.name })
+      tracker.report('door.ring', { extension: door.number, name: door.name })
+    }
+  }
   // Rückruf oder neuer angenommener Anruf: verpasste Gruppenanrufe dieser Nummer abhaken
   if (e.event !== 'call.answered') return
   const d = e.data as { direction: string; from: string; to?: string; extension?: string }
@@ -850,28 +861,37 @@ function dectFile(r: Request): void {
 pub.get('/dect/:token', dectFile)
 pub.get('/dect/:token/:file', dectFile)
 
-/** Zustandsbericht für Home Assistant u. a. (Bearer-Token statt Anmeldung) */
-pub.get('/api/integration/status', async (r) => {
+/** Zugriffsschlüssel der Schnittstelle prüfen (Bearer-Token statt Anmeldung) */
+function integrationAuth(r: Request, need: 'call_api' | 'control' | '' = ''): void {
   if (!validToken(store.config, r.raw.headers.authorization)) {
     r.res.setHeader('WWW-Authenticate', 'Bearer')
     throw new HttpError(401, 'Zugriffsschlüssel fehlt oder ist falsch.')
   }
+  if (need === 'call_api' && !store.config.integration.call_api) throw new HttpError(403, 'Anrufe über die Schnittstelle sind ausgeschaltet.')
+  if (need === 'control' && !store.config.integration.control) throw new HttpError(403, 'Schalten über die Schnittstelle ist ausgeschaltet.')
+}
+
+function integrationExtension(raw: unknown): Extension {
+  const ext = store.config.extensions.find((e) => e.number === String(raw ?? '').trim())
+  if (!ext) throw new HttpError(404, 'Unbekannte Nebenstelle.')
+  return ext
+}
+
+/** Zustandsbericht für Home Assistant u. a. */
+pub.get('/api/integration/status', async (r) => {
+  integrationAuth(r)
   return integrationReport(store.config, store.state, await asterisk.status(), readCalls(500), updater.info, SETTINGS.version, guard.bans.length, new Date(), {
     emergency: emergencies.calls,
+    door: doorRings.calls,
     problems: offsiteStatus.ok ? [] : [{ key: 'backup', message: `Externe Sicherung fehlgeschlagen: ${offsiteStatus.error}` }],
   })
 })
 
 /** Anruf auslösen (CRM, Hausautomation): erst klingelt die Nebenstelle, nach dem Abheben wird gewählt */
 pub.post('/api/integration/call', async (r) => {
-  if (!validToken(store.config, r.raw.headers.authorization)) {
-    r.res.setHeader('WWW-Authenticate', 'Bearer')
-    throw new HttpError(401, 'Zugriffsschlüssel fehlt oder ist falsch.')
-  }
-  if (!store.config.integration.call_api) throw new HttpError(403, 'Anrufe über die Schnittstelle sind ausgeschaltet.')
+  integrationAuth(r, 'call_api')
   const body = await r.json<{ extension: string; number: string }>()
-  const ext = store.config.extensions.find((e) => e.number === String(body.extension ?? '').trim())
-  if (!ext) throw new HttpError(404, 'Unbekannte Nebenstelle.')
+  const ext = integrationExtension(body.extension)
   const number = cleanNumber(String(body.number ?? ''))
   if (!/^\+?\d{2,20}$/.test(number)) throw new HttpError(400, 'Ungültige Rufnummer.')
   const [res] = await asterisk.ami
@@ -890,6 +910,80 @@ pub.post('/api/integration/call', async (r) => {
       throw new HttpError(503, `Asterisk antwortet nicht: ${e.message}`)
     })
   if (res?.Response !== 'Success') throw new HttpError(500, res?.Message || 'Der Anruf konnte nicht gestartet werden.')
+  return { ok: true }
+})
+
+/** Ansage aus Text: Telefone einer Nebenstelle oder Gruppe klingeln, nach dem Abheben spricht die Anlage den Text (zweimal) */
+pub.post('/api/integration/announce', async (r) => {
+  integrationAuth(r, 'call_api')
+  const body = await r.json<{ target: string; text: string; voice?: string }>()
+  const target = cleanNumber(String(body.target ?? ''))
+  if (!ringPlan(store.config, store.state, target)) throw new HttpError(404, 'Unbekannte Nebenstelle oder Gruppe, oder niemand erreichbar.')
+  const voice = String(body.voice ?? '') || tts.status().voices[0] || ''
+  let wav: Buffer
+  try {
+    wav = toTelephoneWav(await tts.speak(String(body.text ?? ''), voice))
+  } catch (e) {
+    if (e instanceof TtsError) throw new HttpError(400, `${e.message} (Sprachausgabe unter Ansagen und Musik → Aus Text sprechen laden)`)
+    throw e
+  }
+  const dir = path.join(PATHS.tts, 'announce')
+  fs.mkdirSync(dir, { recursive: true })
+  const base = path.join(dir, `${Date.now()}-${target}`)
+  fs.writeFileSync(`${base}.wav`, wav)
+  setTimeout(() => fs.rmSync(`${base}.wav`, { force: true }), 10 * 60000).unref()
+  const [res] = await asterisk.ami
+    .action({
+      Action: 'Originate',
+      Channel: `Local/${target}@p4a-ring`,
+      Application: 'Playback',
+      Data: `silence/1&${base}&silence/1&${base}`,
+      CallerID: `"Durchsage" <${target}>`,
+      Timeout: '35000',
+      Async: 'true',
+    })
+    .catch((e: Error) => {
+      throw new HttpError(503, `Asterisk antwortet nicht: ${e.message}`)
+    })
+  if (res?.Response !== 'Success') throw new HttpError(500, res?.Message || 'Die Ansage konnte nicht gestartet werden.')
+  return { ok: true }
+})
+
+/** Nicht stören schalten */
+pub.post('/api/integration/dnd', async (r) => {
+  integrationAuth(r, 'control')
+  const body = await r.json<{ extension: string; enabled: boolean }>()
+  const ext = integrationExtension(body.extension)
+  if (body.enabled) store.state.dnd[ext.number] = true
+  else delete store.state.dnd[ext.number]
+  store.saveState()
+  return { ok: true, dnd: Boolean(store.state.dnd[ext.number]) }
+})
+
+/** Sofort-Umleitung setzen ('' = aus); nach außen wird wie in der App gemeldet */
+pub.post('/api/integration/forward', async (r) => {
+  integrationAuth(r, 'control')
+  const body = await r.json<{ extension: string; target: string }>()
+  const ext = integrationExtension(body.extension)
+  const target = cleanNumber(String(body.target ?? ''))
+  if (target === ext.number) throw new HttpError(400, 'Die Umleitung kann nicht auf die eigene Nebenstelle zeigen.')
+  if (target) store.state.cfu[ext.number] = target
+  else delete store.state.cfu[ext.number]
+  store.saveState()
+  forwardAlert(ext.number, target)
+  return { ok: true, forward: target }
+})
+
+/** Zeitsteuerung umschalten: auto, open (immer geöffnet), closed (immer geschlossen) */
+pub.post('/api/integration/timecondition', async (r) => {
+  integrationAuth(r, 'control')
+  const body = await r.json<{ id: string; mode: string }>()
+  const mode = String(body.mode ?? '')
+  if (!['auto', 'open', 'closed'].includes(mode)) throw new HttpError(400, 'Modus auto, open oder closed.')
+  if (!store.config.timeconditions.some((t) => t.id === body.id)) throw new HttpError(404, 'Unbekannte Zeitsteuerung.')
+  store.update((draft) => {
+    draft.timeconditions.find((t) => t.id === body.id)!.override = mode as 'auto' | 'open' | 'closed'
+  })
   return { ok: true }
 })
 
@@ -1163,6 +1257,32 @@ api.post('/api/unban', async (r) => {
 })
 
 api.get('/api/calls', (r) => readCalls(Number(r.query.get('limit')) || 200))
+
+/** Zeitraum für Auswertungen: from/to als Datum (to einschließlich), höchstens ein Jahr */
+function statsRange(r: Request): [number, number] {
+  const day = (v: string | null): number => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T00:00:00`).getTime() : NaN)
+  const from = day(r.query.get('from'))
+  const to = day(r.query.get('to')) + 86400000
+  if (Number.isNaN(from) || Number.isNaN(to) || to <= from || to - from > 367 * 86400000) {
+    throw new HttpError(400, 'Zeitraum fehlt oder ist zu groß (from/to als JJJJ-MM-TT, höchstens ein Jahr).')
+  }
+  return [from, to]
+}
+
+api.get('/api/stats', (r) => {
+  const [from, to] = statsRange(r)
+  return computeStats(store.config, readAllCalls(), parseQueueLog(readQueueLog()), from, to)
+})
+
+api.get('/api/stats/csv', (r) => {
+  const [from, to] = statsRange(r)
+  r.res.writeHead(200, {
+    'Content-Type': 'text/csv; charset=utf-8',
+    'Content-Disposition': `attachment; filename="anrufe-${r.query.get('from')}-bis-${r.query.get('to')}.csv"`,
+  })
+  // BOM, damit Excel die Umlaute erkennt
+  r.res.end('\ufeff' + callsCsv(readAllCalls(), from, to))
+})
 
 api.get('/api/missed', () => missedView())
 api.put('/api/missed/:group/:id', async (r) => {

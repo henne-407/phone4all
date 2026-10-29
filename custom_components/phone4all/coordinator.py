@@ -17,6 +17,7 @@ from homeassistant.util import dt as dt_util
 from .api import Phone4allApi, Phone4allAuthError, Phone4allError
 from .const import (
     DOMAIN,
+    EVENT_DOOR_RING,
     EVENT_EMERGENCY_CALL,
     EVENT_MISSED_CALL,
     EVENT_PROBLEM,
@@ -50,6 +51,7 @@ class Phone4allCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.seen")
         self._since: str | None = None
         self._seen_emergency: list[str] | None = None
+        self._seen_door: list[str] | None = None
         self._problems: dict[str, str] = {}
         self._event_listeners: list[Callable[[str, dict[str, Any]], None]] = []
 
@@ -91,7 +93,31 @@ class Phone4allCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._check_missed(data.get("missed", {}).get("calls", []))
         # Notrufe (110/112) von Nebenstellen; ältere Anlagen liefern keine
         self._check_emergency(data.get("emergency", []))
+        # Klingeln an Türsprechstellen (ab Anlage 0.10)
+        self._check_door(data.get("door", []))
         return data
+
+    async def async_action(self, name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Aktion an der Anlage ausführen und den Zustand gleich neu abfragen."""
+        result = await self.api.action(name, payload)
+        await self.async_request_refresh()
+        return result
+
+    def _check_door(self, rings: list[dict[str, Any]]) -> None:
+        ids = [r["id"] for r in rings]
+        if self._seen_door is None:
+            self._seen_door = ids
+            return
+        for ring in reversed(rings):
+            if ring["id"] in self._seen_door:
+                continue
+            self._seen_door.append(ring["id"])
+            self._fire(
+                EVENT_DOOR_RING,
+                "door_ring",
+                {"call_id": ring["id"], "time": ring["time"], "extension": ring["extension"], "name": ring["name"]},
+            )
+        del self._seen_door[:-SEEN_LIMIT]
 
     async def _load_seen(self) -> None:
         stored = await self._store.async_load()
