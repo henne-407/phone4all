@@ -1,0 +1,41 @@
+name: Release
+
+# Setzt die Release-Tags, sobald eine neue Version auf main landet (aus der Cloud lassen
+# sich keine Tags pushen). Mit GITHUB_TOKEN gepushte Tags starten keine Workflows, deshalb
+# werden die Bau-Workflows danach ausdrücklich auf dem Tag gestartet.
+
+on:
+  push:
+    branches: [main]
+    paths: ['package.json', 'pbx/package.json', 'mobile/package.json']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency: release
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Tags setzen und Bau starten
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for entry in 'v:package.json:build.yml' 'pbx-v:pbx/package.json:pbx.yml' 'mobile-v:mobile/package.json:mobile.yml'; do
+            IFS=: read -r prefix file workflow <<< "$entry"
+            tag="$prefix$(node -p "require('./$file').version")"
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null; then
+              echo "$tag gibt es schon"
+              continue
+            fi
+            git tag -a "$tag" -m "$tag" "$GITHUB_SHA"
+            git push origin "refs/tags/$tag"
+            gh workflow run "$workflow" --ref "$tag"
+            echo "::notice::$tag gesetzt, $workflow gestartet"
+          done
