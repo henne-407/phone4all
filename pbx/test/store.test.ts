@@ -48,6 +48,40 @@ describe('Konfiguration', () => {
   })
 })
 
+describe('Sicherungen', () => {
+  it('nimmt Nicht stören und Umleitungen mit und spielt sie zurück', () => {
+    const store = new ConfigStore()
+    if (!store.config.extensions.some((e) => e.number === '10')) store.upsert('extensions', { number: '10', name: 'Anna' })
+    store.state.dnd = { '10': true }
+    store.state.cfu = { '10': '0171555' }
+    const data = store.exportData(false, false, 'test')
+    store.state.dnd = {}
+    store.state.cfu = {}
+    data.state = { dnd: { '10': true, '99': true }, cfu: { '10': '0171555', x: 5 as never } }
+    store.importData(data)
+    expect(store.state).toEqual({ dnd: { '10': true }, cfu: { '10': '0171555' } })
+  })
+
+  it('hebt je Anlass getrennt auf, damit tägliche Sicherungen die übrigen nicht verdrängen', async () => {
+    const store = new ConfigStore()
+    const { PATHS } = await import('../server/paths')
+    for (const f of fs.readdirSync(PATHS.backups)) fs.rmSync(path.join(PATHS.backups, f))
+    const old = new Date(Date.now() - 86400000)
+    fs.writeFileSync(path.join(PATHS.backups, '2020-01-01T00-00-00-vor-import.json'), '{}')
+    fs.utimesSync(path.join(PATHS.backups, '2020-01-01T00-00-00-vor-import.json'), old, old)
+    for (let i = 0; i < 20; i++) {
+      const name = `2020-01-02T00-00-${String(i).padStart(2, '0')}-taeglich.json`
+      fs.writeFileSync(path.join(PATHS.backups, name), '{}')
+      const t = new Date(old.getTime() + i * 1000)
+      fs.utimesSync(path.join(PATHS.backups, name), t, t)
+    }
+    store.backup('taeglich')
+    const names = store.backups().map((b) => b.name)
+    expect(names.filter((n) => n.endsWith('-taeglich.json'))).toHaveLength(14)
+    expect(names).toContain('2020-01-01T00-00-00-vor-import.json')
+  })
+})
+
 describe('Beschädigte Konfiguration', () => {
   it('lädt die neueste Sicherung statt einer leeren Anlage', async () => {
     const store = new ConfigStore()

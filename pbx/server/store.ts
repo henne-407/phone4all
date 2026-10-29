@@ -20,7 +20,10 @@ import { PATHS, SETTINGS } from './paths'
 import { forget, renumber } from './references'
 import type { RuntimeState } from './routing'
 
-const BACKUP_KEEP = 30
+// Je Anlass getrennt aufheben, damit die täglichen Sicherungen die vor Import oder Update
+// nicht verdrängen
+const BACKUP_KEEP: Record<string, number> = { taeglich: 14 }
+const BACKUP_KEEP_OTHER = 10
 
 export class ValidationError extends Error {}
 
@@ -186,6 +189,24 @@ export interface ExportFile {
   files?: Record<string, string>
   /** Termine der zentralen Kalender (Kalender-ID → Termine) */
   calendars?: Record<string, unknown[]>
+  /** Nicht stören und Sofort-Umleitungen der Nebenstellen */
+  state?: RuntimeState
+}
+
+/** Anlass einer Sicherung aus dem Dateinamen (2026-10-29T05-30-00-taeglich.json → taeglich) */
+export function backupReason(name: string): string {
+  return /^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-(.*)\.json$/.exec(name)?.[1] ?? ''
+}
+
+/** Nur gültige Einträge aus einem eingelesenen Zustand übernehmen */
+function cleanState(raw: unknown): RuntimeState {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<Record<keyof RuntimeState, unknown>>
+  const pick = <T>(v: unknown, ok: (x: unknown) => x is T): Record<string, T> =>
+    Object.fromEntries(Object.entries(v && typeof v === 'object' ? v : {}).filter(([k, x]) => /^[\w*#+-]+$/.test(k) && ok(x)))
+  return {
+    dnd: pick(r.dnd, (x): x is boolean => x === true),
+    cfu: pick(r.cfu, (x): x is string => typeof x === 'string' && x.trim() !== ''),
+  }
 }
 
 export function stripSecrets(cfg: PbxConfig): PbxConfig {
@@ -222,7 +243,7 @@ export class ConfigStore {
     const before = JSON.stringify(this.config)
     for (const e of this.config.extensions) fillSecrets(e)
     for (const b of this.config.dect) fillDectSecrets(b)
-    this.state = { dnd: {}, cfu: {}, ...loadJson<Partial<RuntimeState>>(PATHS.state, {}) }
+    this.state = cleanState(loadJson<unknown>(PATHS.state, {}))
     // Neu vergebene Geheimnisse sofort speichern, sonst ändern sie sich beim nächsten Start
     if (fresh || this.recovered || JSON.stringify(this.config) !== before) this.save()
   }
@@ -365,8 +386,12 @@ export class ConfigStore {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
     const file = path.join(PATHS.backups, `${stamp}-${reason.replace(/[^a-z0-9-]/gi, '')}.json`)
     saveJson(file, this.exportData(true, false, 'backup'))
-    const all = this.backups()
-    for (const old of all.slice(BACKUP_KEEP)) fs.rmSync(path.join(PATHS.backups, old.name), { force: true })
+    const seen: Record<string, number> = {}
+    for (const old of this.backups()) {
+      const kind = backupReason(old.name)
+      seen[kind] = (seen[kind] ?? 0) + 1
+      if (seen[kind] > (BACKUP_KEEP[kind] ?? BACKUP_KEEP_OTHER)) fs.rmSync(path.join(PATHS.backups, old.name), { force: true })
+    }
     return path.basename(file)
   }
 
@@ -391,6 +416,7 @@ export class ConfigStore {
       exported: new Date().toISOString(),
       version,
       config: secrets ? structuredClone(this.config) : stripSecrets(this.config),
+      state: structuredClone(this.state),
       calendars: Object.fromEntries(
         this.config.calendars.filter((c) => c.kind === 'events').map((c) => [c.id, loadJson<unknown[]>(path.join(PATHS.calendars, `${c.id}.json`), [])]),
       ),
@@ -439,6 +465,14 @@ export class ConfigStore {
     incoming.ldap.password ||= this.config.ldap.password
     this.backup('vor-import')
     this.update((draft) => Object.assign(draft, incoming))
+    if (data.state) {
+      // Nur für Nebenstellen, die es nach dem Import gibt
+      const known = new Set(this.config.extensions.map((e) => e.number))
+      const state = cleanState(data.state)
+      this.state.dnd = Object.fromEntries(Object.entries(state.dnd).filter(([n]) => known.has(n)))
+      this.state.cfu = Object.fromEntries(Object.entries(state.cfu).filter(([n]) => known.has(n)))
+      this.saveState()
+    }
     for (const [id, events] of Object.entries(data.calendars ?? {})) {
       if (/^[\w-]+$/.test(id) && Array.isArray(events) && this.config.calendars.some((c) => c.id === id)) {
         saveJson(path.join(PATHS.calendars, `${id}.json`), events, 0o644)

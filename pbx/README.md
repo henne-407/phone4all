@@ -104,7 +104,7 @@ für beide. Fehlanmeldungen über den WebSocket sperren die Adresse des Telefons
   \*8 / \*\*Nr. Heranholen, \*28 Nachtschaltung, \*31 anonym, \*43 Echo-Test
 - **Sicherheit**: Sperre nach Fehlanmeldungen, erlaubte Netze, TLS/SRTP
 - **Konfiguration als Datei** exportieren und importieren (wahlweise mit Passwörtern
-  und Ansagen), tägliche automatische Sicherung (30 Tage)
+  und Ansagen), tägliche automatische Sicherung (14 Tage, Sicherungen vor Import und Update getrennt davon)
 - **Home Assistant**: verpasste Anrufe, abgemeldete SIP-Konten und andere Störungen als
   Sensoren und Ereignisse, auch über HTTPS hinter einem Reverse-Proxy
 - **Online-Updates** aus der Weboberfläche (stabil oder Beta), auf Wunsch automatisch

@@ -218,7 +218,7 @@ function Backup() {
           Datei wählen …
         </Button>
       </Section>
-      <Section title="Automatische Sicherungen" description="Täglich sowie vor jedem Import, jeder Wiederherstellung und jedem Update. Die letzten 30 bleiben erhalten.">
+      <Section title="Automatische Sicherungen" description="Täglich sowie vor jedem Import, jeder Wiederherstellung und jedem Update. Erhalten bleiben die letzten 14 täglichen und je Anlass die letzten 10 übrigen. Mit gesichert werden „Nicht stören“ und Sofort-Umleitungen.">
         <Button sx={{ mb: 1 }} onClick={() => void api.post('/api/backups').then(load)}>
           Jetzt sichern
         </Button>

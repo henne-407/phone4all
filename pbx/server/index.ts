@@ -679,8 +679,11 @@ api.delete('/api/watchdog/events', () => {
 })
 
 api.put('/api/state/:ext', async (r) => {
-  const { dnd, cfu } = await r.json<{ dnd?: boolean; cfu?: string }>()
+  const { dnd, cfu } = await r.json<{ dnd?: unknown; cfu?: unknown }>()
   const n = r.params.ext
+  if ((dnd !== undefined && typeof dnd !== 'boolean') || (cfu !== undefined && typeof cfu !== 'string')) {
+    throw new HttpError(400, 'dnd muss true/false, cfu eine Rufnummer sein.')
+  }
   if (!store.config.extensions.some((e) => e.number === n)) throw new HttpError(404, 'Nebenstelle nicht gefunden.')
   if (dnd !== undefined) {
     if (dnd) store.state.dnd[n] = true
