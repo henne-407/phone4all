@@ -73,6 +73,8 @@ export interface StatusResponse {
   }[]
   dnd: Record<string, boolean>
   cfu: Record<string, string>
+  /** Aus Gruppen abgemeldet: Nebenstelle → Gruppen-IDs */
+  away: Record<string, string[]>
   bans: { ip: string; until: number; reason: string }[]
   update: UpdateInfo
   version: string
@@ -106,4 +108,19 @@ export interface CallRecord {
   status: 'answered' | 'missed' | 'busy' | 'failed' | 'blocked'
   duration: number
   recordings: string[]
+}
+
+/** Verpasster Gruppenanruf (gemeinsame Liste) */
+export interface GroupMissed {
+  id: string
+  group: string
+  group_name: string
+  number: string
+  name: string
+  time: number
+  claimed_by: string
+  claimed_at: number
+  done_by: string
+  done_at: number
+  done_how: '' | 'callback' | 'answered' | 'manual'
 }

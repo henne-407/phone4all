@@ -30,24 +30,24 @@ function call(id: string, extra: Partial<CallRecord> = {}): CallRecord {
 describe('Home-Assistant-Schnittstelle', () => {
   it('meldet abgemeldete SIP-Konten als Problem', () => {
     const cfg = sampleConfig()
-    const ok = integrationReport(cfg, { dnd: {}, cfu: {} }, status({ registrations: [{ trunk: 't1', status: 'Registered' }] }), [], update, '0.3.0', 0)
+    const ok = integrationReport(cfg, { dnd: {}, cfu: {}, away: {} }, status({ registrations: [{ trunk: 't1', status: 'Registered' }] }), [], update, '0.3.0', 0)
     expect(ok.problems).toEqual([])
     expect(ok.trunks[0]).toMatchObject({ id: 't1', registered: true, problem: false })
 
-    const bad = integrationReport(cfg, { dnd: {}, cfu: {} }, status({ registrations: [{ trunk: 't1', status: 'Rejected' }] }), [], update, '0.3.0', 0)
+    const bad = integrationReport(cfg, { dnd: {}, cfu: {}, away: {} }, status({ registrations: [{ trunk: 't1', status: 'Rejected' }] }), [], update, '0.3.0', 0)
     expect(bad.trunks[0].problem).toBe(true)
     expect(bad.problems).toEqual([{ key: 'trunk:t1', message: 'SIP-Konto Telekom ist nicht angemeldet (Rejected)' }])
   })
 
   it('meldet nicht laufendes Asterisk statt jedes Kontos', () => {
-    const r = integrationReport(sampleConfig(), { dnd: {}, cfu: {} }, status({ asterisk: 'error', message: 'abgestürzt' }), [], update, '0.3.0', 0)
+    const r = integrationReport(sampleConfig(), { dnd: {}, cfu: {}, away: {} }, status({ asterisk: 'error', message: 'abgestürzt' }), [], update, '0.3.0', 0)
     expect(r.problems).toEqual([{ key: 'asterisk', message: 'abgestürzt' }])
   })
 
   it('ignoriert Konten ohne Anmeldung', () => {
     const cfg = sampleConfig()
     cfg.trunks[0].ip_auth = true
-    const r = integrationReport(cfg, { dnd: {}, cfu: {} }, status(), [], update, '0.3.0', 0)
+    const r = integrationReport(cfg, { dnd: {}, cfu: {}, away: {} }, status(), [], update, '0.3.0', 0)
     expect(r.problems).toEqual([])
     expect(r.trunks[0].register).toBe(false)
   })
@@ -61,7 +61,7 @@ describe('Home-Assistant-Schnittstelle', () => {
       call('e', { start: '2026-10-23 18:00:00' }),
       call('f'),
     ]
-    const r = integrationReport(sampleConfig(), { dnd: {}, cfu: {} }, status({ calls: [{ id: 'f', from: '', fromName: '', to: '', toName: '', channels: [] }] }), calls, update, '0.3.0', 0, new Date(2026, 9, 24, 12))
+    const r = integrationReport(sampleConfig(), { dnd: {}, cfu: {}, away: {} }, status({ calls: [{ id: 'f', from: '', fromName: '', to: '', toName: '', channels: [] }] }), calls, update, '0.3.0', 0, new Date(2026, 9, 24, 12))
     expect(r.missed.calls.map((c) => c.id)).toEqual(['a', 'b', 'e'])
     expect(r.missed.calls[1].voicemail).toBe(true)
     expect(r.missed.today).toBe(2)
@@ -71,7 +71,7 @@ describe('Home-Assistant-Schnittstelle', () => {
 
   it('prüft den Zugriffsschlüssel', () => {
     const cfg = sampleConfig()
-    cfg.integration = { enabled: true, token: 'abc123', call_api: false }
+    cfg.integration = { enabled: true, token: 'abc123', call_api: false, control: false }
     expect(validToken(cfg, 'Bearer abc123')).toBe(true)
     expect(validToken(cfg, 'Bearer abc124')).toBe(false)
     expect(validToken(cfg, 'abc123')).toBe(false)

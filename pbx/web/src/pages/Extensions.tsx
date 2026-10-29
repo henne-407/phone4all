@@ -305,6 +305,7 @@ function ExtensionForm({ value, onChange, isNew }: { value: Extension; onChange:
             onChange={(rules) => set('forward', { ...value.forward, rules })}
             targets={internalNumberOptions(config).filter((o) => o.value !== value.number)}
             timeconditions={config.timeconditions}
+            calendars={config.calendars.filter((c) => c.kind !== 'holidays')}
           />
         </Full>
         <FormControlLabel control={<Switch checked={value.voicemail.enabled} onChange={(e) => set('voicemail', { ...value.voicemail, enabled: e.target.checked })} />} label="Voicemail" />
@@ -317,6 +318,29 @@ function ExtensionForm({ value, onChange, isNew }: { value: Extension; onChange:
             Nur mit Einwilligung aller Gesprächspartner zulässig (§ 201 StGB, DSGVO).
           </Typography>
         </Full>
+      </FormGrid>
+      <Divider sx={{ my: 2 }} />
+      <Typography variant="subtitle1">Handy klingelt mit</Typography>
+      <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5 }}>
+        Anrufe für diese Nebenstelle klingeln zusätzlich auf dem Handy, über das SIP-Konto nach außen. Mit Bestätigung nimmt
+        man am Handy mit der Taste 1 an – so landet der Anrufer nicht auf der Mailbox des Handys. In der App lässt es sich
+        ein- und ausschalten.
+      </Typography>
+      <FormGrid>
+        <FormControlLabel control={<Switch checked={value.mobile.enabled} onChange={(e) => set('mobile', { ...value.mobile, enabled: e.target.checked })} />} label="Handy klingelt mit" />
+        <TextField label="Handynummer" value={value.mobile.number} onChange={(e) => set('mobile', { ...value.mobile, number: e.target.value })} helperText="z. B. 0171 2345678" />
+        <NumberField label="Erst nach (Sekunden)" value={value.mobile.delay} onChange={(v) => set('mobile', { ...value.mobile, delay: v })} helperText="0 = sofort; danach klingeln Telefone und Handy gleichzeitig" />
+        <FormControlLabel control={<Switch checked={value.mobile.confirm} onChange={(e) => set('mobile', { ...value.mobile, confirm: e.target.checked })} />} label="Am Handy mit Taste 1 annehmen" />
+      </FormGrid>
+      <Divider sx={{ my: 2 }} />
+      <Typography variant="subtitle1">Türsprechstelle</Typography>
+      <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5 }}>
+        Ist diese Nebenstelle eine Türsprechstelle (z. B. 2N, DoorBird, Akuvox), zeigen die Apps im Gespräch mit ihr den Knopf
+        „Tür öffnen“. Er sendet die Tasten, die an der Türsprechstelle als Öffnungscode eingestellt sind.
+      </Typography>
+      <FormGrid>
+        <FormControlLabel control={<Switch checked={value.door.enabled} onChange={(e) => set('door', { ...value.door, enabled: e.target.checked })} />} label="Ist eine Türsprechstelle" />
+        <TextField label="Tasten zum Öffnen" value={value.door.dtmf} disabled={!value.door.enabled} onChange={(e) => set('door', { ...value.door, dtmf: e.target.value.replace(/[^0-9*#]/g, '') })} helperText="z. B. *9 oder 1234#" />
       </FormGrid>
       {!isNew && value.id && (
         <>
@@ -363,6 +387,8 @@ export default function Extensions() {
                 <StatusDot color={n ? 'success' : 'default'} label={n ? `${n} angemeldet` : 'keins'} />
                 {status?.dnd[e.number] && <Chip size="small" color="warning" label="Nicht stören" />}
                 {status?.cfu[e.number] && <Chip size="small" color="info" label={`→ ${status.cfu[e.number]}`} />}
+                {e.mobile.enabled && <Chip size="small" variant="outlined" label="+ Handy" />}
+                {e.door.enabled && <Chip size="small" variant="outlined" label="Tür" />}
               </Stack>
             )
           },

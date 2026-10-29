@@ -1,4 +1,4 @@
-/** Umleitungsregeln einer Nebenstelle: nach Zeitplan, Zeitsteuerung oder bei „Nicht stören“. */
+/** Umleitungsregeln einer Nebenstelle: nach Zeitplan, Zeitsteuerung, Termin oder bei „Nicht stören“. */
 
 import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
@@ -10,12 +10,18 @@ const WHEN: [ForwardRule['when'], string][] = [
   ['schedule', 'Zu bestimmten Zeiten'],
   ['timecondition', 'Nach Zeitsteuerung'],
   ['dnd', 'Bei „Nicht stören“'],
+  ['calendar', 'Bei Termin im Kalender'],
+]
+
+const ACTIONS: [NonNullable<ForwardRule['action']>, string][] = [
+  ['forward', 'Umleiten'],
+  ['dnd', 'Nicht stören einschalten'],
 ]
 
 const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 
 export function newRule(): ForwardRule {
-  return { id: '', enabled: true, when: 'schedule', days: [1, 2, 3, 4, 5], from: '18:00', to: '08:00', timecondition: '', tc_state: 'closed', target: '' }
+  return { id: '', enabled: true, when: 'schedule', action: 'forward', days: [1, 2, 3, 4, 5], from: '18:00', to: '08:00', timecondition: '', tc_state: 'closed', target: '' }
 }
 
 export function ForwardRules({
@@ -23,12 +29,14 @@ export function ForwardRules({
   onChange,
   targets,
   timeconditions,
+  calendars,
   disabled = false,
 }: {
   value: ForwardRule[]
   onChange: (v: ForwardRule[]) => void
   targets: NumberOption[]
   timeconditions: { id: string; name: string }[]
+  calendars: { id: string; name: string }[]
   disabled?: boolean
 }) {
   const update = (i: number, patch: Partial<ForwardRule>): void => onChange(value.map((r, j) => (j === i ? { ...r, ...patch } : r)))
@@ -50,8 +58,35 @@ export function ForwardRules({
             </Tooltip>
           </Stack>
           <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' } }}>
-            <Select label="Wann" value={r.when} onChange={(when) => update(i, { when })} options={WHEN} />
-            <NumberPicker label="Umleiten an" value={r.target} onChange={(target) => update(i, { target })} options={targets} helperText="Nebenstelle wählen oder Nummer eintippen" />
+            <Select label="Wann" value={r.when} onChange={(when) => update(i, { when, action: when === 'dnd' ? 'forward' : r.action })} options={WHEN} />
+            <Select
+              label="Was"
+              value={r.action ?? 'forward'}
+              onChange={(action) => update(i, { action })}
+              options={r.when === 'dnd' ? ACTIONS.slice(0, 1) : ACTIONS}
+              helperText={r.action === 'dnd' ? 'Anrufe gehen zur Voicemail bzw. zur Weiterleitung bei besetzt' : undefined}
+            />
+            {r.action !== 'dnd' && (
+              <NumberPicker label="Umleiten an" value={r.target} onChange={(target) => update(i, { target })} options={targets} helperText="Nebenstelle wählen oder Nummer eintippen" />
+            )}
+            {r.when === 'calendar' && (
+              <>
+                <Select
+                  label="Kalender"
+                  value={r.calendar ?? ''}
+                  onChange={(calendar) => update(i, { calendar })}
+                  options={[['', 'Bitte wählen'], ...calendars.map((c): [string, string] => [c.id, c.name])]}
+                  helperText={calendars.length ? undefined : 'Noch kein zentraler Kalender angelegt'}
+                />
+                <TextField
+                  label="Nur Termine mit"
+                  value={r.keyword ?? ''}
+                  onChange={(e) => update(i, { keyword: e.target.value })}
+                  helperText="Wörter im Titel, z. B. „Urlaub Anna“; leer = jeder Termin"
+                  disabled={disabled}
+                />
+              </>
+            )}
             {r.when === 'schedule' && (
               <>
                 <Box sx={{ gridColumn: '1 / -1' }}>

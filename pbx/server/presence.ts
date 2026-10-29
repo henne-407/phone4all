@@ -8,7 +8,7 @@
 import { EventEmitter } from 'node:events'
 import type { AmiMessage } from './ami'
 import type { PbxConfig } from './model'
-import { activeForward, isLocalNumber, type RuntimeState } from './routing'
+import { activeForward, calendarNote, dndActive, isLocalNumber, type RuntimeState } from './routing'
 
 /** Zustand für die Anzeige; dnd und forward kommen aus der Anlage dazu */
 export type LineState = 'idle' | 'ringing' | 'busy' | 'offline'
@@ -20,6 +20,8 @@ export interface TeamMember {
   dnd: boolean
   /** Umleitung aktiv: interne Nummer oder „extern“, leer = keine */
   forward: string
+  /** Termin, der gerade eine Regel auslöst, z. B. „Urlaub bis 31.10.“ */
+  note: string
 }
 
 export interface ParkedCall {
@@ -122,23 +124,24 @@ export class Presence extends EventEmitter {
   }
 
   /** Stand für die Apps; Nicht stören und Umleitungen kommen aus der Anlage */
-  view(cfg: PbxConfig, state: RuntimeState): PresenceView {
+  view(cfg: PbxConfig, state: RuntimeState, now = new Date()): PresenceView {
     const extensions = cfg.extensions
       .map((e): TeamMember => {
         // Externe Ziele (z. B. private Handynummern) sehen die Kollegen nicht
-        const fwd = activeForward(cfg, state, e.number)
+        const fwd = activeForward(cfg, state, e.number, now)
         return {
           number: e.number,
           name: e.name,
           state: lineState(this.states.get(e.number) ?? -1),
-          dnd: Boolean(state.dnd[e.number]),
+          dnd: dndActive(cfg, state, e.number, now),
           forward: fwd && !isLocalNumber(cfg, fwd) ? 'extern' : fwd,
+          note: calendarNote(cfg, state, e.number, now),
         }
       })
       .sort((a, b) => a.number.localeCompare(b.number, 'de', { numeric: true }))
     const parked = [...this.parkedCalls.values()].sort((a, b) => a.slot.localeCompare(b.slot, 'de', { numeric: true }))
     // DND und Umleitungen ändern sich ohne Ereignis von Asterisk: in die Revision einrechnen
-    const extra = extensions.map((e) => `${e.number}${e.dnd ? 'd' : ''}${e.forward}`).join(',')
+    const extra = extensions.map((e) => `${e.number}${e.dnd ? 'd' : ''}${e.forward}${e.note}`).join(',')
     return { revision: `${this.seq}-${hash(extra)}`, extensions, parked }
   }
 }

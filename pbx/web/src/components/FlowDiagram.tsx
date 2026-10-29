@@ -13,6 +13,7 @@ import CampaignIcon from '@mui/icons-material/Campaign'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import DialpadIcon from '@mui/icons-material/Dialpad'
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
+import FaxIcon from '@mui/icons-material/Fax'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import GroupsIcon from '@mui/icons-material/Groups'
 import LoopIcon from '@mui/icons-material/Loop'
@@ -43,6 +44,7 @@ export const NODE_ICONS: Record<DestinationType | 'number', ReactNode> = {
   conference: <RecordVoiceOverIcon />,
   announcement: <CampaignIcon />,
   external: <CallMadeIcon />,
+  fax: <FaxIcon />,
   hangup: <CallEndIcon />,
 }
 
@@ -182,6 +184,11 @@ function describe(cfg: PbxConfig, d: Destination): NodeInfo {
     }
     case 'external':
       return { type: 'external', title: d.target || 'Nummer fehlt', subtitle: 'Weiterleitung nach außen', children: [], missing: !d.target }
+    case 'fax': {
+      const f = cfg.faxes.find((x) => x.id === d.target)
+      if (!f) return missing('Fax')
+      return { type: 'fax', title: f.name, subtitle: `Fax als PDF an ${f.email}`, children: [], onOpen: open('faxes') }
+    }
     default:
       return { type: 'hangup', title: 'Auflegen', children: [] }
   }
@@ -419,6 +426,7 @@ export function FlowPalette() {
     ['Ansagen', 'announcement', config.announcements.map((a) => ({ target: a.id, label: a.name }))],
     ['Voicemail', 'voicemail', config.extensions.filter((e) => e.voicemail.enabled).map((e) => ({ target: e.id, label: `Voicemail ${e.number}` }))],
     ['Konferenzräume', 'conference', config.conferences.map((c) => ({ target: c.id, label: c.name || `Konferenz ${c.number}` }))],
+    ['Fax', 'fax', config.faxes.map((f) => ({ target: f.id, label: f.name }))],
     ['Sonstiges', 'hangup', [{ target: '', label: 'Auflegen' }]],
   ]
   return (

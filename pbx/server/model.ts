@@ -16,6 +16,7 @@ export type DestinationType =
   | 'conference'
   | 'announcement'
   | 'external'
+  | 'fax'
   | 'hangup'
 
 export interface Destination {
@@ -58,6 +59,27 @@ export interface Extension {
   devices: AppDevice[]
   /** App-Profil (Ansichten der Phone4All-App), leer = ohne Vorgaben */
   app_profile: string
+  /** Handynummer klingelt mit (paralleles Klingeln über das SIP-Konto) */
+  mobile: MobileRing
+  /** Türsprechstelle: diese Nebenstelle ist eine Tür, die Apps zeigen „Tür öffnen“ */
+  door: DoorSettings
+}
+
+/** Handy klingelt bei Anrufen auf die Nebenstelle mit */
+export interface MobileRing {
+  enabled: boolean
+  /** Handynummer, wie gewählt (z. B. 0171…) */
+  number: string
+  /** Erst nach so vielen Sekunden klingeln */
+  delay: number
+  /** Annehmen nur mit Taste 1 (sonst nimmt die Mailbox des Handys den Anruf an) */
+  confirm: boolean
+}
+
+export interface DoorSettings {
+  enabled: boolean
+  /** Tasten zum Öffnen, die die Apps im Gespräch senden (z. B. „*9“ oder „#“) */
+  dtmf: string
 }
 
 /** Eine eingerichtete App (Desktop oder Handy) einer Nebenstelle */
@@ -72,12 +94,18 @@ export interface AppDevice {
   ip: string
 }
 
-/** Umleitung, die sich nach Zeit oder Zustand selbst einschaltet. */
+/** Umleitung (oder „Nicht stören“), die sich nach Zeit, Termin oder Zustand selbst einschaltet. */
 export interface ForwardRule {
   id: string
   enabled: boolean
-  /** schedule: eigene Zeiten · timecondition: Zeitsteuerung der Anlage · dnd: bei „Nicht stören“ */
-  when: 'schedule' | 'timecondition' | 'dnd'
+  /** schedule: eigene Zeiten · timecondition: Zeitsteuerung der Anlage · dnd: bei „Nicht stören“ · calendar: bei Termin */
+  when: 'schedule' | 'timecondition' | 'dnd' | 'calendar'
+  /** forward: an target umleiten · dnd: „Nicht stören“ einschalten (nicht mit when = dnd) */
+  action?: 'forward' | 'dnd'
+  /** Zentraler Kalender (when = calendar) */
+  calendar?: string
+  /** Nur Termine, deren Titel diese Wörter enthält, z. B. „Urlaub Anna“ (leer = jeder Termin) */
+  keyword?: string
   days: number[] // 1 = Montag … 7 = Sonntag
   from: string // „18:00“
   to: string // „08:00“ (über Mitternacht erlaubt)
@@ -88,7 +116,16 @@ export interface ForwardRule {
 }
 
 /** Was eine Nebenstelle in der App selbst einstellen darf */
-export type AppPermission = 'forward' | 'forward_external' | 'forward_rules' | 'calendar_edit' | 'phonebook_edit' | 'voicemail_other' | 'block_numbers'
+export type AppPermission =
+  | 'forward'
+  | 'forward_external'
+  | 'forward_rules'
+  | 'calendar_edit'
+  | 'phonebook_edit'
+  | 'voicemail_other'
+  | 'block_numbers'
+  | 'intercom'
+  | 'fax_send'
 
 export const APP_PERMISSIONS: [AppPermission, string, string][] = [
   ['forward', 'Umleitung schalten', 'In der App die Sofort-Umleitung ein- und ausschalten'],
@@ -98,6 +135,8 @@ export const APP_PERMISSIONS: [AppPermission, string, string][] = [
   ['phonebook_edit', 'Telefonbuch bearbeiten', 'Einträge im zentralen Telefonbuch anlegen und ändern'],
   ['voicemail_other', 'Fremde Voicemail abhören', 'Mit *98 andere Mailboxen abhören (mit deren PIN)'],
   ['block_numbers', 'Rufnummern sperren', 'Anrufer aus dem Verlauf auf die Sperrliste der Anlage setzen'],
+  ['intercom', 'Durchsage und Gegensprechen', 'Mit *80 direkt zu einer Nebenstelle sprechen, mit *81 eine Durchsage an eine Gruppe'],
+  ['fax_send', 'Faxe senden', 'PDF aus der Desktop-App als Fax verschicken'],
 ]
 
 export type GroupMode = 'all' | 'sequential' | 'queue'
@@ -117,6 +156,8 @@ export interface Group {
   fallback: Destination
   /** Zusätzliche Rechte in der App für alle Mitglieder */
   permissions: AppPermission[]
+  /** Verpasste Anrufe als gemeinsame Liste in den Apps der Mitglieder */
+  missed_list: boolean
 }
 
 export type NumberFormat = 'e164' | 'national' | 'intl00' | 'e164_no_plus'
@@ -154,6 +195,8 @@ export interface Trunk {
   ip_auth: boolean
   /** Eingehend ohne passende Rufnummer */
   inbound_default: Destination
+  /** Fax über T.38 (sonst als Ton über G.711) */
+  t38: boolean
   /** Zusätzliche Zeilen für den Endpunkt in pjsip.conf (Experten) */
   advanced: string
 }
@@ -311,6 +354,50 @@ export interface Webhook {
   secret: string
 }
 
+/** Faxempfang: eingehende Faxe kommen als PDF per E-Mail */
+export interface FaxBox {
+  id: string
+  name: string
+  /** Interne Nummer (optional, z. B. zum Testen) */
+  number: string
+  /** E-Mail-Adressen für empfangene Faxe (mit Komma getrennt) */
+  email: string
+  /** Kennung im Kopf gesendeter Faxe, z. B. „+49 30 1234567“ */
+  station: string
+  /** Kopfzeile gesendeter Faxe, z. B. Firmenname */
+  header: string
+  /** Rufnummer, die beim Senden angezeigt wird (leer = Standard des SIP-Kontos) */
+  cid: string
+}
+
+/** Hersteller von Tischtelefonen mit eigener Vorlage */
+export type DeskVendor = 'yealink' | 'snom'
+
+export type DeskKeyType = 'blf' | 'speed' | 'park' | 'dnd' | 'none'
+
+/** Funktionstaste am Tischtelefon */
+export interface DeskKey {
+  type: DeskKeyType
+  /** Nebenstelle (blf), Rufnummer (speed), Parkplatz (park) */
+  value: string
+  label: string
+}
+
+/** Tischtelefon, das sich per Auto-Provisioning selbst einrichtet */
+export interface DeskPhone {
+  id: string
+  name: string
+  vendor: DeskVendor
+  /** MAC-Adresse, 12 Hex-Zeichen */
+  mac: string
+  extension: string
+  keys: DeskKey[]
+  /** Passwort der Weboberfläche des Telefons setzen (leer = nicht ändern) */
+  admin_password: string
+  /** Geheimer Teil der Provisioning-Adresse, vergibt der Server */
+  token: string
+}
+
 export interface PhonebookEntry {
   id: string
   name: string
@@ -460,8 +547,10 @@ export interface IntegrationSettings {
   enabled: boolean
   /** Zugriffsschlüssel (Bearer-Token), vergibt der Server */
   token: string
-  /** Anrufe über POST /api/integration/call starten */
+  /** Anrufe über POST /api/integration/call starten, Ansagen abspielen (announce) */
   call_api: boolean
+  /** Schalten über die Schnittstelle: Nicht stören, Umleitung, Zeitsteuerung */
+  control: boolean
 }
 
 /** Messenger: Chats zwischen den Nebenstellen (server/messenger.ts) */
@@ -619,6 +708,28 @@ export interface DectBase {
   token: string
 }
 
+/** Voicemail als Text: lokal (whisper.cpp) oder über eine OpenAI-kompatible Adresse */
+export interface TranscriptionSettings {
+  enabled: boolean
+  engine: 'local' | 'api'
+  /** Lokales Modell: tiny, base, small … (größer = besser und langsamer) */
+  model: string
+  /** API: Adresse bis /v1, z. B. http://speaches:8000/v1 oder https://api.openai.com/v1 */
+  api_url: string
+  api_key: string
+  /** API: Modellname, z. B. whisper-1 */
+  api_model: string
+  /** Text auch in die Voicemail-E-Mail (die E-Mail kommt dann von der Anlage statt von Asterisk) */
+  email: boolean
+}
+
+/** Selbstbedienung im Browser: Nebenstelle und Voicemail-PIN */
+export interface PortalSettings {
+  enabled: boolean
+  /** Auch von außerhalb der lokalen Netze (z. B. über Pangolin) */
+  remote: boolean
+}
+
 /** Zentrales Telefonbuch per LDAP für DECT- und Tischtelefone (nur lesen) */
 export interface LdapSettings {
   enabled: boolean
@@ -646,6 +757,8 @@ export interface PbxConfig {
   appprofiles: AppProfile[]
   calendars: CentralCalendar[]
   dect: DectBase[]
+  faxes: FaxBox[]
+  deskphones: DeskPhone[]
   mail: MailSettings
   security: SecuritySettings
   updates: UpdateSettings
@@ -662,6 +775,8 @@ export interface PbxConfig {
   parking: ParkingSettings
   emergency: EmergencySettings
   offsite: OffsiteSettings
+  transcription: TranscriptionSettings
+  portal: PortalSettings
 }
 
 export const HANGUP: Destination = { type: 'hangup', target: '' }
@@ -701,6 +816,8 @@ export const DEFAULT_CONFIG: PbxConfig = {
   appprofiles: [],
   calendars: [],
   dect: [],
+  faxes: [],
+  deskphones: [],
   mail: { host: '', port: 587, tls: 'starttls', user: '', password: '', from: '' },
   security: {
     ban_enabled: true,
@@ -726,13 +843,15 @@ export const DEFAULT_CONFIG: PbxConfig = {
   remote: { enabled: true, public_url: '', turn: true, turn_port: 3478, turn_host: '' },
   watchdog: { auto_repair: true, trunk_grace: 3, notify_email: '' },
   storage: { recordings_days: 0, voicemail_days: 0 },
-  integration: { enabled: false, token: '', call_api: false },
+  integration: { enabled: false, token: '', call_api: false, control: false },
   ldap: { enabled: false, port: 389, password: '' },
   messenger: { enabled: true, max_file_mb: 25, max_storage_mb: 5120, min_free_mb: 200, video: true, quota_mb: 500 },
   blocking: { anonymous: 'allow' },
   parking: { enabled: true, number: '700', slots: 8, seconds: 120 },
   emergency: { notify_email: '', notify_exts: [] },
   offsite: { enabled: false, type: 'webdav', url: '', user: '', password: '', bucket: '', region: '', folder: 'phone4all', keep: 30, passphrase: '' },
+  transcription: { enabled: false, engine: 'local', model: 'base', api_url: '', api_key: '', api_model: 'whisper-1', email: true },
+  portal: { enabled: false, remote: false },
 }
 
 /** Listen der Konfiguration, die die Weboberfläche einheitlich bearbeitet. */
@@ -753,12 +872,14 @@ export const COLLECTIONS = [
   'appprofiles',
   'calendars',
   'dect',
+  'faxes',
+  'deskphones',
 ] as const
 export type CollectionName = (typeof COLLECTIONS)[number]
 
 export const SECTIONS = [
   'system', 'mail', 'security', 'updates', 'provisioning', 'remote', 'watchdog', 'integration', 'ldap', 'messenger', 'storage',
-  'blocking', 'parking', 'emergency', 'offsite',
+  'blocking', 'parking', 'emergency', 'offsite', 'transcription', 'portal',
 ] as const
 export type SectionName = (typeof SECTIONS)[number]
 
@@ -771,6 +892,7 @@ export const DESTINATION_LABELS: Record<DestinationType, string> = {
   conference: 'Konferenz',
   announcement: 'Ansage',
   external: 'Externe Rufnummer',
+  fax: 'Fax an E-Mail',
   hangup: 'Auflegen',
 }
 
@@ -816,6 +938,8 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         provision_expires: 0,
         devices: [],
         app_profile: '',
+        mobile: { enabled: false, number: '', delay: 0, confirm: true },
+        door: { enabled: false, dtmf: '' },
       } satisfies Omit<Extension, 'id'>
     case 'groups':
       return {
@@ -830,6 +954,7 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         announcement: '',
         fallback: HANGUP,
         permissions: [],
+        missed_list: true,
       } satisfies Omit<Group, 'id'>
     case 'trunks':
       return {
@@ -856,6 +981,7 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         max_channels: 0,
         ip_auth: false,
         inbound_default: HANGUP,
+        t38: false,
         advanced: '',
       } satisfies Omit<Trunk, 'id'>
     case 'inbound':
@@ -941,6 +1067,10 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
       } satisfies Omit<ContactSource, 'id'>
     case 'dect':
       return { name: '', mac: '', handsets: [], pin: '', admin_password: '', token: '' } satisfies Omit<DectBase, 'id'>
+    case 'faxes':
+      return { name: '', number: '', email: '', station: '', header: '', cid: '' } satisfies Omit<FaxBox, 'id'>
+    case 'deskphones':
+      return { name: '', vendor: 'yealink', mac: '', extension: '', keys: [], admin_password: '', token: '' } satisfies Omit<DeskPhone, 'id'>
   }
 }
 

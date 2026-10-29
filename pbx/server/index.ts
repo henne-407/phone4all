@@ -14,10 +14,11 @@ import { Auth, SESSION_COOKIE, SESSION_MAX_AGE } from './auth'
 import { readCalls, tailLog } from './cdr'
 import { describeAgent, gigasetFile, requestMac } from './dect'
 import { EmergencyLog, emergencyCall, emergencyText, isEmergency } from './emergency'
-import { CallTracker, type PbxEvent, Webhooks } from './events'
+import { CallTracker, type GroupMissedCall, type PbxEvent, Webhooks } from './events'
 import { loadJson, saveJson } from './files'
-import { type ForwardChange, ForwardError, applyCfu, applyRules, check as checkForward, forwardInfo } from './forwarding'
+import { type ForwardChange, ForwardError, applyCfu, applyMobile, applyRules, check as checkForward, forwardInfo } from './forwarding'
 import { localTime } from './holidays'
+import { type MissedAction, MissedList } from './missed'
 import { integrationReport, validToken } from './integration'
 import { LdapServer } from './ldap'
 import { HttpError, type Request, Router, clientIp, makeRequest, proxyHints, sendFile, sendJson, sendText, serveStatic, setTrustedProxies, socketIp } from './http'
@@ -34,14 +35,20 @@ import { Turn, WsProxy, appEndpoint, webrtcEnabled } from './remote'
 import {
   BLOCKED_TARGET,
   appPermissions,
+  calendarStatus,
   extensionPlan,
   feature,
   groupPlan,
   isAvailable,
   isInternational,
   isLocalNumber,
+  memberGroups,
+  mobilePlan,
+  pagePlan,
+  ringPlan,
   routeInbound,
   routeOutbound,
+  setAway,
   timeConditionTarget,
 } from './routing'
 import { Guard, inList } from './security'
@@ -84,6 +91,7 @@ const ws = new WsProxy(() => webrtcEnabled(store.config), (ip) => guard.isBanned
 const guard = new Guard(() => store.config.security, (port) => ws.clientOf(port))
 const updater = new Updater()
 const calendars = new CalendarStore(() => store.config)
+calendarStatus.find = (id, keyword, now) => calendars.current(id, keyword, now)
 const sources = new SourceSync(
   () => store.config,
   (id, events) => calendars.replace(id, events),
@@ -101,12 +109,14 @@ const webhooks = new Webhooks(() => store.config)
 const voicemail = new VoicemailBox(PATHS.spool)
 const emergencies = new EmergencyLog()
 const tts = new Tts(PATHS.tts)
+const missed = new MissedList(PATHS.missed)
 let offsiteStatus: OffsiteStatus = { time: 0, ok: true, file: '', error: '' }
 auth.init()
 store.hooks = {
   renumbered: (from, to) => {
     messenger.store.renumber(from, to)
     moveMailbox(from, to)
+    missed.renumber(from, to)
   },
   removed: (number) => {
     messenger.forgotten(number)
@@ -114,7 +124,15 @@ store.hooks = {
   },
 }
 
-tracker.on('event', (e: PbxEvent) => void Promise.all(webhooks.dispatch(e)))
+tracker.on('event', (e: PbxEvent) => {
+  void Promise.all(webhooks.dispatch(e))
+  // Rückruf oder neuer angenommener Anruf: verpasste Gruppenanrufe dieser Nummer abhaken
+  if (e.event !== 'call.answered') return
+  const d = e.data as { direction: string; from: string; to?: string; extension?: string }
+  if (d.direction === 'out' && d.to) missed.resolve(store.config, d.to, d.from, 'callback')
+  if (d.direction === 'in') missed.resolve(store.config, d.from, d.extension ?? '', 'answered')
+})
+tracker.on('group-missed', (m: GroupMissedCall) => missed.add(store.config, m.call, m.groups, m.from, m.from_name))
 
 function freeBytes(): number | null {
   try {
@@ -341,7 +359,10 @@ internal.get('/internal/group', (r) =>
 )
 internal.get('/internal/video', (r) => (messenger.mayJoin(r.query.get('ext') ?? '', r.query.get('room') ?? '') ? '1' : '0'))
 internal.get('/internal/tc', (r) => timeConditionTarget(store.config, r.query.get('id') ?? ''))
-internal.get('/internal/available', (r) => (isAvailable(store.state, r.query.get('num') ?? '', store.config) ? '1' : '0'))
+internal.get('/internal/available', (r) => (isAvailable(store.state, r.query.get('num') ?? '', store.config, r.query.get('gid') ?? '') ? '1' : '0'))
+internal.get('/internal/mobile', (r) => mobilePlan(store.config, r.query.get('num') ?? ''))
+internal.get('/internal/page', (r) => pagePlan(store.config, store.state, r.query.get('ext') ?? '', r.query.get('target') ?? '', r.query.get('mode') ?? ''))
+internal.get('/internal/ring', (r) => ringPlan(store.config, store.state, r.query.get('target') ?? ''))
 internal.get('/internal/feature', (r) => {
   const ext = r.query.get('ext') ?? ''
   const result = feature(store.config, store.state, ext, r.query.get('code') ?? '', r.query.get('arg') ?? '')
@@ -632,6 +653,7 @@ pub.put('/provision/:token/forward', async (r) => {
     // Erst die Sofort-Umleitung prüfen – sonst wären bei einem Fehler die Regeln schon gespeichert
     if (change.cfu !== undefined) checkForward(store.config, ext.number, String(change.cfu))
     if (rules) store.update((draft) => applyRules(draft, draft.extensions.find((e) => e.id === ext.id)!, change))
+    if (change.mobile !== undefined) store.update((draft) => applyMobile(draft, draft.extensions.find((e) => e.id === ext.id)!, Boolean(change.mobile)))
     if (change.cfu !== undefined) {
       applyCfu(store.config, store.state, ext.number, String(change.cfu))
       store.saveState()
@@ -653,7 +675,43 @@ pub.get('/provision/:token/presence', (r) => {
   const ext = tokenExtension(r.params.token)
   const view = presence.view(store.config, store.state)
   const vm = ext.voicemail.enabled ? { revision: voicemail.revision(ext.number), unread: voicemail.unread(ext.number) } : null
-  return { ...view, voicemail: vm }
+  const groups = memberGroups(store.config, store.state, ext.number)
+  const list = store.config.groups.some((g) => g.missed_list && g.members.includes(ext.number))
+  return {
+    ...view,
+    voicemail: vm,
+    groups,
+    missed: list ? { open: missed.open(store.config, ext.number), revision: String(missed.revision) } : null,
+  }
+})
+
+/** Gruppen der Nebenstelle: an- und abmelden (wie *45 am Telefon) */
+pub.get('/provision/:token/groups', (r) => memberGroups(store.config, store.state, tokenExtension(r.params.token).number))
+
+pub.put('/provision/:token/groups/:id', async (r) => {
+  const ext = tokenExtension(r.params.token)
+  const { active } = await r.json<{ active: boolean }>()
+  if (!setAway(store.config, store.state, ext.number, r.params.id, !active)) throw new HttpError(404, 'Gruppe nicht gefunden.')
+  store.saveState()
+  return memberGroups(store.config, store.state, ext.number)
+})
+
+/** Verpasste Anrufe der eigenen Gruppen (gemeinsame Liste) */
+function missedView(ext = '') {
+  const names = new Map(store.config.groups.map((g) => [g.id, g.name]))
+  return missed.visible(store.config, ext).map((e) => ({ ...e, group_name: names.get(e.group) ?? '' }))
+}
+
+const MISSED_ACTIONS: MissedAction[] = ['claim', 'release', 'done', 'reopen']
+
+pub.get('/provision/:token/missed', (r) => missedView(tokenExtension(r.params.token).number))
+
+pub.put('/provision/:token/missed/:group/:id', async (r) => {
+  const ext = tokenExtension(r.params.token)
+  const { action } = await r.json<{ action: MissedAction }>()
+  if (!MISSED_ACTIONS.includes(action)) throw new HttpError(400, 'Unbekannte Aktion.')
+  if (!missed.act(store.config, r.params.id, r.params.group, action, ext.number, ext.number)) throw new HttpError(404, 'Eintrag nicht gefunden.')
+  return missedView(ext.number)
 })
 
 function voicemailExtension(token: string): Extension {
@@ -1048,6 +1106,7 @@ api.get('/api/status', async () => ({
   ...(await asterisk.status()),
   dnd: store.state.dnd,
   cfu: store.state.cfu,
+  away: store.state.away,
   bans: guard.bans,
   update: updater.info,
   version: SETTINGS.version,
@@ -1104,6 +1163,22 @@ api.post('/api/unban', async (r) => {
 })
 
 api.get('/api/calls', (r) => readCalls(Number(r.query.get('limit')) || 200))
+
+api.get('/api/missed', () => missedView())
+api.put('/api/missed/:group/:id', async (r) => {
+  const { action } = await r.json<{ action: MissedAction }>()
+  if (!MISSED_ACTIONS.includes(action)) throw new HttpError(400, 'Unbekannte Aktion.')
+  if (!missed.act(store.config, r.params.id, r.params.group, action, 'Verwaltung')) throw new HttpError(404, 'Eintrag nicht gefunden.')
+  return missedView()
+})
+
+/** Mitglied einer Gruppe an- oder abmelden (Verwaltung) */
+api.put('/api/groups/:id/members/:ext', async (r) => {
+  const { active } = await r.json<{ active: boolean }>()
+  if (!setAway(store.config, store.state, r.params.ext, r.params.id, !active)) throw new HttpError(404, 'Kein Mitglied dieser Gruppe.')
+  store.saveState()
+  return { away: store.state.away }
+})
 
 function recording(name: string): string {
   const file = recordingFile(name)
