@@ -249,24 +249,31 @@ export class MessengerStore {
   }
 
   /**
-   * Speicher knapp: älteste Nachrichten (mit Anhängen) löschen, bis wieder genug frei ist.
-   * Gibt die Zahl der gelöschten Nachrichten zurück.
+   * Aufräumen: älteste Nachrichten (mit Anhängen) löschen, solange der Messenger mehr als
+   * sein Kontingent belegt. Ist die Platte aus anderen Gründen knapp, wird höchstens die
+   * Hälfte des Messengers geopfert – sonst wäre am Ende der ganze Verlauf weg, ohne dass
+   * es etwas nützt. Gibt die Zahl der gelöschten Nachrichten zurück.
    */
-  cleanup(freeBytes: () => number | null, minFree: number): number {
+  cleanup(limits: { freeBytes: () => number | null; minFree: number; maxUsage: number; usage?: () => number }): number {
+    const usage = limits.usage ?? (() => this.usage())
+    const start = usage()
     let removed = 0
     for (;;) {
-      const free = freeBytes()
-      if (free === null || free >= minFree) return removed
+      const used = usage()
+      const free = limits.freeBytes()
+      const overQuota = used > limits.maxUsage
+      const diskLow = free !== null && free < limits.minFree && used > start / 2
+      if (!overQuota && !diskLow) return removed
       const all = [...this.rooms.keys()].flatMap((id) => this.messages(id))
       if (!all.length) return removed
       // In Schritten von einem Zehntel löschen, damit nicht mehr als nötig verschwindet
-      all.sort((a, b) => a.time - b.time)
-      const cut = all[Math.max(0, Math.ceil(all.length / 10) - 1)].time
+      all.sort((a, b) => a.time - b.time || a.seq - b.seq)
+      const doomed = new Set(all.slice(0, Math.ceil(all.length / 10)))
       for (const id of this.rooms.keys()) {
         const list = this.messages(id)
-        const keep = list.filter((m) => m.time > cut)
+        const keep = list.filter((m) => !doomed.has(m))
         if (keep.length === list.length) continue
-        for (const m of list) if (m.time <= cut && m.file) fs.rmSync(path.join(this.fileDir(id), m.file.id), { force: true })
+        for (const m of list) if (doomed.has(m) && m.file) fs.rmSync(path.join(this.fileDir(id), m.file.id), { force: true })
         removed += list.length - keep.length
         this.rewrite(id, keep)
       }

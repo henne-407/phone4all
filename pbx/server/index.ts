@@ -67,11 +67,12 @@ function freeBytes(): number | null {
   }
 }
 
-/** Speicher knapp: älteste Chatnachrichten löschen (sonst bleibt alles erhalten) */
+/** Kontingent überschritten oder Platte knapp: älteste Chatnachrichten löschen */
 function messengerCleanup(): void {
-  const removed = messenger.store.cleanup(freeBytes, store.config.messenger.min_free_mb * 1024 * 1024)
+  const m = store.config.messenger
+  const removed = messenger.store.cleanup({ freeBytes, minFree: m.min_free_mb * 1024 * 1024, maxUsage: m.max_storage_mb * 1024 * 1024 })
   if (!removed) return
-  watchdog.log('warning', 'disk', `Speicher knapp: ${removed} alte Chatnachrichten gelöscht`)
+  watchdog.log('warning', 'disk', `Messenger aufgeräumt: ${removed} alte Chatnachrichten gelöscht`)
   messenger.reloadAll()
 }
 

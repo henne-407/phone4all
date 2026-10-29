@@ -91,23 +91,35 @@ describe('Messenger-Ablage', () => {
     expect(older.complete).toBe(true)
   })
 
-  it('löscht nur bei knappem Speicher, älteste Nachrichten samt Anhang zuerst', () => {
+  it('löscht über dem Kontingent, älteste Nachrichten samt Anhang zuerst', () => {
     const s = new MessengerStore(dir)
     const r = s.direct('10', '11')
     const file = s.saveFile(r.id, 'bild.png', 'image/png', Buffer.from('x'))
     const old = s.post(r, '10', '', file)
     old.time = 1000
     for (let i = 0; i < 19; i++) s.post(r, '11', `Neu ${i}`)
-    expect(s.cleanup(() => 10_000_000, 1000)).toBe(0)
+    const roomy = { freeBytes: () => 10_000_000, minFree: 1000, maxUsage: 10_000_000 }
+    expect(s.cleanup(roomy)).toBe(0)
     expect(s.messages(r.id)).toHaveLength(20)
 
-    let free = 0
-    const removed = s.cleanup(() => (free += 600), 1000)
+    const quota = s.usage() - 200
+    const removed = s.cleanup({ ...roomy, maxUsage: quota })
+    expect(s.usage()).toBeLessThanOrEqual(quota)
     expect(removed).toBeGreaterThan(0)
     expect(s.messages(r.id).some((m) => m.file)).toBe(false)
     expect(fs.existsSync(s.filePath(r.id, file.id))).toBe(false)
     // Nach dem Neustart sind die gelöschten Nachrichten weg
     expect(new MessengerStore(dir).messages(r.id)).toHaveLength(20 - removed)
+  })
+
+  it('löscht bei voller Platte höchstens die Hälfte des Verlaufs', () => {
+    const s = new MessengerStore(dir)
+    const r = s.direct('10', '11')
+    for (let i = 0; i < 50; i++) s.post(r, '10', `Nachricht ${i}`)
+    // Die Platte bleibt voll (z. B. durch Aufnahmen), Löschen hilft nicht
+    const removed = s.cleanup({ freeBytes: () => 0, minFree: 1000, maxUsage: 10_000_000 })
+    expect(removed).toBeGreaterThan(0)
+    expect(s.messages(r.id).length).toBeGreaterThanOrEqual(20)
   })
 
   it('nimmt nur Nebenstellen, deren App-Profil den Messenger zeigt', () => {

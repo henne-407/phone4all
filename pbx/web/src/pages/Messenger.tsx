@@ -78,15 +78,22 @@ function Settings() {
               helperText="Bilder, Dokumente und andere Anhänge"
             />
             <NumberField
-              label="Mindestens frei halten (MB)"
+              label="Speicher für den Messenger (MB)"
+              value={draft.max_storage_mb}
+              min={100}
+              onChange={(v) => setDraft({ ...draft, max_storage_mb: v })}
+              helperText="Belegen Nachrichten und Anhänge mehr, werden die ältesten gelöscht"
+            />
+            <NumberField
+              label="Notbremse: frei halten (MB)"
               value={draft.min_free_mb}
               min={100}
               onChange={(v) => setDraft({ ...draft, min_free_mb: v })}
-              helperText="Erst wenn weniger frei ist, werden die ältesten Nachrichten gelöscht"
+              helperText="Ist die Platte voller, wird höchstens die Hälfte der Chats gelöscht"
             />
           </FormGrid>
           <Stack direction="row" sx={{ justifyContent: 'flex-end' }}>
-            <Button variant="contained" onClick={() => save({ max_file_mb: draft.max_file_mb, min_free_mb: draft.min_free_mb })}>
+            <Button variant="contained" onClick={() => save({ max_file_mb: draft.max_file_mb, max_storage_mb: draft.max_storage_mb, min_free_mb: draft.min_free_mb })}>
               Speichern
             </Button>
           </Stack>
@@ -121,7 +128,7 @@ export default function Messenger() {
       <PageHeader
         overline="Zusammenarbeit"
         title="Messenger"
-        description="Einzel- und Gruppenchats mit Videoanrufen zwischen den Nebenstellen in der Desktop-App. Nachrichten bleiben auf der Anlage gespeichert, bis der Speicher knapp wird."
+        description="Einzel- und Gruppenchats mit Videoanrufen zwischen den Nebenstellen in der Desktop-App. Nachrichten bleiben auf der Anlage gespeichert, bis das eingestellte Kontingent voll ist."
       />
       <Settings />
       {data && (
@@ -149,9 +156,14 @@ export default function Messenger() {
               ))}
             </Stack>
           )}
+          {data.usage > config.messenger.max_storage_mb * 1024 * 1024 * 0.9 && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              Der Messenger hat sein Kontingent fast ausgeschöpft. Darüber löscht die Anlage die ältesten Nachrichten und Anhänge.
+            </Alert>
+          )}
           {data.free !== null && data.free < config.messenger.min_free_mb * 1024 * 1024 && (
             <Alert severity="warning" sx={{ mt: 2 }}>
-              Der Speicher ist knapp. Die Anlage löscht gerade die ältesten Nachrichten und Anhänge.
+              Die Platte ist fast voll. Die Anlage löscht höchstens die Hälfte der Chats – bitte unter System → Speicher aufräumen.
             </Alert>
           )}
         </Section>
