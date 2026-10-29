@@ -1,6 +1,7 @@
 # Telefonanlage bedienen
 
-Die Weboberfläche erreicht man unter `http://<anlage>:8080`. Die Navigation links ist
+Die Weboberfläche erreicht man unter `http://<anlage>:8080`, verschlüsselt unter
+`https://<anlage>:8443` (selbst signiertes Zertifikat: einmal im Browser bestätigen). Die Navigation links ist
 nach Aufgaben gruppiert: *Personen*, *Eingehende Anrufe*, *Nach außen*,
 *Zusammenarbeit*, *Auswertung und System*. Jede Seite erklärt oben in einem Satz, wofür
 sie da ist; Änderungen gelten sofort, ohne Neustart.
@@ -37,7 +38,8 @@ anmelden: Desktop-App, Mobil-App, Tischtelefon, DECT-Mobilteil. Ein Anruf klinge
 | Voicemail, Voicemail-PIN | Anrufbeantworter; *Nachricht als Anhang per E-Mail* |
 | Gespräche aufzeichnen | Aufnahmen erscheinen in der Anrufliste |
 | App-Profil | was die Apps zeigen (siehe [App-Profile](#app-profile)) |
-| Einrichtungslink, Einrichtungs-PIN, QR-Code | automatische Einrichtung der Apps; *Einladung per E-Mail* schickt beides an die Person |
+| Einrichtungslink, Einrichtungs-PIN, QR-Code | automatische Einrichtung der Apps; *Einladung per E-Mail* schickt beides an die Person; beides gilt 72 Stunden |
+| Eingerichtete Geräte | jede App mit eigenem Zugang, zuletzt gesehen und von wo; einzeln oder alle abmelden (z. B. verlorenes Handy) |
 
 Die Liste zeigt, welche Geräte angemeldet sind und ob *Nicht stören* oder eine
 Rufumleitung aktiv ist (beides lässt sich hier auch ausschalten). Eine Sofort-Umleitung
@@ -229,10 +231,10 @@ Geänderte Einstellungen werden erst mit *Anwenden* in der Leiste am unteren Ran
 
 | Reiter | Inhalt |
 | --- | --- |
-| Allgemein | Name, Adresse für Telefone, Länder-/Ortsvorwahl, Bundesland, Zeitzone, Ports, öffentliche Adresse (NAT), lokale Netze, Codecs |
+| Allgemein | Name, Adresse für Telefone, Länder-/Ortsvorwahl, Bundesland, Zeitzone, Ports, öffentliche Adresse (NAT), lokale Netze, verschlüsselte Sprache (SRTP; sinnvoll nur mit SIP über TLS am Telefon), Codecs |
 | E-Mail | SMTP-Server für Voicemail und Einladungen, Testmail |
 | Sicherheit | Sperre nach Fehlanmeldungen, nie sperren, Nebenstellen nur aus bestimmten Netzen, gesperrte Adressen |
-| Sicherung | Export, Import, automatische Sicherungen wiederherstellen |
+| Sicherung | Export (mit Passwörtern nur verschlüsselt, mit eigenem Passwort), Import, automatische Sicherungen wiederherstellen |
 | Aktualisierung | neue Version installieren, Kanal stabil/Beta, automatisch nachts |
 | Zugang | Passwort der Weboberfläche, Suche der App im lokalen Netz, Rechte aller Nebenstellen in der App |
 | Fernzugriff | öffentliche HTTPS-Adresse für Mobil-App und Einrichtungslinks ([Anleitung](fernzugriff.md)) |

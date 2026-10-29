@@ -1,5 +1,6 @@
 /** Zustand der App: Profil, Telefon, Kontakte, Verlauf und Einstellungen. */
 
+import Constants from 'expo-constants'
 import * as Notifications from 'expo-notifications'
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { AppState, Platform } from 'react-native'
@@ -7,7 +8,7 @@ import { startService, stopService } from '../modules/call-service'
 import { type Person, deviceContacts, fromPhonebook, sortPeople, toNamed } from './contacts'
 import { findName } from './numbers'
 import { type Call, type PhoneState, phone } from './phone'
-import { type Profile, fetchProfile, fetchRevision } from './provisioning'
+import { type Profile, fetchProfile, fetchRevision, setDeviceName } from './provisioning'
 import {
   type HistoryEntry,
   type Settings,
@@ -22,6 +23,8 @@ import {
 } from './storage'
 
 const POLL = 2 * 60 * 1000
+
+setDeviceName(Constants.deviceName || (Platform.OS === 'ios' ? 'iPhone' : 'Android'))
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),

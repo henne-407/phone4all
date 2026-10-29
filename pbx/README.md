@@ -31,6 +31,7 @@ Sprache hinter Docker-NAT unzuverlässig sind. Benötigte Ports:
 | Port | Zweck |
 | --- | --- |
 | 8080/tcp | Weboberfläche, Einrichtung der App, SIP über WebSocket (`/ws`) für die Mobil-App |
+| 8443/tcp | dieselbe Weboberfläche per HTTPS (Zertifikat aus `data/keys`, `PBX_HTTPS_PORT`, 0 = aus) |
 | 5060/udp+tcp, 5061/tcp | SIP, SIP über TLS |
 | 10000–10999/udp | Sprache (RTP) |
 | 15060/udp | Suche der App im lokalen Netz |
@@ -50,8 +51,9 @@ Einrichtung, Kontakte und Kalender laufen wie bei der Desktop-App über `/provis
 SIP als WebSocket über `/ws` (die Anlage reicht das an Asterisk weiter), die Sprache per
 WebRTC mit DTLS-SRTP. Weil die Anlage hinter dem Proxy keine eigene öffentliche Adresse
 hat, läuft die Sprache über den eingebauten TURN-Server (coturn, Port 3478). Er leitet
-nur zur Anlage selbst weiter, nicht ins Internet, und vergibt Zugangsdaten, die nach
-acht Tagen ablaufen.
+nur per UDP und nur zur SIP-Adresse der Anlage weiter (`no-tcp-relay`, keine Docker-
+oder VPN-Netze), nicht ins Internet, und vergibt Zugangsdaten, die nach acht Tagen
+ablaufen.
 
 Mit **Pangolin** (oder einem anderen Proxy, der WebSockets durchreicht):
 
@@ -67,8 +69,11 @@ Mit **Pangolin** (oder einem anderen Proxy, der WebSockets durchreicht):
 
 Jede Nebenstelle bekommt dafür ein zweites Gerät `<nummer>-app` (gleiches Passwort).
 Anrufe klingeln überall gleichzeitig, *Nicht stören*, Weiterleitungen und Gruppen gelten
-für beide. Fehlanmeldungen über den WebSocket sperren die Adresse des Telefons (aus
-`X-Forwarded-For` des Proxys), nicht den Proxy.
+für beide. `<nummer>-app` und `<nummer>-video` nehmen Anmeldungen nur über den
+WebSocket-Proxy der Anlage an (127.0.0.1), nicht direkt per UDP/TCP. Fehlanmeldungen über
+den WebSocket sperren die Adresse des Telefons (aus `X-Forwarded-For` des Proxys), nicht
+den Proxy. `X-Forwarded-For` gilt nur von *vertrauenswürdigen Proxys* (Einstellung
+`security.trusted_proxies`, Standard 127.0.0.1, ::1 und 172.16.0.0/12).
 
 ## Funktionen
 
@@ -121,17 +126,27 @@ Jede Nebenstelle hat einen Einrichtungslink und eine Einrichtungs-PIN
 3. Den Einrichtungslink kopieren und in der App einfügen.
 
 Die App übernimmt Server, Benutzer, Passwort, die zentralen Kontakte und Kalender und
-das App-Profil. Danach fragt sie alle zwei Minuten nach Änderungen. Ein erneuerter
-Link macht den alten ungültig.
+das App-Profil. Danach fragt sie alle zwei Minuten nach Änderungen.
+
+Link und PIN gelten 72 Stunden, die PIN nur einmal und nur im Netz der Anlage
+(Ausnahme: *Einrichtung per PIN auch von außerhalb* unter *System*). Jedes Gerät bekommt bei der Einrichtung
+ein eigenes Token; die Liste *Eingerichtete Geräte* zeigt, wann es zuletzt von welcher
+Adresse gefragt hat, und meldet einzelne oder alle Geräte ab. Ein erneuerter Link macht
+nur den alten Link ungültig, eingerichtete Geräte bleiben angemeldet. Geräte aus
+Versionen bis 0.8.1 erscheinen gemeinsam als *Bisher eingerichtete Geräte*.
 
 ### Schnittstelle für die App
 
-Alle Adressen hängen am Einrichtungslink der Nebenstelle (`/provision/<token>`), der
-Token ist zugleich die Berechtigung.
+`GET /provision/<einladung>` (Token aus Link, QR-Code oder E-Mail) und
+`POST /provision` mit `{ extension, pin }` legen ein Gerät an und liefern das Profil.
+Dessen `url` (`/provision/<geräte-token>`) ist die Adresse des Geräts; alle weiteren
+Anfragen hängen daran, der Token ist zugleich die Berechtigung. Der Kopfeintrag
+`X-Device-Name` (URL-kodiert) benennt das Gerät in der Liste. Ein abgelaufener Link
+antwortet mit 410, ein abgemeldetes Gerät mit 404.
 
 | Anfrage | Ergebnis |
 | --- | --- |
-| `GET /provision/<token>` | Profil: Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `permissions`, `messenger`, `remote`, `video`, `revision` |
+| `GET /provision/<token>` | Profil (auch zum Auffrischen): Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `permissions`, `messenger`, `remote`, `video`, `revision` |
 | `GET /provision/<token>/revision` | `{ profile, events }` – ändert sich, sobald Profil oder Termine sich ändern |
 | `GET /provision/<token>/events?start=…&end=…&calendar=…` | Termine im Zeitraum (höchstens 400 Tage) |
 | `PUT /provision/<token>/events/<kalender>/<uid>` | Termin anlegen oder ändern (nur beschreibbare Kalender) |
@@ -320,13 +335,14 @@ services:
     restart: unless-stopped
     volumes:
       - /mnt/POOL/apps/phone4all/data:/data         # absoluter Pfad auf einem Dataset
-      - /var/run/docker.sock:/var/run/docker.sock   # für Updates aus der Weboberfläche
+      # - /var/run/docker.sock:/var/run/docker.sock # optional: Updates per Knopf
     environment:
       TZ: Europe/Berlin
 ```
 
-Dann funktionieren beide Wege: der Knopf in der Weboberfläche und „Update“ in
-der TrueNAS-App-Übersicht.
+Aktualisiert wird über „Update“ in der TrueNAS-App-Übersicht. Mit eingebundenem
+Docker-Socket geht auch der Knopf in der Weboberfläche; der Socket gibt der Anlage
+aber volle Kontrolle über den Rechner (siehe [Installation](../docs/installation.md)).
 
 ## Entwicklung
 

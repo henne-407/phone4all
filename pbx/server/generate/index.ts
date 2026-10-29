@@ -1,5 +1,6 @@
 /** Erzeugt alle Asterisk-Konfigurationsdateien aus der Konfiguration der Anlage. */
 
+import { randomInt } from 'node:crypto'
 import type { PbxConfig } from '../model'
 import { webrtcEnabled } from '../remote'
 import type { GenContext } from './context'
@@ -17,7 +18,7 @@ const MODULES = [
   // PJSIP
   'res_pjproject', 'res_pjsip', 'res_pjsip_session', 'res_pjsip_authenticator_digest',
   'res_pjsip_outbound_authenticator_digest', 'res_pjsip_endpoint_identifier_ip',
-  'res_pjsip_endpoint_identifier_user', 'res_pjsip_endpoint_identifier_anonymous', 'res_pjsip_registrar',
+  'res_pjsip_endpoint_identifier_user', 'res_pjsip_registrar',
   'res_pjsip_outbound_registration', 'res_pjsip_nat', 'res_pjsip_sdp_rtp', 'res_pjsip_caller_id',
   'res_pjsip_diversion', 'res_pjsip_dtmf_info', 'res_pjsip_header_funcs', 'res_pjsip_acl', 'res_pjsip_refer',
   'res_pjsip_rfc3326', 'res_pjsip_pubsub', 'res_pjsip_outbound_publish', 'res_pjsip_exten_state', 'res_pjsip_mwi',
@@ -42,7 +43,7 @@ const MODULES = [
   'func_curl', 'func_cut', 'func_strings', 'func_logic', 'func_uri', 'func_callerid', 'func_cdr',
   'func_timeout', 'func_channel', 'func_global', 'func_db', 'func_devstate', 'func_hangupcause',
   'func_sprintf', 'func_rand', 'func_env', 'func_pjsip_endpoint', 'func_pjsip_aor', 'func_pjsip_contact',
-  'func_vmcount', 'func_volume', 'func_math',
+  'func_vmcount', 'func_groupcount', 'func_volume', 'func_math',
 ]
 
 function asteriskConf(gen: GenContext): string {
@@ -151,7 +152,8 @@ function voicemailConf(cfg: PbxConfig, gen: GenContext): string {
     '[default]',
   ]
   for (const ext of cfg.extensions.filter((e) => e.voicemail.enabled)) {
-    const pin = ext.voicemail.pin.replace(/\D/g, '') || ext.number
+    // Ohne gültige PIN nie die Nebenstellennummer: dann ist die Mailbox per PIN nicht erreichbar
+    const pin = ext.voicemail.pin.replace(/\D/g, '') || String(randomInt(1e8, 1e9))
     const email = canMail ? val(ext.email).replace(/,/g, '') : ''
     const opts = [`attach=${ext.voicemail.attach ? 'yes' : 'no'}`, 'saycid=yes', 'envelope=no', 'tz=de']
     lines.push(`${ext.number} => ${pin},${val(ext.name).replace(/,/g, ' ')},${email},,${opts.join('|')}`)

@@ -102,16 +102,23 @@ export function parseSetupInput(input: string): SetupTarget | null {
 
 export class SetupError extends Error {}
 
+/** Name für die Geräteliste der Anlage (setzt die App beim Start) */
+let deviceName = ''
+
+export function setDeviceName(name: string): void {
+  deviceName = encodeURIComponent(name.slice(0, 40))
+}
+
 async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
-    res = await fetch(url, { ...init, headers: { Accept: 'application/json', ...(init?.headers ?? {}) } })
+    res = await fetch(url, { ...init, headers: { Accept: 'application/json', ...(deviceName ? { 'X-Device-Name': deviceName } : {}), ...(init?.headers ?? {}) } })
   } catch {
     throw new SetupError('Die Telefonanlage ist nicht erreichbar. Adresse und Internetverbindung prüfen.')
   }
   const body = (await res.json().catch(() => null)) as (T & { error?: string }) | null
   if (!res.ok) {
-    if (res.status === 404) throw new SetupError(body?.error || 'Der Einrichtungslink ist ungültig oder wurde erneuert.')
+    if (res.status === 404) throw new SetupError(body?.error || 'Der Einrichtungslink ist ungültig, wurde erneuert oder das Gerät wurde abgemeldet.')
     throw new SetupError(body?.error || `Fehler ${res.status} von der Telefonanlage.`)
   }
   if (!body) throw new SetupError('Unerwartete Antwort – ist das wirklich eine Phone4all-Telefonanlage?')

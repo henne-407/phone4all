@@ -46,12 +46,30 @@ export interface Extension {
    */
   forward: { busy: string; noanswer: string; rules: ForwardRule[] }
   record: boolean
-  /** Einrichtungs-PIN für die App (zusammen mit der Nebenstelle) */
+  /** Einrichtungs-PIN für die App (zusammen mit der Nebenstelle), gilt einmal */
   provision_pin: string
-  /** Geheimer Teil des Einrichtungslinks */
+  /** PIN gültig bis (ms seit 1970); 0 = abgelaufen oder schon benutzt */
+  provision_pin_expires: number
+  /** Geheimer Teil des Einladungslinks (QR-Code, E-Mail); jedes Gerät bekommt daraus ein eigenes Token */
   provision_token: string
+  /** Einladungslink gültig bis (ms seit 1970); 0 = abgelaufen */
+  provision_expires: number
+  /** Eingerichtete Apps; jede hat ein eigenes Token und lässt sich einzeln abmelden */
+  devices: AppDevice[]
   /** App-Profil (Ansichten der Phone4All-App), leer = ohne Vorgaben */
   app_profile: string
+}
+
+/** Eine eingerichtete App (Desktop oder Handy) einer Nebenstelle */
+export interface AppDevice {
+  id: string
+  name: string
+  /** Geheimer Teil der Profiladresse dieses Geräts */
+  token: string
+  created: number
+  /** Zuletzt gesehen (ms seit 1970) und von welcher Adresse */
+  seen: number
+  ip: string
 }
 
 /** Umleitung, die sich nach Zeit oder Zustand selbst einschaltet. */
@@ -70,7 +88,7 @@ export interface ForwardRule {
 }
 
 /** Was eine Nebenstelle in der App selbst einstellen darf */
-export type AppPermission = 'forward' | 'forward_external' | 'forward_rules' | 'calendar_edit' | 'phonebook_edit'
+export type AppPermission = 'forward' | 'forward_external' | 'forward_rules' | 'calendar_edit' | 'phonebook_edit' | 'voicemail_other'
 
 export const APP_PERMISSIONS: [AppPermission, string, string][] = [
   ['forward', 'Umleitung schalten', 'In der App die Sofort-Umleitung ein- und ausschalten'],
@@ -78,6 +96,7 @@ export const APP_PERMISSIONS: [AppPermission, string, string][] = [
   ['forward_rules', 'Umleitungsregeln bearbeiten', 'Weiterleitung bei besetzt/keine Antwort und Regeln nach Zeit'],
   ['calendar_edit', 'Zentrale Kalender bearbeiten', 'Termine in beschreibbaren zentralen Kalendern anlegen und ändern'],
   ['phonebook_edit', 'Telefonbuch bearbeiten', 'Einträge im zentralen Telefonbuch anlegen und ändern'],
+  ['voicemail_other', 'Fremde Voicemail abhören', 'Mit *98 andere Mailboxen abhören (mit deren PIN)'],
 ]
 
 export type GroupMode = 'all' | 'sequential' | 'queue'
@@ -237,6 +256,8 @@ export interface SystemSettings {
   codecs: string[]
   /** Zeitzone für Zeitsteuerung und Voicemail */
   timezone: string
+  /** Verschlüsselte Sprache (SRTP) für Telefone im LAN: aus, wenn das Telefon es anbietet, oder Pflicht */
+  srtp: 'off' | 'optional' | 'required'
 }
 
 export interface MailSettings {
@@ -256,7 +277,35 @@ export interface SecuritySettings {
   whitelist: string[] // IPs/Netze, die nie gesperrt werden
   /** Nebenstellen nur aus diesen Netzen zulassen (leer = überall) */
   extension_nets: string[]
+  /** Reverse-Proxys (z. B. Newt von Pangolin), deren X-Forwarded-For gilt */
+  trusted_proxies: string[]
+  // -- Schutz vor Gebührenbetrug
+  /** Notbremse: keine Gespräche nach außen außer Notruf */
+  outbound_stop: boolean
+  /** Gleichzeitige Gespräche nach außen je Nebenstelle und für die ganze Anlage (0 = unbegrenzt) */
+  max_calls_ext: number
+  max_calls_total: number
+  /** Sonderrufnummern (Vorwahlen wie 0900 oder 00881), nur mit Recht „Sonderrufnummern“ */
+  premium_prefixes: string[]
+  /** Länder für das Recht „international“ (Ländervorwahlen ohne 00, leer = alle) */
+  countries: string[]
+  /** Ausland nur zwischen 6 und 22 Uhr */
+  international_daytime: boolean
+  /** Auslandsgespräche pro Tag, danach greift die Notbremse (0 = unbegrenzt) */
+  international_per_day: number
+  /** Umleitungen und Rufabfolgen dürfen ins Ausland weiterleiten */
+  forward_international: boolean
 }
+
+/** Gebührenpflichtige Sonderrufnummern in Deutschland und Satellitennetze */
+export const DEFAULT_PREMIUM_PREFIXES = ['0900', '0137', '0138', '0180', '0181', '019', '012', '0700', '032', '031', '00870', '00881', '00882', '00883', '00979']
+
+/** EU, EWR, Schweiz, Großbritannien und Nachbarn auf dem Balkan */
+export const DEFAULT_COUNTRIES = [
+  '30', '31', '32', '33', '34', '351', '352', '353', '354', '356', '357', '358', '359', '36', '370', '371', '372',
+  '376', '377', '378', '381', '382', '385', '386', '387', '389', '39', '40', '41', '420', '421', '423', '43', '44',
+  '45', '46', '47', '48',
+]
 
 export interface UpdateSettings {
   channel: 'stable' | 'beta'
@@ -291,7 +340,7 @@ export interface WatchdogSettings {
 
 /** ok: wieder in Ordnung, info: Maßnahme, warning/error: Störung */
 export type WatchLevel = 'ok' | 'info' | 'warning' | 'error'
-export type CheckId = 'asterisk' | 'trunks' | 'disk'
+export type CheckId = 'asterisk' | 'trunks' | 'disk' | 'security'
 export type CheckLevel = 'ok' | 'warning' | 'error'
 
 export interface WatchEvent {
@@ -335,6 +384,8 @@ export interface MessengerSettings {
   min_free_mb: number
   /** Videoanrufe in den Chats (WebRTC über /ws, Konferenzraum je Unterhaltung) */
   video: boolean
+  /** Speicher für Anhänge je Nebenstelle (MB, 0 = unbegrenzt) */
+  quota_mb: number
 }
 
 /** Unterhaltung: Einzelchat (zwei Nebenstellen) oder Gruppe */
@@ -501,7 +552,8 @@ export interface PbxConfig {
   security: SecuritySettings
   updates: UpdateSettings
   /** discovery: im Netz auffindbar · permissions: Rechte aller Nebenstellen in der App */
-  provisioning: { discovery: boolean; permissions: AppPermission[] }
+  /** pin_remote: Einrichtung per PIN auch von außerhalb der lokalen Netze */
+  provisioning: { discovery: boolean; permissions: AppPermission[]; pin_remote: boolean }
   remote: RemoteSettings
   watchdog: WatchdogSettings
   integration: IntegrationSettings
@@ -528,6 +580,7 @@ export const DEFAULT_CONFIG: PbxConfig = {
     language: 'de',
     codecs: ['opus', 'g722', 'alaw', 'ulaw'],
     timezone: 'Europe/Berlin',
+    srtp: 'off',
   },
   extensions: [],
   groups: [],
@@ -551,15 +604,25 @@ export const DEFAULT_CONFIG: PbxConfig = {
     ban_minutes: 60,
     whitelist: ['127.0.0.1'],
     extension_nets: [],
+    trusted_proxies: ['127.0.0.1', '::1', '172.16.0.0/12'],
+    outbound_stop: false,
+    max_calls_ext: 2,
+    max_calls_total: 6,
+    premium_prefixes: DEFAULT_PREMIUM_PREFIXES,
+    countries: DEFAULT_COUNTRIES,
+    international_daytime: false,
+    international_per_day: 30,
+    forward_international: false,
   },
   updates: { channel: 'stable', auto: false, hour: 3 },
-  // Wie bisher: Umleiten (*21) und Schreiben in zentrale Kalender darf jede Nebenstelle
-  provisioning: { discovery: true, permissions: ['forward', 'forward_external', 'forward_rules', 'calendar_edit'] },
+  // Umleiten (*21) und Schreiben in zentrale Kalender darf jede Nebenstelle; nach außen
+  // umleiten nur mit Freigabe (Schutz vor Umleitungsbetrug mit erbeuteten Zugängen)
+  provisioning: { discovery: true, permissions: ['forward', 'forward_rules', 'calendar_edit'], pin_remote: false },
   remote: { enabled: true, public_url: '', turn: true, turn_port: 3478, turn_host: '' },
   watchdog: { auto_repair: true, trunk_grace: 3, notify_email: '' },
   integration: { enabled: false, token: '' },
   ldap: { enabled: false, port: 389, password: '' },
-  messenger: { enabled: true, max_file_mb: 25, min_free_mb: 2048, video: true },
+  messenger: { enabled: true, max_file_mb: 25, min_free_mb: 2048, video: true, quota_mb: 500 },
 }
 
 /** Listen der Konfiguration, die die Weboberfläche einheitlich bearbeitet. */
@@ -633,7 +696,10 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         forward: { busy: '', noanswer: '', rules: [] },
         record: false,
         provision_pin: '',
+        provision_pin_expires: 0,
         provision_token: '',
+        provision_expires: 0,
+        devices: [],
         app_profile: '',
       } satisfies Omit<Extension, 'id'>
     case 'groups':
@@ -767,7 +833,8 @@ export function withDefaults(raw: Partial<PbxConfig>): PbxConfig {
     const list = Array.isArray(raw[kind]) ? (raw[kind] as unknown as Record<string, unknown>[]) : []
     const blank = blankItem(kind)
     cfg[kind] = list.map((item) => {
-      const merged: Record<string, unknown> = { ...blank, ...item }
+      // Kopie, damit sich Einträge keine leeren Listen teilen
+      const merged: Record<string, unknown> = { ...structuredClone(blank), ...item }
       for (const [k, v] of Object.entries(blank)) {
         if (v && typeof v === 'object' && !Array.isArray(v) && item[k] && typeof item[k] === 'object') {
           merged[k] = { ...v, ...(item[k] as object) }

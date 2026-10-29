@@ -44,16 +44,24 @@ services:
     restart: unless-stopped
     volumes:
       - ./data:/data
-      - /var/run/docker.sock:/var/run/docker.sock   # für Updates aus der Weboberfläche
+      # - /var/run/docker.sock:/var/run/docker.sock   # optional, siehe unten
     environment:
       TZ: Europe/Berlin
       # PBX_HTTP_PORT: 8080          anderer Port für die Weboberfläche
+      # PBX_HTTPS_PORT: 8443         HTTPS im LAN (0 = aus)
       # PBX_ADMIN_PASSWORD: …        setzt das Passwort bei jedem Start
 ```
 
 `network_mode: host` ist Absicht: SIP und RTP hinter Docker-NAT führen zu einseitiger
 oder fehlender Sprache. Läuft auf dem Rechner schon etwas auf Port 8080, `PBX_HTTP_PORT`
 setzen.
+
+**Updates per Knopf** in der Weboberfläche brauchen den Docker-Socket (Zeile oben
+einkommentieren). Damit kann die Anlage Container starten und hat praktisch Root-Rechte
+auf dem Rechner: Wer die Weboberfläche übernimmt, übernimmt auch den Rechner. Ohne
+Socket aktualisiert man mit `docker compose pull && docker compose up -d` (TrueNAS:
+*Update* in der App-Übersicht). Der Hilfscontainer für das Update ist auf eine feste
+Version samt Prüfsumme gepinnt.
 
 ## Variante C: TrueNAS SCALE
 
@@ -68,7 +76,7 @@ services:
     restart: unless-stopped
     volumes:
       - /mnt/<pool>/apps/phone4all/data:/data
-      - /var/run/docker.sock:/var/run/docker.sock
+      # - /var/run/docker.sock:/var/run/docker.sock   # optional: Updates per Knopf
     environment:
       TZ: Europe/Berlin
 ```
@@ -78,8 +86,9 @@ services:
   Snapshots greifen.
 - Die Weboberfläche von TrueNAS belegt Port 80/443, nicht 8080 – das passt. Ist 8080
   belegt, `PBX_HTTP_PORT` setzen.
-- Updates gehen auf beiden Wegen: über den Knopf in der Weboberfläche der Anlage (dafür
-  der Docker-Socket) oder über *Update* in der App-Übersicht von TrueNAS. Zeigt TrueNAS
+- Updates gehen über *Update* in der App-Übersicht von TrueNAS oder, mit eingebundenem
+  Docker-Socket (siehe oben, gibt der Anlage Root-Rechte), über den Knopf in der
+  Weboberfläche der Anlage. Zeigt TrueNAS
   trotz neuer Version „Up to date“, in *System → Shell*
   `sudo docker pull ghcr.io/henne-407/phone4all-pbx:latest` ausführen und die App
   stoppen und wieder starten.
@@ -100,6 +109,7 @@ Für die Daten ist eine SSD am USB-Port besser als die SD-Karte.
 | Port | Zweck |
 | --- | --- |
 | 8080/tcp | Weboberfläche, Einrichtung der Apps, SIP über WebSocket (`/ws`) für die Mobil-App |
+| 8443/tcp | dieselbe Weboberfläche per HTTPS im LAN (selbst signiertes Zertifikat, eigenes in `data/keys/pbx.crt` und `pbx.key`; `PBX_HTTPS_PORT: 0` schaltet ab) |
 | 5060/udp+tcp, 5061/tcp | SIP, SIP über TLS |
 | 10000–10999/udp | Sprache (RTP) |
 | 15060/udp | Suche der Desktop-App im lokalen Netz |

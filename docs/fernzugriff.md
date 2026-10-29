@@ -17,8 +17,10 @@ Handy ──HTTPS / WSS──▶ Reverse-Proxy (z. B. Pangolin) ──HTTP──
 | alles andere | Weboberfläche | Anmeldung des Proxys **und** Passwort der Anlage |
 | Port 3478 (TCP+UDP) | Sprache der Mobil-App (TURN) | zeitlich begrenzte Zugangsdaten |
 
-Der TURN-Server (coturn) ist in der Anlage eingebaut. Er leitet nur zur Anlage selbst
-weiter, nicht ins Internet, und vergibt Zugangsdaten, die nach acht Tagen ablaufen.
+Der TURN-Server (coturn) ist in der Anlage eingebaut. Er leitet nur zur SIP-Adresse der
+Anlage weiter (nicht ins Internet, nicht zu anderen Diensten des Rechners oder in
+Docker-Netze), nur per UDP, und vergibt Zugangsdaten, die nach acht Tagen ablaufen. Ist
+unter *System → Allgemein* eine SIP-Adresse eingetragen, ist das genau diese Adresse.
 
 ## Mit Pangolin
 
@@ -48,7 +50,10 @@ Jeder Proxy, der WebSockets durchreicht, funktioniert (Traefik, Caddy, Nginx Pro
 Manager, Cloudflare Tunnel für den HTTP-Teil). Wichtig:
 
 - `X-Forwarded-For` setzen, damit die Sperre nach Fehlanmeldungen die Adresse des
-  Handys trifft und nicht den Proxy.
+  Handys trifft und nicht den Proxy. Die Anlage glaubt diese Kopfzeile nur Proxys aus
+  *System → Sicherheit → Vertrauenswürdige Proxys* (Standard: 127.0.0.1 und die
+  Docker-Netze 172.16.0.0/12). Läuft der Proxy bzw. Newt auf einem anderen Rechner,
+  dessen Adresse dort eintragen; die Seite schlägt sie vor, sobald sie Anfragen sieht.
 - Port 3478 TCP und UDP gesondert weiterleiten (Cloudflare Tunnel kann kein UDP; dort
   den Port direkt im Router freigeben).
 - Eine eigene Anmeldung des Proxys für die Pfade aus der Tabelle oben abschalten.

@@ -42,6 +42,7 @@ const NAMES: Record<CheckId, string> = {
   asterisk: 'Telefonanlage (Asterisk)',
   trunks: 'SIP-Konten',
   disk: 'Speicherplatz',
+  security: 'Sicherheit',
 }
 
 const MAX_EVENTS = 300

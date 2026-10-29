@@ -11,7 +11,8 @@ import os from 'node:os'
 import { SETTINGS } from './paths'
 
 const SOCKET = '/var/run/docker.sock'
-const HELPER_IMAGE = 'docker:cli'
+/** Hilfscontainer mit fester Version und Prüfsumme (docker:29.9.2-cli), damit kein fremdes Image den Socket bekommt */
+const HELPER_IMAGE = 'docker@sha256:5e6baf67325a79f64ed3bed6863954d5e05d0f3d4e57cbdb14809346814bbfdb'
 
 export interface ReleaseInfo {
   version: string
@@ -119,14 +120,20 @@ interface ComposeInfo {
 
 async function composeInfo(): Promise<ComposeInfo> {
   if (!fs.existsSync(SOCKET)) {
-    throw new Error('Kein Zugriff auf Docker (Socket /var/run/docker.sock nicht eingebunden).')
+    throw new Error(
+      'Updates per Knopf sind aus (Docker-Socket nicht eingebunden). Mit „docker compose pull && docker compose up -d“ oder über „Update“ in TrueNAS aktualisieren.',
+    )
   }
   const self = await findSelf()
   const labels = self.Config?.Labels ?? {}
   const project = labels['com.docker.compose.project']
   const workdir = labels['com.docker.compose.project.working_dir']
   if (!project || !workdir) throw new Error('Die Anlage wurde nicht mit docker compose gestartet.')
-  const files = (labels['com.docker.compose.project.config_files'] ?? '').split(',').filter(Boolean)
+  // Die Werte landen in einem Shell-Befehl: nur übliche Namen und Pfade zulassen
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(project) || !/^\/[\w./ -]*$/.test(workdir)) {
+    throw new Error('Ungewöhnlicher Name oder Pfad des Compose-Projekts; bitte manuell aktualisieren.')
+  }
+  const files = (labels['com.docker.compose.project.config_files'] ?? '').split(',').filter((f) => /^\/[\w./ -]*$/.test(f))
   return { project, workdir, files }
 }
 
@@ -197,8 +204,8 @@ export class Updater {
     const compose = await composeInfo()
     this.running = true
     try {
-      const [repo, tag] = HELPER_IMAGE.split(':')
-      await docker('POST', `/images/create?fromImage=${encodeURIComponent(repo)}&tag=${tag}`)
+      const [repo, digest] = HELPER_IMAGE.split('@')
+      await docker('POST', `/images/create?fromImage=${encodeURIComponent(repo)}&tag=${encodeURIComponent(digest)}`)
       const fileArgs = compose.files.map((f) => `-f '${f.replace(/'/g, '')}'`).join(' ')
       const pbxTag = channel === 'beta' ? 'beta' : 'latest'
       const script = [

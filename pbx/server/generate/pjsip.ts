@@ -1,7 +1,7 @@
 /** pjsip.conf: Transporte, Nebenstellen, SIP-Konten und Sperrliste. */
 
 import { messengerUsers } from '../messenger'
-import type { Extension, PbxConfig, Trunk } from '../model'
+import type { Extension, PbxConfig, SystemSettings, Trunk } from '../model'
 import { formatFor, toE164 } from '../numbers'
 import { appEndpoint, videoEnabled, videoEndpoint, webrtcEnabled } from '../remote'
 import type { GenContext } from './context'
@@ -77,9 +77,16 @@ export function webrtcCodecs(list: string[]): string {
 }
 
 /**
+ * App und Videoanrufe kommen immer über den WebSocket-Proxy der Anlage (127.0.0.1). Ohne
+ * diese Sperre ginge die Anmeldung als <nummer>-app auch per UDP von überall und umginge
+ * die Netzbeschränkung der Nebenstellen.
+ */
+const PROXY_ONLY = ['deny=0.0.0.0/0.0.0.0', 'permit=127.0.0.1/255.255.255.255']
+
+/**
  * Zweites Gerät jeder Nebenstelle für die Mobil-App: SIP über WebSocket, Sprache per
- * WebRTC (ICE, DTLS-SRTP). Gleiches Passwort, Benutzer „<nummer>-app“. Keine Netz-
- * beschränkung, weil alle Verbindungen über den Proxy der Anlage (127.0.0.1) kommen.
+ * WebRTC (ICE, DTLS-SRTP). Gleiches Passwort, Benutzer „<nummer>-app“. Nur über den
+ * Proxy der Anlage erreichbar (PROXY_ONLY).
  */
 function appSections(cfg: PbxConfig, ext: Extension): string {
   const id = appEndpoint(ext.number)
@@ -94,6 +101,7 @@ function appSections(cfg: PbxConfig, ext: Extension): string {
         ext.voicemail.enabled && `mailboxes=${ext.number}@default`,
         `set_var=P4A_EXT=${ext.number}`,
         cid && `set_var=P4A_CID=${cid}`,
+        ...PROXY_ONLY,
       ],
       'p4a-app',
     ),
@@ -240,7 +248,7 @@ function videoTemplate(cfg: PbxConfig): string {
 function videoSections(ext: Extension): string {
   const id = videoEndpoint(ext.number)
   return [
-    section(id, [`callerid="${val(ext.name).replace(/"/g, '')}" <${ext.number}>`, `auth=${id}`, `set_var=P4A_EXT=${ext.number}`], 'p4a-video'),
+    section(id, [`callerid="${val(ext.name).replace(/"/g, '')}" <${ext.number}>`, `auth=${id}`, `set_var=P4A_EXT=${ext.number}`, ...PROXY_ONLY], 'p4a-video'),
     section(id, ['type=auth', 'auth_type=userpass', `username=${id}`, `password=${val(ext.secret)}`]),
   ].join('\n')
 }
@@ -259,7 +267,7 @@ export function pjsipConf(cfg: PbxConfig, ctx: GenContext): string {
     section('global', [
       'type=global',
       'user_agent=Phone4all PBX',
-      'endpoint_identifier_order=ip,username,anonymous',
+      'endpoint_identifier_order=ip,username',
       'default_realm=phone4all',
     ]),
     section('transport-udp', ['type=transport', 'protocol=udp', `bind=0.0.0.0:${s.sip_port}`, ...nat]),
@@ -304,7 +312,7 @@ export function pjsipConf(cfg: PbxConfig, ctx: GenContext): string {
       'allow_subscribe=yes',
       'send_pai=yes',
       'moh_suggest=default',
-      'media_encryption_optimistic=yes',
+      ...srtpLines(s.srtp),
     ], '!'),
     ...(cfg.remote.enabled ? [appTemplate(cfg)] : []),
     ...(videoEnabled(cfg) ? [videoTemplate(cfg)] : []),
@@ -330,4 +338,11 @@ export function pjsipConf(cfg: PbxConfig, ctx: GenContext): string {
   if (videoEnabled(cfg)) for (const ext of messengerUsers(cfg)) parts.push(videoSections(ext))
   for (const t of cfg.trunks.filter((t) => t.enabled && t.registrar.trim())) parts.push(trunkSections(cfg, t, ctx))
   return parts.join('\n')
+}
+
+/** SRTP (SDES) für Telefone im LAN; die Schlüssel sind nur mit SIP über TLS geschützt */
+export function srtpLines(mode: SystemSettings['srtp']): string[] {
+  if (mode === 'optional') return ['media_encryption=sdes', 'media_encryption_optimistic=yes']
+  if (mode === 'required') return ['media_encryption=sdes', 'media_encryption_optimistic=no']
+  return []
 }

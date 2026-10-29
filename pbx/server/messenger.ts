@@ -17,6 +17,8 @@ import type { WebSocketConnection } from './websocket'
 const MAX_TEXT = 8000
 const MAX_MEMBERS = 50
 const PAGE = 50
+const FILES_PER_WINDOW = 30
+const FILE_WINDOW = 10 * 60000
 
 export class ChatError extends Error {}
 
@@ -150,9 +152,14 @@ export class MessengerStore {
   }
 
   /** Gruppe umbenennen oder Mitglieder ändern; liefert die bisherigen Mitglieder */
-  updateGroup(r: ChatRoom, change: { name?: string; members?: string[] }): string[] {
+  /** @param by wer ändert; andere entfernen darf nur, wer die Gruppe angelegt hat (solange Mitglied) */
+  updateGroup(r: ChatRoom, change: { name?: string; members?: string[] }, by = ''): string[] {
     if (r.kind !== 'group') throw new ChatError('Nur Gruppen lassen sich ändern.')
     const before = r.members
+    const removesOthers = change.members && before.some((m) => m !== by && !change.members!.includes(m))
+    if (by && removesOthers && by !== r.created_by && before.includes(r.created_by)) {
+      throw new ChatError('Andere Mitglieder entfernen kann nur, wer die Gruppe angelegt hat.')
+    }
     if (change.name !== undefined) {
       const clean = change.name.trim().slice(0, 80)
       if (!clean) throw new ChatError('Die Gruppe braucht einen Namen.')
@@ -226,6 +233,20 @@ export class MessengerStore {
     fs.writeFileSync(path.join(dir, id), data, { mode: 0o600 })
     const clean = path.basename(name).replace(/[\x00-\x1f"\\/]/g, '_').slice(0, 120) || 'datei'
     return { id, name: clean, size: data.length, type: /^[\w.+-]+\/[\w.+-]+$/.test(type) ? type : 'application/octet-stream' }
+  }
+
+  /** Anhänge, die eine Nebenstelle verschickt hat: Größe in Bytes und Zeitpunkte */
+  filesOf(ext: string): { bytes: number; times: number[] } {
+    let bytes = 0
+    const times: number[] = []
+    for (const id of this.rooms.keys()) {
+      for (const m of this.messages(id)) {
+        if (m.from !== ext || !m.file) continue
+        bytes += m.file.size
+        times.push(m.time)
+      }
+    }
+    return { bytes, times }
   }
 
   /** Belegter Speicher in Bytes (Nachrichten und Anhänge) */
@@ -446,7 +467,7 @@ export class MessengerHub {
         const before = r.members
         if (members) for (const m of members.filter((x) => !before.includes(x))) this.member(m)
         const oldName = r.name
-        s.updateGroup(r, { name: msg.name === undefined ? undefined : String(msg.name), members })
+        s.updateGroup(r, { name: msg.name === undefined ? undefined : String(msg.name), members }, c.ext)
         const added = r.members.filter((m) => !before.includes(m))
         const gone = before.filter((m) => !r.members.includes(m))
         const notes: string[] = []
@@ -490,8 +511,17 @@ export class MessengerHub {
   }
 
   /** Datei wurde per HTTP hochgeladen: als Nachricht verschicken */
-  postFile(ext: string, room: string, name: string, type: string, data: Buffer, text = ''): ChatMessage {
+  postFile(ext: string, room: string, name: string, type: string, data: Buffer, text = '', now = Date.now()): ChatMessage {
     const r = this.store.room(room, ext)
+    // Kontingent: Speicher je Nebenstelle und höchstens 30 Dateien in 10 Minuten
+    const quota = this.config().messenger.quota_mb * 1024 * 1024
+    const mine = this.store.filesOf(ext)
+    if (quota > 0 && mine.bytes + data.length > quota) {
+      throw new ChatError(`Ihr Speicher im Messenger ist voll (${this.config().messenger.quota_mb} MB). Bitte die Verwaltung, alte Unterhaltungen zu löschen.`)
+    }
+    if (mine.times.filter((t) => t > now - FILE_WINDOW).length >= FILES_PER_WINDOW) {
+      throw new ChatError('Zu viele Dateien in kurzer Zeit. Bitte etwas warten.')
+    }
     const file = this.store.saveFile(r.id, name, type, data)
     const msg = this.store.post(r, ext, text, file)
     this.publishMessage(r, msg)
@@ -508,7 +538,7 @@ export class MessengerHub {
     const allowed = messengerUsers(cfg)
     for (const c of [...this.clients]) {
       const ext = allowed.find((e) => e.number === c.ext)
-      if (!ext || ext.provision_token !== c.token) c.conn.close(4003, 'Kein Zugriff mehr')
+      if (!ext || !ext.devices.some((d) => d.token === c.token)) c.conn.close(4003, 'Kein Zugriff mehr')
     }
     this.broadcast({ t: 'users', users: this.users() })
   }

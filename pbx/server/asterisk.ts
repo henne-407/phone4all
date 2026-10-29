@@ -73,7 +73,8 @@ export class Asterisk extends EventEmitter {
   private proc: ChildProcess | null = null
   private amiSecret = randomBytes(16).toString('hex')
   private owner = ids(SETTINGS.runUser)
-  private tls = ensureTls()
+  /** Zertifikat für SIP-TLS und HTTPS (selbst signiert, in data/keys austauschbar) */
+  readonly tls = ensureTls()
   private restartDelay = 1000
   private stopping = false
   private lastTransport = ''
