@@ -68,11 +68,17 @@ export interface RoomView extends ChatRoom {
 
 export class MessengerStore {
   rooms = new Map<string, ChatRoom>()
-  /** Geladene Nachrichten je Raum (erst beim ersten Zugriff gelesen) */
+  /** Geladene Nachrichten je Raum (erst beim ersten Zugriff gelesen, zuletzt benutzte zuletzt) */
   private cache = new Map<string, ChatMessage[]>()
+  /** Ungefähre Größe je geladenem Raum in Bytes */
+  private sizes = new Map<string, number>()
   private saveTimer: NodeJS.Timeout | null = null
 
-  constructor(readonly dir: string) {
+  /** @param cacheBytes so viel Verlauf bleibt höchstens im Speicher, ältere Räume werden bei Bedarf neu gelesen */
+  constructor(
+    readonly dir: string,
+    readonly cacheBytes = 32 * 1024 * 1024,
+  ) {
     for (const r of loadJson<ChatRoom[]>(path.join(dir, 'rooms.json'), [])) {
       // rooms.json wird verzögert gespeichert: Nach einem Absturz kann der Zähler hinter
       // den schon geschriebenen Nachrichten liegen – dann würden Nummern doppelt vergeben
@@ -111,30 +117,54 @@ export class MessengerStore {
 
   messages(room: string): ChatMessage[] {
     let list = this.cache.get(room)
-    if (!list) {
-      list = []
-      try {
-        for (const line of fs.readFileSync(this.roomFile(room), 'utf8').split('\n')) {
-          if (!line.trim()) continue
-          try {
-            list.push(JSON.parse(line) as ChatMessage)
-          } catch {
-            // beschädigte Zeile überspringen
-          }
-        }
-      } catch {
-        // noch keine Nachrichten
-      }
+    if (list) {
+      // ans Ende rücken: zuletzt benutzt
+      this.cache.delete(room)
       this.cache.set(room, list)
+      return list
     }
+    list = []
+    let size = 0
+    try {
+      for (const line of fs.readFileSync(this.roomFile(room), 'utf8').split('\n')) {
+        if (!line.trim()) continue
+        try {
+          list.push(JSON.parse(line) as ChatMessage)
+          size += line.length
+        } catch {
+          // beschädigte Zeile überspringen
+        }
+      }
+    } catch {
+      // noch keine Nachrichten
+    }
+    this.remember(room, list, size)
     return list
+  }
+
+  private remember(room: string, list: ChatMessage[], size: number): void {
+    this.cache.delete(room)
+    this.cache.set(room, list)
+    this.sizes.set(room, size)
+    let total = [...this.sizes.values()].reduce((a, b) => a + b, 0)
+    for (const old of this.cache.keys()) {
+      if (total <= this.cacheBytes || old === room) break
+      total -= this.sizes.get(old) ?? 0
+      this.forgetCache(old)
+    }
+  }
+
+  private forgetCache(room: string): void {
+    this.cache.delete(room)
+    this.sizes.delete(room)
   }
 
   private rewrite(room: string, list: ChatMessage[]): void {
     const file = this.roomFile(room)
     fs.mkdirSync(path.dirname(file), { recursive: true })
-    fs.writeFileSync(file, list.map((m) => JSON.stringify(m) + '\n').join(''), { mode: 0o600 })
-    this.cache.set(room, list)
+    const text = list.map((m) => JSON.stringify(m) + '\n').join('')
+    fs.writeFileSync(file, text, { mode: 0o600 })
+    this.remember(room, list, text.length)
   }
 
   // -- Unterhaltungen -------------------------------------------------------
@@ -245,7 +275,7 @@ export class MessengerStore {
 
   removeRoom(id: string): void {
     this.rooms.delete(id)
-    this.cache.delete(id)
+    this.forgetCache(id)
     fs.rmSync(this.roomFile(id), { force: true })
     fs.rmSync(this.fileDir(id), { recursive: true, force: true })
     this.flush()
@@ -261,8 +291,10 @@ export class MessengerStore {
     const list = this.messages(r.id) // vor dem Anhängen laden, sonst doppelt im Speicher
     const target = this.roomFile(r.id)
     fs.mkdirSync(path.dirname(target), { recursive: true })
-    fs.appendFileSync(target, JSON.stringify(msg) + '\n', { mode: 0o600 })
+    const line = JSON.stringify(msg) + '\n'
+    fs.appendFileSync(target, line, { mode: 0o600 })
     list.push(msg)
+    if (this.cache.get(r.id) === list) this.sizes.set(r.id, (this.sizes.get(r.id) ?? 0) + line.length)
     // Eigene Nachrichten gelten als gelesen
     if (from) r.read[from] = r.seq
     this.saveSoon()
@@ -331,16 +363,17 @@ export class MessengerStore {
       const overQuota = used > limits.maxUsage
       const diskLow = free !== null && free < limits.minFree && used > start / 2
       if (!overQuota && !diskLow) return removed
-      const all = [...this.rooms.keys()].flatMap((id) => this.messages(id))
+      // Nur Zeit und Nummer sammeln: Der Zwischenspeicher kann Räume unterwegs verwerfen und neu lesen
+      const all = [...this.rooms.keys()].flatMap((id) => this.messages(id).map((m) => ({ room: id, seq: m.seq, time: m.time })))
       if (!all.length) return removed
       // In Schritten von einem Zehntel löschen, damit nicht mehr als nötig verschwindet
       all.sort((a, b) => a.time - b.time || a.seq - b.seq)
-      const doomed = new Set(all.slice(0, Math.ceil(all.length / 10)))
+      const doomed = new Set(all.slice(0, Math.ceil(all.length / 10)).map((m) => `${m.room}:${m.seq}`))
       for (const id of this.rooms.keys()) {
         const list = this.messages(id)
-        const keep = list.filter((m) => !doomed.has(m))
+        const keep = list.filter((m) => !doomed.has(`${id}:${m.seq}`))
         if (keep.length === list.length) continue
-        for (const m of list) if (doomed.has(m) && m.file) fs.rmSync(path.join(this.fileDir(id), m.file.id), { force: true })
+        for (const m of list) if (doomed.has(`${id}:${m.seq}`) && m.file) fs.rmSync(path.join(this.fileDir(id), m.file.id), { force: true })
         removed += list.length - keep.length
         this.rewrite(id, keep)
       }

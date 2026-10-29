@@ -112,6 +112,17 @@ describe('Messenger-Ablage', () => {
     expect(new MessengerStore(dir).messages(r.id)).toHaveLength(20 - removed)
   })
 
+  it('hält nur begrenzt Verlauf im Speicher und liest verdrängte Räume neu', () => {
+    const s = new MessengerStore(dir, 400)
+    const rooms = ['11', '12', '13'].map((n) => s.direct('10', n))
+    for (const r of rooms) for (let i = 0; i < 5; i++) s.post(r, '10', `Nachricht ${i} an ${r.members.join('+')}`)
+    for (const r of rooms) expect(s.messages(r.id).map((m) => m.seq)).toEqual([1, 2, 3, 4, 5])
+    // Aufräumen kommt auch dann zum Ende, wenn Räume unterwegs neu gelesen werden
+    const removed = s.cleanup({ freeBytes: () => 10_000_000, minFree: 1000, maxUsage: s.usage() - 100 })
+    expect(removed).toBeGreaterThan(0)
+    expect(rooms.reduce((n, r) => n + s.messages(r.id).length, 0)).toBe(15 - removed)
+  })
+
   it('vergibt nach einem Absturz keine Nummern doppelt', () => {
     const s = new MessengerStore(dir)
     const r = s.direct('10', '11')
