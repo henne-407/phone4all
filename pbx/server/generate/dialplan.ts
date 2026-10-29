@@ -235,6 +235,8 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
         'Return()',
       ]),
     ),
+    // Rückfrage zur Dreierkonferenz zusammenführen (/provision/<token>/calls/join)
+    ctx('p4a-join', exten('_X.', ['Answer()', 'ConfBridge(p4a-3way-${EXTEN})', 'Hangup()'])),
     // Telefone einer Nebenstelle oder Gruppe klingeln lassen (Ansagen über die Schnittstelle)
     ctx(
       'p4a-ring',

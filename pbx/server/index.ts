@@ -18,6 +18,7 @@ import { describeAgent, gigasetFile, requestMac } from './dect'
 import { agentMac, describeDesk, deskRequestMac, isYealinkCommon, snomFile, yealinkFile } from './deskphone'
 import { type DoorRing, EmergencyLog, emergencyCall, emergencyText, isEmergency } from './emergency'
 import { CallTracker, type GroupMissedCall, type PbxEvent, Webhooks } from './events'
+import { JoinError, callLegs, joinActions, joinRoom } from './join'
 import { type FaxRecord, FaxStore, MAX_ATTEMPTS, RETRY_MS, faxErrorText, faxRoute, pdfToTiff, tiffPages, tiffToPdf } from './fax'
 import { loadJson, saveJson } from './files'
 import { type ForwardChange, ForwardError, applyCfu, applyMobile, applyRules, check as checkForward, forwardInfo } from './forwarding'
@@ -1025,6 +1026,28 @@ async function voicemailAction(fields: Record<string, string>): Promise<void> {
   })
   if (res?.Response !== 'Success') throw new HttpError(500, res?.Message || 'Asterisk hat die Nachricht nicht geändert.')
 }
+
+/** Rückfrage abschließen: verbinden (Gegenüber miteinander) oder Dreierkonferenz */
+pub.post('/provision/:token/calls/join', async (r) => {
+  const ext = tokenExtension(r.params.token)
+  const { mode } = await r.json<{ mode: 'transfer' | 'conference' }>()
+  if (mode !== 'transfer' && mode !== 'conference') throw new HttpError(400, 'Unbekannte Art.')
+  const channels = await asterisk.ami.list({ Action: 'CoreShowChannels' }).catch((e: Error) => {
+    throw new HttpError(503, `Asterisk antwortet nicht: ${e.message}`)
+  })
+  let actions: Record<string, string>[]
+  try {
+    actions = joinActions(mode, callLegs(channels, ext.number), joinRoom(ext.number))
+  } catch (e) {
+    if (e instanceof JoinError) throw new HttpError(409, e.message)
+    throw e
+  }
+  for (const a of actions) {
+    const [res] = await asterisk.ami.action(a)
+    if (res?.Response !== 'Success' && a.Action !== 'Hangup') throw new HttpError(500, res?.Message || 'Das Zusammenführen hat nicht geklappt.')
+  }
+  return { ok: true }
+})
 
 // -- Selbstbedienung unter /me (Nebenstelle und Voicemail-PIN) ----------------------------
 
