@@ -65,6 +65,17 @@ function General() {
           <NumberField label="RTP bis" value={s.rtp_end} onChange={(v) => set({ rtp_end: v })} />
           <TextField label="Öffentliche Adresse (NAT)" value={s.external_address} onChange={(e) => set({ external_address: e.target.value.trim() })} helperText="Nur nötig, wenn Telefone von außen über den Router kommen" />
           <ChipsInput label="Lokale Netze" value={s.local_nets} onChange={(v) => set({ local_nets: v })} />
+          <Select
+            label="Verschlüsselte Sprache (SRTP) im LAN"
+            value={s.srtp}
+            onChange={(v) => set({ srtp: v })}
+            options={[
+              ['off', 'Aus'],
+              ['optional', 'Wenn das Telefon es anbietet'],
+              ['required', 'Pflicht (Telefone ohne SRTP klingeln nicht)'],
+            ]}
+            helperText="Wirksam erst mit SIP über TLS am Telefon (SIP-TLS-Port), sonst stehen die Schlüssel lesbar im Netz"
+          />
           <Full>
             <ChipsInput label="Codecs für Nebenstellen" value={s.codecs} onChange={(v) => set({ codecs: v })} options={['opus', 'g722', 'alaw', 'ulaw', 'gsm']} helperText="Reihenfolge = Vorrang. Opus und G.722 klingen deutlich besser (HD-Telefonie)." />
           </Full>

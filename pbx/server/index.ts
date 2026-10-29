@@ -3,6 +3,8 @@
 import { timingSafeEqual } from 'node:crypto'
 import fs from 'node:fs'
 import http from 'node:http'
+import https from 'node:https'
+import type { Duplex } from 'node:stream'
 import path from 'node:path'
 import { Asterisk } from './asterisk'
 import { CalendarStore } from './calendars'
@@ -270,7 +272,8 @@ const pub = new Router()
 
 function requestBase(r: Request): string {
   const host = (r.raw.headers['x-forwarded-host'] as string | undefined) ?? r.raw.headers.host
-  return baseUrl(host, store.config, (r.raw.headers['x-forwarded-proto'] as string | undefined) ?? 'http')
+  const direct = 'encrypted' in r.raw.socket ? 'https' : 'http'
+  return baseUrl(host, store.config, (r.raw.headers['x-forwarded-proto'] as string | undefined) ?? direct)
 }
 
 /** Profil der Nebenstelle für ein Gerät, mit Zugangsdaten für den TURN-Server */
@@ -1054,7 +1057,7 @@ async function main(): Promise<void> {
   ldap.apply()
   const server = http.createServer((req, res) => void handle(req, res))
   // /ws: SIP über WebSocket (Mobil-App) · /provision/<token>/chat: Messenger der Apps
-  server.on('upgrade', (req, socket, head: Buffer) => {
+  const onUpgrade = (req: http.IncomingMessage, socket: Duplex, head: Buffer): void => {
     const m = /^\/provision\/([^/?]+)\/chat\/?(\?.*)?$/.exec(req.url ?? '')
     if (!m) return ws.upgrade(req, socket, head)
     const ip = clientIp(req)
@@ -1069,8 +1072,23 @@ async function main(): Promise<void> {
     const conn = upgrade(req, socket)
     if (!conn) return reject(socket, 400, 'Bad Request')
     messenger.attach(ext.number, device.token, conn)
-  })
+  }
+  server.on('upgrade', onUpgrade)
   server.listen(SETTINGS.httpPort, () => console.log(`Weboberfläche auf Port ${SETTINGS.httpPort}`))
+  // Dieselbe Oberfläche verschlüsselt, damit das Passwort im LAN nicht im Klartext läuft
+  if (SETTINGS.httpsPort && asterisk.tls) {
+    try {
+      const secure = https.createServer(
+        { cert: fs.readFileSync(asterisk.tls.cert), key: fs.readFileSync(asterisk.tls.key) },
+        (req, res) => void handle(req, res),
+      )
+      secure.on('upgrade', onUpgrade)
+      secure.on('error', (e) => console.error(`HTTPS auf Port ${SETTINGS.httpsPort} nicht verfügbar:`, e.message))
+      secure.listen(SETTINGS.httpsPort, () => console.log(`Weboberfläche (HTTPS) auf Port ${SETTINGS.httpsPort}`))
+    } catch (e) {
+      console.error('HTTPS nicht verfügbar:', (e as Error).message)
+    }
+  }
   startDiscovery(() => store.config)
   asterisk.start()
   watchdog.log('info', 'asterisk', `Verwaltungsdienst gestartet (Version ${SETTINGS.version})`)

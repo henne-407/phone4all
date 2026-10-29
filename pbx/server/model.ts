@@ -255,6 +255,8 @@ export interface SystemSettings {
   codecs: string[]
   /** Zeitzone für Zeitsteuerung und Voicemail */
   timezone: string
+  /** Verschlüsselte Sprache (SRTP) für Telefone im LAN: aus, wenn das Telefon es anbietet, oder Pflicht */
+  srtp: 'off' | 'optional' | 'required'
 }
 
 export interface MailSettings {
@@ -577,6 +579,7 @@ export const DEFAULT_CONFIG: PbxConfig = {
     language: 'de',
     codecs: ['opus', 'g722', 'alaw', 'ulaw'],
     timezone: 'Europe/Berlin',
+    srtp: 'off',
   },
   extensions: [],
   groups: [],

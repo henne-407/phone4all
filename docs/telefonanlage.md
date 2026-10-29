@@ -1,6 +1,7 @@
 # Telefonanlage bedienen
 
-Die Weboberfläche erreicht man unter `http://<anlage>:8080`. Die Navigation links ist
+Die Weboberfläche erreicht man unter `http://<anlage>:8080`, verschlüsselt unter
+`https://<anlage>:8443` (selbst signiertes Zertifikat: einmal im Browser bestätigen). Die Navigation links ist
 nach Aufgaben gruppiert: *Personen*, *Eingehende Anrufe*, *Nach außen*,
 *Zusammenarbeit*, *Auswertung und System*. Jede Seite erklärt oben in einem Satz, wofür
 sie da ist; Änderungen gelten sofort, ohne Neustart.
@@ -230,7 +231,7 @@ Geänderte Einstellungen werden erst mit *Anwenden* in der Leiste am unteren Ran
 
 | Reiter | Inhalt |
 | --- | --- |
-| Allgemein | Name, Adresse für Telefone, Länder-/Ortsvorwahl, Bundesland, Zeitzone, Ports, öffentliche Adresse (NAT), lokale Netze, Codecs |
+| Allgemein | Name, Adresse für Telefone, Länder-/Ortsvorwahl, Bundesland, Zeitzone, Ports, öffentliche Adresse (NAT), lokale Netze, verschlüsselte Sprache (SRTP; sinnvoll nur mit SIP über TLS am Telefon), Codecs |
 | E-Mail | SMTP-Server für Voicemail und Einladungen, Testmail |
 | Sicherheit | Sperre nach Fehlanmeldungen, nie sperren, Nebenstellen nur aus bestimmten Netzen, gesperrte Adressen |
 | Sicherung | Export, Import, automatische Sicherungen wiederherstellen |

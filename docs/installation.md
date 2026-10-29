@@ -48,6 +48,7 @@ services:
     environment:
       TZ: Europe/Berlin
       # PBX_HTTP_PORT: 8080          anderer Port für die Weboberfläche
+      # PBX_HTTPS_PORT: 8443         HTTPS im LAN (0 = aus)
       # PBX_ADMIN_PASSWORD: …        setzt das Passwort bei jedem Start
 ```
 
@@ -108,6 +109,7 @@ Für die Daten ist eine SSD am USB-Port besser als die SD-Karte.
 | Port | Zweck |
 | --- | --- |
 | 8080/tcp | Weboberfläche, Einrichtung der Apps, SIP über WebSocket (`/ws`) für die Mobil-App |
+| 8443/tcp | dieselbe Weboberfläche per HTTPS im LAN (selbst signiertes Zertifikat, eigenes in `data/keys/pbx.crt` und `pbx.key`; `PBX_HTTPS_PORT: 0` schaltet ab) |
 | 5060/udp+tcp, 5061/tcp | SIP, SIP über TLS |
 | 10000–10999/udp | Sprache (RTP) |
 | 15060/udp | Suche der Desktop-App im lokalen Netz |

@@ -170,6 +170,7 @@ export function validate(cfg: PbxConfig): void {
       if (typeof item.id !== 'string' || !ID.test(item.id)) throw new ValidationError(`Ungültige ID „${String(item.id)}“ (nur Buchstaben, Ziffern, - und _).`)
     }
   }
+  if (!['off', 'optional', 'required'].includes(cfg.system.srtp)) throw new ValidationError('SRTP: aus, optional oder Pflicht.')
   const sec = cfg.security
   for (const [label, list] of [
     ['Nie sperren', sec.whitelist],

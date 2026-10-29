@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto'
 import type http from 'node:http'
 import { describe, expect, it } from 'vitest'
 import { generate } from '../server/generate'
+import { srtpLines } from '../server/generate/pjsip'
 import { DEFAULT_TRUSTED_PROXIES, clientIp, proxyHints, setTrustedProxies } from '../server/http'
 import { profile } from '../server/provisioning'
 import { localAddresses, turnConf, turnCredentials, turnPeers } from '../server/remote'
@@ -106,5 +107,17 @@ describe('Zugriff von unterwegs', () => {
     expect(clientIp(fakeReq('172.18.0.3', '198.51.100.7'))).toBe('172.18.0.3')
     setTrustedProxies(() => DEFAULT_TRUSTED_PROXIES)
     expect(remotePort('IPV4/WS/127.0.0.1/41234')).toBe(41234)
+  })
+})
+
+describe('SRTP im LAN', () => {
+  it('setzt die Verschlüsselung für Nebenstellen und die Desktop-App', () => {
+    expect(srtpLines('off')).toEqual([])
+    expect(srtpLines('optional')).toEqual(['media_encryption=sdes', 'media_encryption_optimistic=yes'])
+    expect(srtpLines('required')).toContain('media_encryption_optimistic=no')
+    const cfg = sampleConfig()
+    expect(profile(cfg, cfg.extensions[0], 'http://pbx').account.mediaenc).toBe('')
+    cfg.system.srtp = 'required'
+    expect(profile(cfg, cfg.extensions[0], 'http://pbx').account.mediaenc).toBe('srtp-mand')
   })
 })

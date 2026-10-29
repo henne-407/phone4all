@@ -143,7 +143,8 @@ export function profile(cfg: PbxConfig, ext: Extension, base: string, ice: IceSe
       transport: 'udp',
       outbound: '',
       stun: '',
-      mediaenc: '',
+      // baresip: srtp = wenn möglich, srtp-mand = Pflicht
+      mediaenc: cfg.system.srtp === 'required' ? 'srtp-mand' : cfg.system.srtp === 'optional' ? 'srtp' : '',
       regint: 300,
     },
     password: ext.secret,

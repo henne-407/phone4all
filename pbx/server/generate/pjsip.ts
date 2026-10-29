@@ -1,7 +1,7 @@
 /** pjsip.conf: Transporte, Nebenstellen, SIP-Konten und Sperrliste. */
 
 import { messengerUsers } from '../messenger'
-import type { Extension, PbxConfig, Trunk } from '../model'
+import type { Extension, PbxConfig, SystemSettings, Trunk } from '../model'
 import { formatFor, toE164 } from '../numbers'
 import { appEndpoint, videoEnabled, videoEndpoint, webrtcEnabled } from '../remote'
 import type { GenContext } from './context'
@@ -312,7 +312,7 @@ export function pjsipConf(cfg: PbxConfig, ctx: GenContext): string {
       'allow_subscribe=yes',
       'send_pai=yes',
       'moh_suggest=default',
-      'media_encryption_optimistic=yes',
+      ...srtpLines(s.srtp),
     ], '!'),
     ...(cfg.remote.enabled ? [appTemplate(cfg)] : []),
     ...(videoEnabled(cfg) ? [videoTemplate(cfg)] : []),
@@ -338,4 +338,11 @@ export function pjsipConf(cfg: PbxConfig, ctx: GenContext): string {
   if (videoEnabled(cfg)) for (const ext of messengerUsers(cfg)) parts.push(videoSections(ext))
   for (const t of cfg.trunks.filter((t) => t.enabled && t.registrar.trim())) parts.push(trunkSections(cfg, t, ctx))
   return parts.join('\n')
+}
+
+/** SRTP (SDES) für Telefone im LAN; die Schlüssel sind nur mit SIP über TLS geschützt */
+export function srtpLines(mode: SystemSettings['srtp']): string[] {
+  if (mode === 'optional') return ['media_encryption=sdes', 'media_encryption_optimistic=yes']
+  if (mode === 'required') return ['media_encryption=sdes', 'media_encryption_optimistic=no']
+  return []
 }

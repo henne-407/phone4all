@@ -31,6 +31,7 @@ Sprache hinter Docker-NAT unzuverlässig sind. Benötigte Ports:
 | Port | Zweck |
 | --- | --- |
 | 8080/tcp | Weboberfläche, Einrichtung der App, SIP über WebSocket (`/ws`) für die Mobil-App |
+| 8443/tcp | dieselbe Weboberfläche per HTTPS (Zertifikat aus `data/keys`, `PBX_HTTPS_PORT`, 0 = aus) |
 | 5060/udp+tcp, 5061/tcp | SIP, SIP über TLS |
 | 10000–10999/udp | Sprache (RTP) |
 | 15060/udp | Suche der App im lokalen Netz |
