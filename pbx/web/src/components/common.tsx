@@ -811,3 +811,10 @@ export function PermissionChecks({ value, onChange, inherited = [] }: { value: A
     </FormGroup>
   )
 }
+
+/** 1536 → „2 KB“, 5,2 MB, 1,3 GB */
+export function bytes(n: number): string {
+  if (n < 1024 * 1024) return `${Math.max(n ? 1 : 0, Math.round(n / 1024))} KB`
+  if (n < 1024 ** 3) return `${(n / 1024 / 1024).toFixed(1).replace('.', ',')} MB`
+  return `${(n / 1024 ** 3).toFixed(1).replace('.', ',')} GB`
+}

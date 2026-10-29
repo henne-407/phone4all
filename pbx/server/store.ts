@@ -169,6 +169,10 @@ export function validate(cfg: PbxConfig): void {
   const m = cfg.messenger
   if (!(m.max_file_mb >= 1 && m.max_file_mb <= 1024)) throw new ValidationError('Größte Datei im Messenger: 1 bis 1024 MB.')
   if (!(m.min_free_mb >= 100)) throw new ValidationError('Freier Speicher für den Messenger: mindestens 100 MB.')
+  const st = cfg.storage
+  for (const d of [st.recordings_days, st.voicemail_days]) {
+    if (!(Number.isInteger(d) && d >= 0 && d <= 3650)) throw new ValidationError('Aufbewahrung: 0 (unbegrenzt) bis 3650 Tage.')
+  }
   if (!(m.max_storage_mb >= 100)) throw new ValidationError('Speicher für den Messenger: mindestens 100 MB.')
 }
 

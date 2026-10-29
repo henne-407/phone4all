@@ -34,6 +34,7 @@ import {
 import { Guard } from './security'
 import { SourceSync } from './sources/sync'
 import { listSounds, saveSound, soundDir, soundFile, type SoundKind } from './sounds'
+import { expire, recordingFile, report as storageReport } from './storage'
 import { ConfigStore, type ExportFile, ValidationError, fillSecrets, newPin, newSecret } from './store'
 import type { DectBase } from './model'
 import { Updater } from './updates'
@@ -683,12 +684,25 @@ api.post('/api/unban', async (r) => {
 
 api.get('/api/calls', (r) => readCalls(Number(r.query.get('limit')) || 200))
 
-api.get('/api/recordings/:name', (r) => {
-  const name = r.params.name
-  if (!/^[\w.-]+\.wav$/.test(name)) throw new HttpError(400, 'Ungültiger Name.')
-  const file = path.join(PATHS.recordings, name)
+function recording(name: string): string {
+  const file = recordingFile(name)
+  if (!file) throw new HttpError(400, 'Ungültiger Name.')
   if (!fs.existsSync(file)) throw new HttpError(404, 'Aufnahme nicht gefunden.')
-  sendFile(r.res, file, r.query.has('download') ? name : undefined)
+  return file
+}
+
+api.get('/api/recordings/:name', (r) => sendFile(r.res, recording(r.params.name), r.query.has('download') ? r.params.name : undefined))
+api.delete('/api/recordings/:name', (r) => {
+  fs.rmSync(recording(r.params.name))
+  return { ok: true }
+})
+
+/** Belegung je Bereich und alle Aufnahmen (System → Speicher) */
+api.get('/api/storage', () => storageReport(freeBytes()))
+api.post('/api/storage/cleanup', () => {
+  const result = expire(store.config.storage)
+  messengerCleanup()
+  return { ...result, report: storageReport(freeBytes()) }
 })
 
 api.get('/api/log', () => tailLog())
@@ -866,6 +880,10 @@ async function main(): Promise<void> {
     if (lastBackup !== today) {
       lastBackup = today
       store.backup('taeglich')
+    }
+    const expired = expire(store.config.storage)
+    if (expired.recordings || expired.voicemail) {
+      watchdog.log('info', 'disk', `Aufbewahrungsfrist: ${expired.recordings} Aufnahmen und ${expired.voicemail} Voicemails gelöscht`)
     }
     messengerCleanup()
     const u = store.config.updates

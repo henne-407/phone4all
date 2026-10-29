@@ -287,6 +287,12 @@ export interface WatchdogSettings {
   notify_email: string
 }
 
+/** Speicher: wie lange Aufnahmen und Voicemails aufbewahrt werden (0 = unbegrenzt) */
+export interface StorageSettings {
+  recordings_days: number
+  voicemail_days: number
+}
+
 // Zustand und Ereignisse des Watchdogs (server/watchdog.ts), auch für die Weboberfläche
 
 /** ok: wieder in Ordnung, info: Maßnahme, warning/error: Störung */
@@ -509,6 +515,7 @@ export interface PbxConfig {
   integration: IntegrationSettings
   ldap: LdapSettings
   messenger: MessengerSettings
+  storage: StorageSettings
 }
 
 export const HANGUP: Destination = { type: 'hangup', target: '' }
@@ -559,6 +566,7 @@ export const DEFAULT_CONFIG: PbxConfig = {
   provisioning: { discovery: true, permissions: ['forward', 'forward_external', 'forward_rules', 'calendar_edit'] },
   remote: { enabled: true, public_url: '', turn: true, turn_port: 3478, turn_host: '' },
   watchdog: { auto_repair: true, trunk_grace: 3, notify_email: '' },
+  storage: { recordings_days: 0, voicemail_days: 0 },
   integration: { enabled: false, token: '' },
   ldap: { enabled: false, port: 389, password: '' },
   messenger: { enabled: true, max_file_mb: 25, max_storage_mb: 5120, min_free_mb: 200, video: true },
@@ -583,7 +591,7 @@ export const COLLECTIONS = [
 ] as const
 export type CollectionName = (typeof COLLECTIONS)[number]
 
-export const SECTIONS = ['system', 'mail', 'security', 'updates', 'provisioning', 'remote', 'watchdog', 'integration', 'ldap', 'messenger'] as const
+export const SECTIONS = ['system', 'mail', 'security', 'updates', 'provisioning', 'remote', 'watchdog', 'integration', 'ldap', 'messenger', 'storage'] as const
 export type SectionName = (typeof SECTIONS)[number]
 
 export const DESTINATION_LABELS: Record<DestinationType, string> = {

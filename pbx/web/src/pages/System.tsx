@@ -3,6 +3,7 @@ import DownloadIcon from '@mui/icons-material/Download'
 import ErrorIcon from '@mui/icons-material/Error'
 import InfoIcon from '@mui/icons-material/Info'
 import WarningIcon from '@mui/icons-material/Warning'
+import DeleteIcon from '@mui/icons-material/Delete'
 import RestoreIcon from '@mui/icons-material/Restore'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
 import {
@@ -27,9 +28,10 @@ import {
   Typography,
 } from '@mui/material'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { MailSettings, RemoteSettings, SecuritySettings, SystemSettings, UpdateSettings, WatchdogSettings } from '../../../server/model'
+import type { MailSettings, RemoteSettings, SecuritySettings, StorageSettings, SystemSettings, UpdateSettings, WatchdogSettings } from '../../../server/model'
+import type { StorageReport } from '../../../server/storage'
 import { type UpdateInfo, type WatchEvent, type WatchdogResponse, api } from '../api'
-import { ChangesBar, ChipsInput, ConfirmDialog, confirmDiscard, FormGrid, Full, NumberField, PageHeader, PermissionChecks, Section, Select, useDraft } from '../components/common'
+import { bytes, ChangesBar, ChipsInput, ConfirmDialog, confirmDiscard, FormGrid, Full, NumberField, PageHeader, PermissionChecks, Section, Select, useDraft } from '../components/common'
 import { takeEditRequest } from '../router'
 import { usePbx } from '../state'
 import { useStatus } from '../useStatus'
@@ -742,11 +744,119 @@ function Diagnose() {
   )
 }
 
+function Storage() {
+  const { config, saveSection, toast } = usePbx()
+  const d = useDraft<StorageSettings>(config.storage)
+  const { draft: st, set } = d
+  const [data, setData] = useState<StorageReport | null>(null)
+  const [remove, setRemove] = useState<string | null>(null)
+  const load = (): void => void api.get<StorageReport>('/api/storage').then(setData).catch((e: Error) => toast(e.message, 'error'))
+  useEffect(load, [])
+  const total = data?.areas.reduce((n, a) => n + a.bytes, 0) ?? 0
+  return (
+    <>
+      <Section
+        title="Belegung"
+        description="Was die Anlage im Datenordner ablegt. Wird die Platte knapp, meldet der Watchdog das unter Diagnose."
+        action={
+          <Button
+            onClick={() =>
+              void api
+                .post<{ recordings: number; voicemail: number; report: StorageReport }>('/api/storage/cleanup')
+                .then((r) => {
+                  setData(r.report)
+                  toast(`Aufgeräumt: ${r.recordings} Aufnahmen, ${r.voicemail} Voicemails`)
+                })
+                .catch((e: Error) => toast(e.message, 'error'))
+            }
+          >
+            Jetzt aufräumen
+          </Button>
+        }
+      >
+        {data && (
+          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' } }}>
+            {[...data.areas.map((a): [string, string] => [a.name, bytes(a.bytes)]), ['Zusammen', bytes(total)], ['Frei auf der Platte', data.free === null ? '–' : bytes(data.free)]].map(([l, v]) => (
+              <Box key={l}>
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                  {l}
+                </Typography>
+                <Typography variant="h6">{v}</Typography>
+              </Box>
+            ))}
+          </Box>
+        )}
+      </Section>
+      <Section title="Aufbewahrung" description="Ältere Aufnahmen und Voicemails löscht die Anlage einmal pro Stunde. 0 = unbegrenzt aufheben.">
+        <FormGrid>
+          <NumberField label="Aufnahmen aufheben (Tage)" value={st.recordings_days} min={0} onChange={(v) => set({ recordings_days: v })} helperText="Gesprächs- und Konferenzaufnahmen" />
+          <NumberField label="Voicemails aufheben (Tage)" value={st.voicemail_days} min={0} onChange={(v) => set({ voicemail_days: v })} helperText="Auch ungehörte Nachrichten" />
+        </FormGrid>
+      </Section>
+      <Section title="Aufnahmen" description="Alle Gesprächs- und Konferenzaufnahmen, neueste zuerst.">
+        {data?.recordings.length ? (
+          <List dense disablePadding sx={{ maxHeight: 520, overflow: 'auto' }}>
+            {data.recordings.map((r) => (
+              <ListItem
+                key={r.name}
+                divider
+                secondaryAction={
+                  <Stack direction="row">
+                    <Tooltip title="Herunterladen">
+                      <IconButton href={`/api/recordings/${r.name}?download`}>
+                        <DownloadIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Löschen">
+                      <IconButton onClick={() => setRemove(r.name)}>
+                        <DeleteIcon />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
+                }
+              >
+                <ListItemText
+                  primary={`${r.kind === 'conference' ? 'Konferenz' : 'Gespräch'} · ${new Date(r.time).toLocaleString('de-DE')}`}
+                  secondary={
+                    <>
+                      {bytes(r.size)}
+                      <audio controls preload="none" src={`/api/recordings/${r.name}`} style={{ height: 28, verticalAlign: 'middle', marginLeft: 8 }} />
+                    </>
+                  }
+                />
+              </ListItem>
+            ))}
+          </List>
+        ) : (
+          <Typography sx={{ color: 'text.secondary' }}>Keine Aufnahmen.</Typography>
+        )}
+      </Section>
+      <ConfirmDialog
+        open={Boolean(remove)}
+        title="Aufnahme löschen?"
+        text="Die Datei wird endgültig gelöscht."
+        confirm="Löschen"
+        onClose={() => setRemove(null)}
+        onConfirm={() => {
+          const name = remove
+          setRemove(null)
+          void api
+            .del(`/api/recordings/${name}`)
+            .then(load)
+            .catch((e: Error) => toast(e.message, 'error'))
+        }}
+      />
+      <ChangesBar dirty={d.dirty} onApply={() => saveSection('storage', st)} onDiscard={d.reset} />
+    </>
+  )
+}
+
 const TABS: [string, () => React.JSX.Element][] = [
   ['Allgemein', General],
   ['E-Mail', Mail],
   ['Sicherheit', Security],
   ['Sicherung', Backup],
+  ['Speicher', Storage],
   ['Aktualisierung', Updates],
   ['Zugang', Access],
   ['Fernzugriff', Remote],
@@ -774,7 +884,7 @@ export default function System() {
   const Page = TABS[tab][1]
   return (
     <Box>
-      <PageHeader overline="System" title="Einstellungen und Wartung" description="Name, E-Mail, Sicherheit, Sicherungen, Updates, Diagnose und Home Assistant." />
+      <PageHeader overline="System" title="Einstellungen und Wartung" description="Name, E-Mail, Sicherheit, Sicherungen, Speicher, Updates, Diagnose und Home Assistant." />
       <Tabs value={tab} onChange={(_e, v: number) => confirmDiscard() && setTab(v)} variant="scrollable" sx={{ mb: 2 }}>
         {TABS.map(([label]) => (
           <Tab key={label} label={label} />

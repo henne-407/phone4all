@@ -24,7 +24,7 @@ import {
 import { useCallback, useEffect, useState } from 'react'
 import type { MessengerSettings } from '../../../server/model'
 import { api } from '../api'
-import { ConfirmDialog, EmptyState, FormGrid, NumberField, PageHeader, Section } from '../components/common'
+import { bytes, ConfirmDialog, EmptyState, FormGrid, NumberField, PageHeader, Section } from '../components/common'
 import { usePbx } from '../state'
 
 interface Overview {
@@ -35,12 +35,6 @@ interface Overview {
   free: number | null
   users: number
   rooms: { id: string; kind: 'direct' | 'group'; name: string; members: string[]; messages: number; last: number }[]
-}
-
-function bytes(n: number): string {
-  if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`
-  if (n < 1024 ** 3) return `${(n / 1024 / 1024).toFixed(1).replace('.', ',')} MB`
-  return `${(n / 1024 ** 3).toFixed(1).replace('.', ',')} GB`
 }
 
 function Settings() {
