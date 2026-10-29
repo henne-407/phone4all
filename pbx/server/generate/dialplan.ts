@@ -336,7 +336,8 @@ export function extensionsConf(cfg: PbxConfig, gen: GenContext): string {
         'Set(TRIES=0)',
         '(pin)Read(PIN,conf-getpin,8,,1,10)',
         ...(admin ? [`GotoIf($["\${PIN}" = "${admin}"]?admin)`] : []),
-        ...(pin ? [`GotoIf($["\${PIN}" = "${pin}"]?join)`] : []),
+        // Ohne Teilnehmer-PIN kommt jeder hinein; die PIN-Abfrage gilt nur der Moderation
+        pin ? `GotoIf($["\${PIN}" = "${pin}"]?join)` : 'Goto(join)',
         'Set(TRIES=$[${TRIES} + 1])',
         'GotoIf($[${TRIES} < 3]?pin)',
         'Playback(conf-invalidpin)',

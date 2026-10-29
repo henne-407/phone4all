@@ -15,6 +15,18 @@ describe('Asterisk-Konfiguration', () => {
     expect(pjsip).not.toContain('protocol=tls')
   })
 
+  it('lässt Teilnehmer ohne PIN in Konferenzen mit Moderations-PIN', () => {
+    const cfg = sampleConfig()
+    cfg.conferences = [{ id: 'c1', number: '800', name: 'Runde', pin: '', admin_pin: '4711', max_members: 0, record: false } as never]
+    const conf = generate(cfg, gen)['extensions.conf'].split('[p4a-conf]')[1].split('\n[')[0]
+    expect(conf).toContain('"${PIN}" = "4711"]?admin')
+    expect(conf).toContain('Goto(join)')
+    cfg.conferences[0].pin = '1234'
+    const strict = generate(cfg, gen)['extensions.conf'].split('[p4a-conf]')[1].split('\n[')[0]
+    expect(strict).toContain('"${PIN}" = "1234"]?join')
+    expect(strict).not.toContain('Goto(join)')
+  })
+
   it('erzeugt Wählplan, Hinweise und Gruppen', () => {
     const ext = files['extensions.conf']
     expect(ext).toContain('[p4a-local]')
