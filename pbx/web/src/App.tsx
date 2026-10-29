@@ -6,6 +6,7 @@ import CampaignIcon from '@mui/icons-material/Campaign'
 import ChatIcon from '@mui/icons-material/Chat'
 import ContactsIcon from '@mui/icons-material/Contacts'
 import FaxIcon from '@mui/icons-material/Fax'
+import DeskphoneIcon from '@mui/icons-material/LocalPhone'
 import DashboardIcon from '@mui/icons-material/Dashboard'
 import DialpadIcon from '@mui/icons-material/Dialpad'
 import GroupsIcon from '@mui/icons-material/Groups'
@@ -51,6 +52,7 @@ import Calls from './pages/Calls'
 import Conferences from './pages/Conferences'
 import Dashboard from './pages/Dashboard'
 import Dect from './pages/Dect'
+import DeskPhones from './pages/DeskPhones'
 import Faxes from './pages/Faxes'
 import Extensions from './pages/Extensions'
 import Flows from './pages/Flows'
@@ -81,6 +83,7 @@ const NAV: [string, NavItem[]][] = [
     [
       { key: 'extensions', label: 'Nebenstellen', icon: <PersonIcon />, page: <Extensions /> },
       { key: 'groups', label: 'Gruppen', icon: <GroupsIcon />, page: <Groups /> },
+      { key: 'deskphones', label: 'Tischtelefone', icon: <DeskphoneIcon />, page: <DeskPhones /> },
       { key: 'dect', label: 'DECT-Telefone', icon: <SettingsPhoneIcon />, page: <Dect /> },
     ],
   ],

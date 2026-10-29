@@ -14,6 +14,7 @@ import { AuditLog, auditText } from './audit'
 import { Auth, SESSION_COOKIE, SESSION_MAX_AGE } from './auth'
 import { readAllCalls, readCalls, readQueueLog, tailLog } from './cdr'
 import { describeAgent, gigasetFile, requestMac } from './dect'
+import { agentMac, describeDesk, deskRequestMac, isYealinkCommon, snomFile, yealinkFile } from './deskphone'
 import { type DoorRing, EmergencyLog, emergencyCall, emergencyText, isEmergency } from './emergency'
 import { CallTracker, type GroupMissedCall, type PbxEvent, Webhooks } from './events'
 import { type FaxRecord, FaxStore, MAX_ATTEMPTS, RETRY_MS, faxErrorText, faxRoute, pdfToTiff, tiffPages, tiffToPdf } from './fax'
@@ -79,7 +80,7 @@ import {
 import { Tts, TtsError, VOICES } from './tts'
 import { TranscribeError, type Transcript, Transcriber, WHISPER_MODELS } from './transcribe'
 import { callsCsv, computeStats, parseQueueLog } from './stats'
-import type { DectBase, PbxConfig } from './model'
+import type { DectBase, DeskPhone, PbxConfig } from './model'
 import { Updater } from './updates'
 import { VoicemailBox, type VoicemailMessage } from './voicemail'
 import { type WatchEvent, Watchdog } from './watchdog'
@@ -1098,6 +1099,41 @@ function dectFile(r: Request): void {
 pub.get('/dect/:token', dectFile)
 pub.get('/dect/:token/:file', dectFile)
 
+// -- Tischtelefone (Yealink, Snom) holen ihre Einrichtung -----------------------------
+
+const deskSeen = new Map<string, { time: number; ip: string; agent: string; mac: string }>()
+
+function deskServer(base: string, d: DeskPhone): string {
+  return `${base}/desk/${d.token}/`
+}
+
+/** Datei für das Telefon (oder null, wenn es sie nicht gibt) */
+function deskContent(d: DeskPhone, base: string): string {
+  const sipHost = sipHostFor(base)
+  const opts = { sipHost, ldapHost: sipHost }
+  return d.vendor === 'snom' ? snomFile(store.config, d, opts) : yealinkFile(store.config, d, opts)
+}
+
+function deskFile(r: Request): void {
+  const d = store.config.deskphones.find((x) => x.token && x.token === r.params.token)
+  if (!d) throw new HttpError(404, 'Unbekanntes Telefon.')
+  const file = r.params.file ?? ''
+  // Yealink fragt zuerst eine allgemeine Datei je Modell an: leer lassen, alles steht in der eigenen
+  if (d.vendor === 'yealink' && isYealinkCommon(file)) return sendText(r.res, 200, '#!version:1.0.0.1\n', 'text/plain; charset=utf-8')
+  const agent = String(r.raw.headers['user-agent'] ?? '')
+  const mac = deskRequestMac(file) || agentMac(agent)
+  if (mac && mac !== d.mac) throw new HttpError(404, 'Diese Einrichtung gehört zu einem anderen Telefon.')
+  // Nur die eigene Datei; „<mac>-local.cfg“ (Änderungen am Telefon) und Ähnliches gibt es nicht
+  // (.boot-Dateien, ältere Namen): ohne als Fehlversuch zu zählen, der Link ist ja gültig
+  if (d.vendor === 'yealink' && file && !/^[0-9a-f]{12}\.cfg$/i.test(file)) return sendText(r.res, 404, 'Nicht gefunden.')
+  deskSeen.set(d.id, { time: Date.now(), ip: r.ip, agent: describeDesk(agent), mac })
+  const text = deskContent(d, requestBase(r))
+  sendText(r.res, 200, text, d.vendor === 'snom' ? 'application/xml; charset=utf-8' : 'text/plain; charset=utf-8')
+}
+
+pub.get('/desk/:token', deskFile)
+pub.get('/desk/:token/:file', deskFile)
+
 /** Zugriffsschlüssel der Schnittstelle prüfen (Bearer-Token statt Anmeldung) */
 function integrationAuth(r: Request, need: 'call_api' | 'control' | '' = ''): void {
   if (!validToken(store.config, r.raw.headers.authorization)) {
@@ -1383,6 +1419,36 @@ api.post('/api/dect/:id/renew', (r) => {
   })
   dectSeen.delete(r.params.id)
   return store.config.dect.find((x) => x.id === r.params.id)
+})
+
+// Tischtelefone
+
+api.get('/api/deskphones', (r) => {
+  const base = lanBase(r)
+  return {
+    host: new URL(base).hostname,
+    phones: store.config.deskphones.map((d) => ({ id: d.id, url: deskServer(base, d), seen: deskSeen.get(d.id) ?? null })),
+  }
+})
+
+api.get('/api/deskphones/:id/file', (r) => {
+  const d = store.config.deskphones.find((x) => x.id === r.params.id)
+  if (!d) throw new HttpError(404, 'Telefon nicht gefunden.')
+  r.res.writeHead(200, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Content-Disposition': `attachment; filename="${d.mac}.${d.vendor === 'snom' ? 'xml' : 'cfg'}"`,
+  })
+  r.res.end(deskContent(d, lanBase(r)))
+})
+
+api.post('/api/deskphones/:id/renew', (r) => {
+  store.update((draft) => {
+    const d = draft.deskphones.find((x) => x.id === r.params.id)
+    if (!d) throw new HttpError(404, 'Telefon nicht gefunden.')
+    d.token = newSecret(32)
+  })
+  deskSeen.delete(r.params.id)
+  return store.config.deskphones.find((x) => x.id === r.params.id)
 })
 
 // Messenger (nur Überblick; Inhalte der Chats zeigt die Verwaltung nicht)
@@ -1779,7 +1845,7 @@ function isLoopback(ip: string): boolean {
 }
 
 /** Pfade mit geheimem Token im zweiten Teil */
-const SECRET_PATH = /^\/(?:provision|setup|dect)\/([^/]+)/
+const SECRET_PATH = /^\/(?:provision|setup|dect|desk)\/([^/]+)/
 
 async function handle(raw: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const isUpload = raw.url?.startsWith('/api/sounds') || raw.url?.startsWith('/api/import') || raw.url?.startsWith('/api/faxes/send') || FAX_UPLOAD.test((raw.url ?? '').split('?')[0])
