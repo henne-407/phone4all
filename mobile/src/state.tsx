@@ -22,6 +22,8 @@ import {
 } from './storage'
 
 const POLL = 2 * 60 * 1000
+/** Im Hintergrund: Profil (mit TURN-Zugang, gültig 8 Tage) spätestens so oft auffrischen */
+const BACKGROUND_REFRESH = 12 * 60 * 60 * 1000
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
@@ -172,11 +174,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .catch((e: Error) => setContactsError(e.message))
   }, [settings.deviceContacts])
 
+  const loadedAt = useRef(Date.now())
   const reloadProfile = useCallback(async () => {
     const cur = profileRef.current
     if (!cur) return
     const next = await fetchProfile(cur.url)
     await saveProfile(next)
+    loadedAt.current = Date.now()
     setProfile(next)
   }, [])
 
@@ -186,7 +190,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let stopped = false
     const check = async (): Promise<void> => {
       const cur = profileRef.current
-      if (!cur || AppState.currentState !== 'active') return
+      if (!cur) return
+      if (AppState.currentState !== 'active') {
+        // Hintergrunddienst (Android): Ohne Auffrischen läuft der TURN-Zugang nach 8 Tagen ab
+        if (Date.now() - loadedAt.current > BACKGROUND_REFRESH) await reloadProfile().catch(() => undefined)
+        return
+      }
       try {
         const rev = await fetchRevision(cur)
         if (stopped) return
