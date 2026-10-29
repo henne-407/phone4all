@@ -17,6 +17,7 @@ import { HttpError, type Request, Router, clientIp, makeRequest, proxyHints, sen
 import { sendMail } from './mail'
 import { ChatError, MessengerHub, MessengerStore, messengerUsers } from './messenger'
 import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, type PhonebookEntry, SECTIONS, type SectionName } from './model'
+import { cleanNumber } from './numbers'
 import { PATHS, SETTINGS } from './paths'
 import { PROVIDERS } from './providers'
 import { appLink, baseUrl, landingPage, linkBase, profile, startDiscovery, visibleCalendars } from './provisioning'
@@ -27,6 +28,8 @@ import {
   feature,
   groupPlan,
   isAvailable,
+  isInternational,
+  isLocalNumber,
   routeInbound,
   routeOutbound,
   timeConditionTarget,
@@ -141,6 +144,30 @@ asterisk.on('ami', (e) => {
 })
 asterisk.ami.on('disconnected', () => messenger.resetCalls())
 
+// -- Sicherheitsmeldungen: Ereignisprotokoll und E-Mail (höchstens alle 30 Min. je Anlass)
+
+const alerted = new Map<string, number>()
+function securityAlert(key: string, text: string, level: 'info' | 'warning' | 'error' = 'warning'): void {
+  watchdog.log(level, 'security', text)
+  const to = store.config.watchdog.notify_email
+  const now = Date.now()
+  if (!to || now - (alerted.get(key) ?? 0) < 30 * 60000) return
+  alerted.set(key, now)
+  if (alerted.size > 500) alerted.delete(alerted.keys().next().value!)
+  const body = `${new Date(now).toLocaleString('de-DE')}\n\n${text}\n\nDetails in der Weboberfläche unter System → Sicherheit und System → Diagnose.`
+  sendMail(store.config.mail, to, `${store.config.system.name}: Sicherheitshinweis`, body).catch((err: Error) =>
+    console.error('Sicherheitshinweis per E-Mail:', err.message),
+  )
+}
+
+/** Umleitung nach außen gesetzt: melden (typischer Schritt bei Gebührenbetrug) */
+function forwardAlert(ext: string, target: string): void {
+  const n = cleanNumber(target)
+  if (n && !isLocalNumber(store.config, n)) securityAlert(`fwd:${ext}`, `Nebenstelle ${ext} leitet jetzt nach außen um: ${n}`, 'info')
+}
+
+guard.on('ban', (ip: string, reason: string) => securityAlert(`ban:${ip}`, `Adresse ${ip} gesperrt: ${reason}`))
+
 // -- Interne Schnittstelle für den Wählplan (nur von localhost) ------------------
 
 const internal = new Router()
@@ -153,14 +180,39 @@ internal.get('/internal/in', (r) =>
     name: r.query.get('name') ?? '',
   }),
 )
-internal.get('/internal/out', (r) =>
-  routeOutbound(store.config, {
-    ext: r.query.get('ext') ?? '',
-    fwd: r.query.get('fwd') ?? '',
-    num: r.query.get('num') ?? '',
-    cid: r.query.get('cid') ?? '',
-  }),
-)
+/** Auslandsgespräche heute (für die Tagesgrenze; nach einem Neustart wieder ab 0) */
+let international = { day: '', count: 0 }
+
+internal.get('/internal/out', (r) => {
+  const ext = r.query.get('ext') ?? ''
+  const fwd = r.query.get('fwd') ?? ''
+  const num = r.query.get('num') ?? ''
+  const result = routeOutbound(store.config, { ext, fwd, num, cid: r.query.get('cid') ?? '' })
+  if (!result.startsWith('ok|') || !isInternational(store.config, num)) return result
+  const day = new Date().toISOString().slice(0, 10)
+  if (international.day !== day) international = { day, count: 0 }
+  international.count++
+  const who = fwd ? (fwd === 'flow' ? 'Rufabfolge' : `Umleitung von ${fwd}`) : `Nebenstelle ${ext}`
+  const limit = store.config.security.international_per_day
+  if (limit > 0 && international.count > limit) {
+    store.update((draft) => void (draft.security.outbound_stop = true))
+    securityAlert(
+      'brake',
+      `Notbremse ausgelöst: mehr als ${limit} Auslandsgespräche heute (zuletzt ${who} → ${num}). Gespräche nach außen sind gesperrt, Notrufe gehen weiter. Freigeben unter System → Sicherheit.`,
+      'error',
+    )
+    return 'deny'
+  }
+  securityAlert(`intl:${who}`, `Auslandsgespräch: ${who} → ${num} (${international.count}. heute)`, 'info')
+  return result
+})
+internal.get('/internal/alert', (r) => {
+  if (r.query.get('kind') === 'limit') {
+    const ext = r.query.get('ext') || 'Rufabfolge'
+    securityAlert(`limit:${ext}`, `Grenze für gleichzeitige Gespräche nach außen erreicht (${ext}). Weitere Gespräche wurden abgewiesen.`)
+  }
+  return 'ok'
+})
 internal.get('/internal/ext', (r) => extensionPlan(store.config, store.state, r.query.get('num') ?? ''))
 internal.get('/internal/group', (r) =>
   groupPlan(store.config, store.state, r.query.get('id') ?? '', r.query.get('name') ?? '', PATHS.sounds),
@@ -169,7 +221,9 @@ internal.get('/internal/video', (r) => (messenger.mayJoin(r.query.get('ext') ?? 
 internal.get('/internal/tc', (r) => timeConditionTarget(store.config, r.query.get('id') ?? ''))
 internal.get('/internal/available', (r) => (isAvailable(store.state, r.query.get('num') ?? '', store.config) ? '1' : '0'))
 internal.get('/internal/feature', (r) => {
-  const result = feature(store.config, store.state, r.query.get('ext') ?? '', r.query.get('code') ?? '', r.query.get('arg') ?? '')
+  const ext = r.query.get('ext') ?? ''
+  const result = feature(store.config, store.state, ext, r.query.get('code') ?? '', r.query.get('arg') ?? '')
+  if (r.query.get('code') === 'cfu' && result.reply === 'on') forwardAlert(ext, store.state.cfu[ext] ?? '')
   if (result.stateChanged) store.saveState()
   if (result.configChanged) store.save()
   return result.reply
@@ -385,6 +439,7 @@ pub.put('/provision/:token/forward', async (r) => {
     if (change.cfu !== undefined) {
       applyCfu(store.config, store.state, ext.number, String(change.cfu))
       store.saveState()
+      forwardAlert(ext.number, String(change.cfu))
     }
   } catch (e) {
     if (e instanceof ForwardError) throw new HttpError(403, e.message)

@@ -101,6 +101,9 @@ export function integrationReport(
   if (!running) {
     problems.push({ key: 'asterisk', message: status.message || `Asterisk läuft nicht (${status.asterisk})` })
   }
+  if (cfg.security.outbound_stop) {
+    problems.push({ key: 'outbound_stop', message: 'Notbremse aktiv: keine Gespräche nach außen (außer Notruf)' })
+  }
 
   const trunks = cfg.trunks.map((t): TrunkReport => {
     const register = t.enabled && t.register && !t.ip_auth

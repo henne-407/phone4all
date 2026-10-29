@@ -42,7 +42,7 @@ const MODULES = [
   'func_curl', 'func_cut', 'func_strings', 'func_logic', 'func_uri', 'func_callerid', 'func_cdr',
   'func_timeout', 'func_channel', 'func_global', 'func_db', 'func_devstate', 'func_hangupcause',
   'func_sprintf', 'func_rand', 'func_env', 'func_pjsip_endpoint', 'func_pjsip_aor', 'func_pjsip_contact',
-  'func_vmcount', 'func_volume', 'func_math',
+  'func_vmcount', 'func_groupcount', 'func_volume', 'func_math',
 ]
 
 function asteriskConf(gen: GenContext): string {

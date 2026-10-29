@@ -5,7 +5,7 @@
  */
 
 import { external } from './directory'
-import { closedReason } from './holidays'
+import { closedReason, localTime } from './holidays'
 import type { AppPermission, Extension, ForwardRule, PbxConfig, Trunk } from './model'
 import { SPECIAL_NUMBER, cleanNumber, formatFor, prefixToE164, toE164 } from './numbers'
 import { HANGUP_TARGET, destTarget } from './targets'
@@ -196,7 +196,52 @@ export function timeConditionTarget(cfg: PbxConfig, id: string, now = new Date()
   return destTarget(cfg, closed ? tc.closed : tc.open)
 }
 
-const PREMIUM = /^\+49(900|137|138|19\d)/
+/** Gewählte Nummer als E.164 (Sondernummern wie 112 bleiben, wie sie sind) */
+export function dialedNumber(cfg: PbxConfig, raw: string): { dialed: string; special: boolean; e164: string } {
+  const cc = cfg.system.country_code
+  const dialed = cleanNumber(raw)
+  const special = SPECIAL_NUMBER.test(dialed)
+  let e164 = special ? dialed : toE164(dialed, cc, cfg.system.area_code)
+  // Kurze Ortsnummern (3–4 Stellen, gibt es in kleinen Ortsnetzen): toE164 ergänzt
+  // die Vorwahl erst ab 5 Stellen, weil kürzere Nummern sonst auch interne sein könnten.
+  // Hier ist klar, dass es keine interne Nummer ist – die stehen vorher im Wählplan.
+  const area = cfg.system.area_code.trim()
+  if (!special && area && /^[1-9]\d{2,3}$/.test(dialed)) e164 = `+${cc}${area}${dialed}`
+  return { dialed, special, e164 }
+}
+
+/** Ins Ausland (nicht Sondernummer, nicht eigenes Land)? */
+export function isInternational(cfg: PbxConfig, raw: string): boolean {
+  const { special, e164 } = dialedNumber(cfg, raw)
+  return !special && e164.startsWith('+') && !e164.startsWith('+' + cfg.system.country_code)
+}
+
+/** Notruf und kostenlose Sondernummern: gehen auch bei Notbremse und Grenzen */
+export function isEmergency(raw: string): boolean {
+  const n = cleanNumber(raw)
+  return SPECIAL_NUMBER.test(n) && !n.startsWith('118')
+}
+
+function isPremium(cfg: PbxConfig, e164: string): boolean {
+  const cc = cfg.system.country_code
+  return cfg.security.premium_prefixes.some((p) => {
+    const prefix = prefixToE164(p, cc)
+    return prefix.startsWith('+') && e164.startsWith(prefix)
+  })
+}
+
+/** Warum ein Auslandsgespräch nicht erlaubt ist ('' = erlaubt) */
+function internationalDenied(cfg: PbxConfig, e164: string, forwarding: boolean, now: Date): string {
+  const s = cfg.security
+  if (forwarding && !s.forward_international) return 'forward'
+  const countries = s.countries.map((c) => c.trim()).filter(Boolean)
+  if (countries.length && !countries.includes('*') && !countries.some((c) => e164.startsWith('+' + c))) return 'country'
+  if (s.international_daytime) {
+    const minutes = localTime(now, cfg.system.timezone).minutes
+    if (minutes < 6 * 60 || minutes >= 22 * 60) return 'night'
+  }
+  return ''
+}
 
 export interface OutboundRequest {
   ext: string
@@ -215,21 +260,14 @@ function trunkCid(cfg: PbxConfig, trunk: Trunk, ext: Extension | undefined): str
   return cid ? formatFor(toE164(cid, cc, area), trunk.number_format, cc) : ''
 }
 
-export function routeOutbound(cfg: PbxConfig, req: OutboundRequest): string {
+export function routeOutbound(cfg: PbxConfig, req: OutboundRequest, now = new Date()): string {
   const cc = cfg.system.country_code
   const forwarding = Boolean(req.fwd)
   const actorNumber = forwarding ? (req.fwd === 'flow' ? '' : req.fwd) : req.ext
   const actor = cfg.extensions.find((e) => e.number === actorNumber)
   if (!forwarding && !actor) return reply('deny')
 
-  const dialed = cleanNumber(req.num)
-  const special = SPECIAL_NUMBER.test(dialed)
-  let e164 = special ? dialed : toE164(dialed, cc, cfg.system.area_code)
-  // Kurze Ortsnummern (3–4 Stellen, gibt es in kleinen Ortsnetzen): toE164 ergänzt
-  // die Vorwahl erst ab 5 Stellen, weil kürzere Nummern sonst auch interne sein könnten.
-  // Hier ist klar, dass es keine interne Nummer ist – die stehen vorher im Wählplan.
-  const area = cfg.system.area_code.trim()
-  if (!special && area && /^[1-9]\d{2,3}$/.test(dialed)) e164 = `+${cc}${area}${dialed}`
+  const { dialed, special, e164 } = dialedNumber(cfg, req.num)
 
   // Eigene Rufnummer eines anderen (oder desselben) SIP-Kontos: direkt intern
   // durchstellen, als käme der Anruf von außen. Über das Telefonnetz zurück klappt
@@ -251,12 +289,16 @@ export function routeOutbound(cfg: PbxConfig, req: OutboundRequest): string {
 
   if (!special && !e164.startsWith('+')) return reply('invalid')
 
+  // Notbremse: nur noch Notruf und kostenlose Sondernummern
+  if (cfg.security.outbound_stop && !isEmergency(dialed)) return reply('deny')
   if (special && dialed.startsWith('118') && !actor?.allow_premium) return reply('deny')
   if (!special) {
     const permission = actor?.permission ?? 'national'
     if (permission === 'internal') return reply('deny')
-    if (permission === 'national' && !e164.startsWith('+' + cc)) return reply('deny')
-    if (PREMIUM.test(e164) && !actor?.allow_premium) return reply('deny')
+    const abroad = !e164.startsWith('+' + cc)
+    if (permission === 'national' && abroad) return reply('deny')
+    if (isPremium(cfg, e164) && !actor?.allow_premium) return reply('deny')
+    if (abroad && internationalDenied(cfg, e164, forwarding, now)) return reply('deny')
   }
 
   const enabled = cfg.trunks.filter((t) => t.enabled && t.registrar.trim())

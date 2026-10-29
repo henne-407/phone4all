@@ -111,6 +111,13 @@ export function validate(cfg: PbxConfig): void {
     const bad = list.find((e) => !isAddressOrNet(e))
     if (bad !== undefined) throw new ValidationError(`${label}: „${bad}“ ist keine IP-Adresse und kein Netz wie 192.168.1.0/24.`)
   }
+  for (const key of ['max_calls_ext', 'max_calls_total', 'international_per_day'] as const) {
+    if (!Number.isInteger(sec[key]) || sec[key] < 0) throw new ValidationError('Grenzen für Gespräche: ganze Zahlen ab 0.')
+  }
+  const badPrefix = sec.premium_prefixes.find((p) => !/^(\+|00|0)\d+$/.test(p.trim()))
+  if (badPrefix !== undefined) throw new ValidationError(`Sonderrufnummern: „${badPrefix}“ ist keine Vorwahl wie 0900 oder 00881.`)
+  const badCountry = sec.countries.find((c) => !/^(\*|[1-9]\d{0,3})$/.test(c.trim()))
+  if (badCountry !== undefined) throw new ValidationError(`Erlaubte Länder: „${badCountry}“ ist keine Ländervorwahl wie 43.`)
   for (const e of cfg.extensions) {
     if (!isInternalNumber(e.number)) throw new ValidationError(`Ungültige Nebenstelle „${e.number}“: 2–6 Ziffern, nicht mit 0 beginnend.`)
     if (!e.name.trim()) throw new ValidationError(`Nebenstelle ${e.number}: Name fehlt.`)

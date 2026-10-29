@@ -258,7 +258,33 @@ export interface SecuritySettings {
   extension_nets: string[]
   /** Reverse-Proxys (z. B. Newt von Pangolin), deren X-Forwarded-For gilt */
   trusted_proxies: string[]
+  // -- Schutz vor Gebührenbetrug
+  /** Notbremse: keine Gespräche nach außen außer Notruf */
+  outbound_stop: boolean
+  /** Gleichzeitige Gespräche nach außen je Nebenstelle und für die ganze Anlage (0 = unbegrenzt) */
+  max_calls_ext: number
+  max_calls_total: number
+  /** Sonderrufnummern (Vorwahlen wie 0900 oder 00881), nur mit Recht „Sonderrufnummern“ */
+  premium_prefixes: string[]
+  /** Länder für das Recht „international“ (Ländervorwahlen ohne 00, leer = alle) */
+  countries: string[]
+  /** Ausland nur zwischen 6 und 22 Uhr */
+  international_daytime: boolean
+  /** Auslandsgespräche pro Tag, danach greift die Notbremse (0 = unbegrenzt) */
+  international_per_day: number
+  /** Umleitungen und Rufabfolgen dürfen ins Ausland weiterleiten */
+  forward_international: boolean
 }
+
+/** Gebührenpflichtige Sonderrufnummern in Deutschland und Satellitennetze */
+export const DEFAULT_PREMIUM_PREFIXES = ['0900', '0137', '0138', '0180', '0181', '019', '012', '0700', '032', '031', '00870', '00881', '00882', '00883', '00979']
+
+/** EU, EWR, Schweiz, Großbritannien und Nachbarn auf dem Balkan */
+export const DEFAULT_COUNTRIES = [
+  '30', '31', '32', '33', '34', '351', '352', '353', '354', '356', '357', '358', '359', '36', '370', '371', '372',
+  '376', '377', '378', '381', '382', '385', '386', '387', '389', '39', '40', '41', '420', '421', '423', '43', '44',
+  '45', '46', '47', '48',
+]
 
 export interface UpdateSettings {
   channel: 'stable' | 'beta'
@@ -293,7 +319,7 @@ export interface WatchdogSettings {
 
 /** ok: wieder in Ordnung, info: Maßnahme, warning/error: Störung */
 export type WatchLevel = 'ok' | 'info' | 'warning' | 'error'
-export type CheckId = 'asterisk' | 'trunks' | 'disk'
+export type CheckId = 'asterisk' | 'trunks' | 'disk' | 'security'
 export type CheckLevel = 'ok' | 'warning' | 'error'
 
 export interface WatchEvent {
@@ -554,10 +580,19 @@ export const DEFAULT_CONFIG: PbxConfig = {
     whitelist: ['127.0.0.1'],
     extension_nets: [],
     trusted_proxies: ['127.0.0.1', '::1', '172.16.0.0/12'],
+    outbound_stop: false,
+    max_calls_ext: 2,
+    max_calls_total: 6,
+    premium_prefixes: DEFAULT_PREMIUM_PREFIXES,
+    countries: DEFAULT_COUNTRIES,
+    international_daytime: false,
+    international_per_day: 30,
+    forward_international: false,
   },
   updates: { channel: 'stable', auto: false, hour: 3 },
-  // Wie bisher: Umleiten (*21) und Schreiben in zentrale Kalender darf jede Nebenstelle
-  provisioning: { discovery: true, permissions: ['forward', 'forward_external', 'forward_rules', 'calendar_edit'] },
+  // Umleiten (*21) und Schreiben in zentrale Kalender darf jede Nebenstelle; nach außen
+  // umleiten nur mit Freigabe (Schutz vor Umleitungsbetrug mit erbeuteten Zugängen)
+  provisioning: { discovery: true, permissions: ['forward', 'forward_rules', 'calendar_edit'] },
   remote: { enabled: true, public_url: '', turn: true, turn_port: 3478, turn_host: '' },
   watchdog: { auto_repair: true, trunk_grace: 3, notify_email: '' },
   integration: { enabled: false, token: '' },

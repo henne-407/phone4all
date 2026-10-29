@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { generate } from '../server/generate'
 import { EMPTY_STATE, extensionPlan, feature, groupPlan, routeInbound, routeOutbound, type RuntimeState } from '../server/routing'
-import { sampleConfig, to } from './helpers'
+import { gen, sampleConfig, to } from './helpers'
 
 const state = (): RuntimeState => structuredClone(EMPTY_STATE)
 
@@ -39,6 +40,9 @@ describe('Nebenstellen und Gruppen', () => {
     expect(extensionPlan(cfg, s, '10')).toBe('goto|p4a-local^11')
     expect(feature(cfg, s, '10', 'cfu', '10').reply).toBe('error')
     feature(cfg, s, '10', 'cfu', '')
+    // Nach außen umleiten ist standardmäßig nicht freigegeben
+    expect(feature(cfg, s, '10', 'cfu', '0171 555').reply).toBe('error')
+    cfg.provisioning.permissions.push('forward_external')
     feature(cfg, s, '10', 'cfu', '0171 555')
     expect(extensionPlan(cfg, s, '10')).toBe('goto|p4a-fwd^0171555')
   })
@@ -106,6 +110,48 @@ describe('Ausgehende Anrufe', () => {
     expect(routeOutbound(cfg, { ext: '11', fwd: '', num: '0900 123456', cid: '' })).toBe('deny')
     expect(routeOutbound(cfg, { ext: '11', fwd: '', num: '11833', cid: '' })).toBe('deny')
     expect(routeOutbound(cfg, { ext: '99', fwd: '', num: '0301234', cid: '' })).toBe('deny')
+  })
+
+  it('bremst Gebührenbetrug: Sonderrufnummern, Länder, Uhrzeit, Umleitungen, Notbremse', () => {
+    const cfg = sampleConfig()
+    const out = (num: string, ext = '11', fwd = '', now = new Date('2026-10-28T12:00:00Z')) =>
+      routeOutbound(cfg, { ext, fwd, num, cid: '' }, now).split('|')[0]
+    for (const n of ['0180 5123456', '012 3456789', '0700 1234567', '0137 1234567', '0019 1', '00881 612345678']) expect(out(n)).toBe('deny')
+    cfg.extensions[1].allow_premium = true
+    expect(out('0180 5123456')).toBe('ok')
+    cfg.extensions[1].allow_premium = false
+    // Länderliste: Österreich ja, Jamaika (+1 876) nicht; '*' = alle
+    expect(out('0043 1234')).toBe('ok')
+    expect(out('001 876 5551234')).toBe('deny')
+    cfg.security.countries = ['*']
+    expect(out('001 876 5551234')).toBe('ok')
+    // Ausland nur tagsüber (Berlin: 23:30 Uhr)
+    cfg.security.international_daytime = true
+    expect(out('0043 1234', '11', '', new Date('2026-10-28T22:30:00Z'))).toBe('deny')
+    expect(out('0043 1234')).toBe('ok')
+    // Umleitungen ins Ausland nur mit Freigabe
+    expect(out('0043 1234', '', '11')).toBe('deny')
+    cfg.security.forward_international = true
+    expect(out('0043 1234', '', '11')).toBe('ok')
+    // Notbremse: nichts mehr nach außen, Notruf geht
+    cfg.security.outbound_stop = true
+    expect(out('030 7654321', '10')).toBe('deny')
+    expect(out('11833')).toBe('deny')
+    expect(out('112', '12')).toBe('ok')
+  })
+
+  it('begrenzt gleichzeitige Gespräche nach außen im Wählplan', () => {
+    const cfg = sampleConfig()
+    let conf = generate(cfg, gen)['extensions.conf']
+    expect(conf).toContain('GotoIf($[${GROUP_COUNT(all@p4a-out)} > 6]?limit)')
+    expect(conf).toContain('GotoIf($[${GROUP_COUNT(${P4A_ACTOR}@p4a-actor)} > 2]?limit)')
+    expect(conf).toContain('n(limit),Set(R=${CURL(${P4A_API}/alert?kind=limit&ext=${URIENCODE(${P4A_ACTOR:1})})})')
+    expect(generate(cfg, gen)['modules.conf']).toContain('func_groupcount.so')
+    cfg.security.max_calls_ext = 0
+    cfg.security.max_calls_total = 0
+    conf = generate(cfg, gen)['extensions.conf']
+    expect(conf).not.toContain('GROUP_COUNT')
+    expect(conf).not.toContain('n(limit)')
   })
 
   it('folgt Wahlregeln mit Ausweichkonto', () => {

@@ -167,6 +167,55 @@ function Security() {
             ))}
         </FormGrid>
       </Section>
+      <Section
+        title="Schutz vor Gebührenbetrug"
+        description="Begrenzt den Schaden, falls ein Zugang in falsche Hände gerät: Betrüger rufen meist nachts mit vielen Gesprächen gleichzeitig teure Ziele an."
+      >
+        {config.security.outbound_stop ? (
+          <Alert
+            severity="error"
+            sx={{ mb: 2 }}
+            action={
+              <Button color="inherit" onClick={() => void saveSection('security', { ...config.security, outbound_stop: false })}>
+                Freigeben
+              </Button>
+            }
+          >
+            Notbremse aktiv: Gespräche nach außen sind gesperrt, nur Notrufe gehen durch.
+          </Alert>
+        ) : (
+          <Button color="error" variant="outlined" sx={{ mb: 2 }} onClick={() => void saveSection('security', { ...config.security, outbound_stop: true })}>
+            Notbremse ziehen
+          </Button>
+        )}
+        <FormGrid columns={3}>
+          <NumberField label="Gleichzeitig je Nebenstelle" value={s.max_calls_ext} onChange={(v) => set({ max_calls_ext: v })} min={0} helperText="Gespräche nach außen, 0 = unbegrenzt" />
+          <NumberField label="Gleichzeitig für die Anlage" value={s.max_calls_total} onChange={(v) => set({ max_calls_total: v })} min={0} helperText="0 = unbegrenzt" />
+          <NumberField label="Auslandsgespräche pro Tag" value={s.international_per_day} onChange={(v) => set({ international_per_day: v })} min={0} helperText="Danach greift die Notbremse, 0 = unbegrenzt" />
+          <Full>
+            <ChipsInput
+              label="Erlaubte Länder (Recht „international“)"
+              value={s.countries}
+              onChange={(v) => set({ countries: v })}
+              helperText="Ländervorwahlen ohne 00, z. B. 43 für Österreich, 1 für USA/Kanada. * = alle Länder."
+            />
+          </Full>
+          <Full>
+            <ChipsInput
+              label="Sonderrufnummern"
+              value={s.premium_prefixes}
+              onChange={(v) => set({ premium_prefixes: v })}
+              helperText="Nur für Nebenstellen mit „Sonderrufnummern erlaubt“. Vorwahlen wie 0900 oder 00881 (Satellit)."
+            />
+          </Full>
+          <Full>
+            <FormControlLabel control={<Switch checked={s.international_daytime} onChange={(e) => set({ international_daytime: e.target.checked })} />} label="Ausland nur von 6 bis 22 Uhr" />
+          </Full>
+          <Full>
+            <FormControlLabel control={<Switch checked={s.forward_international} onChange={(e) => set({ forward_international: e.target.checked })} />} label="Umleitungen und Rufabfolgen dürfen ins Ausland weiterleiten" />
+          </Full>
+        </FormGrid>
+      </Section>
       <Section title="Gesperrte Adressen">
         {status?.bans.length ? (
           <List dense>
@@ -185,7 +234,7 @@ function Security() {
           <Typography sx={{ color: 'text.secondary' }}>Keine.</Typography>
         )}
       </Section>
-      <ChangesBar dirty={d.dirty} onApply={() => saveSection('security', s)} onDiscard={d.reset} />
+      <ChangesBar dirty={d.dirty} onApply={() => saveSection('security', { ...s, outbound_stop: config.security.outbound_stop })} onDiscard={d.reset} />
     </>
   )
 }
