@@ -2,10 +2,11 @@
 
 import { useKeepAwake } from 'expo-keep-awake'
 import { useEffect, useState } from 'react'
-import { Modal, StyleSheet, View } from 'react-native'
+import { Linking, Modal, StyleSheet, View } from 'react-native'
 import { Button, Dialog, FAB, IconButton, Portal, Text, TextInput, useTheme } from 'react-native-paper'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { formatDuration } from '../numbers'
+import { crmUrl } from '../provisioning'
 import { type Call, phone } from '../phone'
 import { useStore } from '../state'
 import { PersonAvatar } from './common'
@@ -49,7 +50,7 @@ function Toggle({ icon, label, active, onPress, disabled }: { icon: string; labe
 
 export function CallScreen() {
   useKeepAwake()
-  const { phone: state } = useStore()
+  const { phone: state, profile } = useStore()
   const theme = useTheme()
   const call = state.call
   const [now, setNow] = useState(Date.now())
@@ -116,6 +117,10 @@ export function CallScreen() {
                 <Toggle icon="volume-high" label="Lautsprecher" active={call.speaker} onPress={() => phone.toggleSpeaker()} disabled={ended} />
                 <Toggle icon={call.held ? 'play' : 'pause'} label={call.held ? 'Fortsetzen' : 'Halten'} active={call.held} onPress={() => phone.toggleHold()} disabled={!active} />
                 <Toggle icon="phone-forward" label="Weiterleiten" onPress={() => setTransfer(true)} disabled={!active} />
+                {profile?.parking && <Toggle icon="parking" label="Parken" onPress={() => phone.transfer(profile.parking!.number)} disabled={!active} />}
+                {profile?.crm && (
+                  <Toggle icon="open-in-new" label="CRM" onPress={() => void Linking.openURL(crmUrl(profile.crm!.url, call.number, call.name)).catch(() => undefined)} />
+                )}
               </View>
             )}
             <View style={styles.hangupRow}>

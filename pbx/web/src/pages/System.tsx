@@ -34,6 +34,7 @@ import { type UpdateInfo, type WatchEvent, type WatchdogResponse, api } from '..
 import { bytes, ChangesBar, ChipsInput, ConfirmDialog, confirmDiscard, FormGrid, Full, NumberField, PageHeader, PermissionChecks, Section, Select, useDraft } from '../components/common'
 import { takeEditRequest } from '../router'
 import { usePbx } from '../state'
+import { CallApi, Features, Offsite, Webhooks } from './SystemExtras'
 import { useStatus } from '../useStatus'
 
 function General() {
@@ -360,6 +361,7 @@ function Backup() {
           ))}
         </List>
       </Section>
+      <Offsite />
       <ConfirmDialog
         open={Boolean(restore)}
         title="Sicherung wiederherstellen?"
@@ -670,6 +672,16 @@ function Remote() {
   )
 }
 
+function Interfaces() {
+  return (
+    <>
+      <HomeAssistant />
+      <CallApi />
+      <Webhooks />
+    </>
+  )
+}
+
 function HomeAssistant() {
   const { config, saveSection, reload, toast } = usePbx()
   const [confirm, setConfirm] = useState(false)
@@ -687,7 +699,7 @@ function HomeAssistant() {
       .catch((e: Error) => toast(e.message, 'error'))
   return (
     <Section
-      title="Home Assistant"
+      title="Home Assistant und Schnittstelle"
       description="Verpasste Anrufe, abgemeldete SIP-Konten und andere Probleme in Home Assistant anzeigen und für Automationen nutzen. Die Integration „Phone4all“ liegt im Ordner custom_components des Projekts (über HACS installierbar)."
     >
       <FormControlLabel
@@ -701,7 +713,7 @@ function HomeAssistant() {
             }
           />
         }
-        label="Schnittstelle für Home Assistant einschalten"
+        label="Schnittstelle einschalten (Home Assistant, Anruf-API)"
       />
       {enabled && (
         <Stack sx={{ gap: 2, mt: 2 }}>
@@ -1016,6 +1028,7 @@ function Storage() {
 
 const TABS: [string, () => React.JSX.Element][] = [
   ['Allgemein', General],
+  ['Funktionen', Features],
   ['E-Mail', Mail],
   ['Sicherheit', Security],
   ['Sicherung', Backup],
@@ -1024,7 +1037,7 @@ const TABS: [string, () => React.JSX.Element][] = [
   ['Zugang', Access],
   ['Fernzugriff', Remote],
   ['Diagnose', Diagnose],
-  ['Home Assistant', HomeAssistant],
+  ['Schnittstellen', Interfaces],
   ['Protokoll', Log],
 ]
 
@@ -1047,7 +1060,7 @@ export default function System() {
   const Page = TABS[tab][1]
   return (
     <Box>
-      <PageHeader overline="System" title="Einstellungen und Wartung" description="Name, E-Mail, Sicherheit, Sicherungen, Speicher, Updates, Diagnose und Home Assistant." />
+      <PageHeader overline="System" title="Einstellungen und Wartung" description="Name, Funktionen, E-Mail, Sicherheit, Sicherungen, Speicher, Updates, Diagnose und Schnittstellen." />
       <Tabs value={tab} onChange={(_e, v: number) => confirmDiscard() && setTab(v)} variant="scrollable" sx={{ mb: 2 }}>
         {TABS.map(([label]) => (
           <Tab key={label} label={label} />

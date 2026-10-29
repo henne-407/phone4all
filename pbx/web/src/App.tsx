@@ -1,4 +1,5 @@
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
+import BlockIcon from '@mui/icons-material/Block'
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
 import CallIcon from '@mui/icons-material/Call'
 import CampaignIcon from '@mui/icons-material/Campaign'
@@ -42,6 +43,7 @@ import { type ReactNode, useEffect, useState } from 'react'
 import { type UpdateInfo, api } from './api'
 import Announcements from './pages/Announcements'
 import AppProfiles from './pages/AppProfiles'
+import Blocking from './pages/Blocking'
 import Calendars from './pages/Calendars'
 import Calls from './pages/Calls'
 import Conferences from './pages/Conferences'
@@ -85,6 +87,7 @@ const NAV: [string, NavItem[]][] = [
       { key: 'timeconditions', label: 'Zeitsteuerung', icon: <ScheduleIcon />, page: <TimeConditions /> },
       { key: 'ivrs', label: 'Sprachmenüs', icon: <DialpadIcon />, page: <Ivrs /> },
       { key: 'announcements', label: 'Ansagen und Musik', icon: <CampaignIcon />, page: <Announcements /> },
+      { key: 'blocklist', label: 'Anrufsperren', icon: <BlockIcon />, page: <Blocking /> },
     ],
   ],
   [

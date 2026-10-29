@@ -13,6 +13,8 @@ import { AuditLog, auditText } from './audit'
 import { Auth, SESSION_COOKIE, SESSION_MAX_AGE } from './auth'
 import { readCalls, tailLog } from './cdr'
 import { describeAgent, gigasetFile, requestMac } from './dect'
+import { EmergencyLog, emergencyCall, emergencyText, isEmergency } from './emergency'
+import { CallTracker, type PbxEvent, Webhooks } from './events'
 import { loadJson, saveJson } from './files'
 import { type ForwardChange, ForwardError, applyCfu, applyRules, check as checkForward, forwardInfo } from './forwarding'
 import { localTime } from './holidays'
@@ -21,13 +23,16 @@ import { LdapServer } from './ldap'
 import { HttpError, type Request, Router, clientIp, makeRequest, proxyHints, sendFile, sendJson, sendText, serveStatic, setTrustedProxies, socketIp } from './http'
 import { sendMail } from './mail'
 import { ChatError, MessengerHub, MessengerStore, messengerUsers } from './messenger'
-import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, type PhonebookEntry, SECTIONS, type SectionName } from './model'
+import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, type PhonebookEntry, SECTIONS, type SectionName, WEBHOOK_EVENTS } from './model'
 import { cleanNumber } from './numbers'
+import { type OffsiteStatus, OffsiteError, download as offsiteDownload, target as offsiteTarget, upload as offsiteUpload } from './offsite'
 import { PATHS, SETTINGS } from './paths'
+import { Presence } from './presence'
 import { PROVIDERS } from './providers'
 import { appLink, baseUrl, expiredPage, landingPage, linkBase, profile, startDiscovery, visibleCalendars } from './provisioning'
 import { Turn, WsProxy, appEndpoint, webrtcEnabled } from './remote'
 import {
+  BLOCKED_TARGET,
   appPermissions,
   extensionPlan,
   feature,
@@ -51,6 +56,7 @@ import {
   addDevice,
   consumePin,
   decryptExport,
+  emailList,
   encryptExport,
   fillSecrets,
   findDevice,
@@ -61,8 +67,10 @@ import {
   renewLink,
   renewPin,
 } from './store'
+import { Tts, TtsError, VOICES } from './tts'
 import type { DectBase, PbxConfig } from './model'
 import { Updater } from './updates'
+import { VoicemailBox } from './voicemail'
 import { type WatchEvent, Watchdog } from './watchdog'
 import { reject, upgrade } from './websocket'
 
@@ -87,6 +95,13 @@ const ldap = new LdapServer(() => store.config)
 ldap.isBlocked = (ip) => isBlocked(ip)
 ldap.onFailure = (ip) => auth.failed(ip, 'Falsches Kennwort am LDAP-Telefonbuch')
 const messenger = new MessengerHub(new MessengerStore(PATHS.messenger), () => store.config)
+const presence = new Presence()
+const tracker = new CallTracker()
+const webhooks = new Webhooks(() => store.config)
+const voicemail = new VoicemailBox(PATHS.spool)
+const emergencies = new EmergencyLog()
+const tts = new Tts(PATHS.tts)
+let offsiteStatus: OffsiteStatus = { time: 0, ok: true, file: '', error: '' }
 auth.init()
 store.hooks = {
   renumbered: (from, to) => {
@@ -98,6 +113,8 @@ store.hooks = {
     removeMailbox(number)
   },
 }
+
+tracker.on('event', (e: PbxEvent) => void Promise.all(webhooks.dispatch(e)))
 
 function freeBytes(): number | null {
   try {
@@ -167,9 +184,27 @@ function applySoon(): void {
     applyTimer = null
     ldap.apply()
     messenger.refresh()
-    asterisk.apply(store.config, guard.banned()).catch((e) => console.error('Konfiguration:', e))
+    asterisk
+      .apply(store.config, guard.banned())
+      .then(() => setTimeout(() => void loadPresence(), 2000))
+      .catch((e) => console.error('Konfiguration:', e))
     turn.apply(store.config)
   }, 300)
+}
+
+/** Zustand der Nebenstellen und geparkte Gespräche aus Asterisk lesen (nach Start und Änderungen) */
+async function loadPresence(): Promise<void> {
+  if (!asterisk.ami.connected) return
+  try {
+    const [states, parked] = await Promise.all([
+      asterisk.ami.list({ Action: 'ExtensionStateList' }),
+      store.config.parking.enabled ? asterisk.ami.list({ Action: 'ParkedCalls' }) : Promise.resolve([]),
+    ])
+    presence.load(states, parked)
+    for (const e of store.config.extensions) tracker.setMailbox(e.number, voicemail.unread(e.number))
+  } catch (e) {
+    console.error('Besetztanzeige:', (e as Error).message)
+  }
 }
 
 guard.on('changed', () => {
@@ -179,8 +214,33 @@ guard.on('changed', () => {
 asterisk.on('ami', (e) => {
   guard.onAmiEvent(e)
   messenger.onAmi(e)
+  presence.onAmi(e)
+  tracker.onAmi(e)
 })
-asterisk.ami.on('disconnected', () => messenger.resetCalls())
+asterisk.ami.on('connected', () => void loadPresence())
+asterisk.ami.on('disconnected', () => {
+  messenger.resetCalls()
+  presence.reset()
+  tracker.reset()
+})
+
+/** Notruf gewählt: E-Mail, Messenger, Home Assistant, Webhooks */
+function emergencyNotify(ext: string, number: string): void {
+  const cfg = store.config
+  const call = emergencyCall(cfg, ext, number)
+  emergencies.add(call)
+  const text = emergencyText(cfg, call)
+  console.log(text)
+  watchdog.log('warning', 'asterisk', text)
+  tracker.report('emergency', { ...call })
+  for (const to of cfg.emergency.notify_exts) messenger.notice(to, ext, text)
+  const mails = emailList(cfg.emergency.notify_email, 'Notrufe')
+  for (const to of mails) {
+    sendMail(cfg.mail, to, `${cfg.system.name}: Notruf von ${call.name || call.extension}`, `${text}\n\nDiese Nachricht hat die Telefonanlage automatisch verschickt.`).catch((e: Error) =>
+      console.error('Notruf-E-Mail:', e.message),
+    )
+  }
+}
 
 // -- Sicherheitsmeldungen: Ereignisprotokoll und E-Mail (höchstens alle 30 Min. je Anlass)
 
@@ -228,15 +288,18 @@ const TOO_MANY = 'Zu viele Fehlversuche. Bitte 15 Minuten warten.'
 // -- Interne Schnittstelle für den Wählplan (nur von localhost) ------------------
 
 const internal = new Router()
-internal.get('/internal/in', (r) =>
-  routeInbound(store.config, {
+internal.get('/internal/in', (r) => {
+  const result = routeInbound(store.config, {
     trunk: r.query.get('trunk') ?? '',
     did: r.query.get('did') ?? '',
     to: r.query.get('to') ?? '',
     cid: r.query.get('cid') ?? '',
     name: r.query.get('name') ?? '',
-  }),
-)
+  })
+  const [target, name, from, to] = result.split('|')
+  if (target === BLOCKED_TARGET) tracker.report('call.blocked', { from, from_name: name, to })
+  return result
+})
 /** Auslandsgespräche heute (für die Tagesgrenze; nach einem Neustart wieder ab 0) */
 let international = { day: '', count: 0 }
 
@@ -245,6 +308,8 @@ internal.get('/internal/out', (r) => {
   const fwd = r.query.get('fwd') ?? ''
   const num = r.query.get('num') ?? ''
   const result = routeOutbound(store.config, { ext, fwd, num, cid: r.query.get('cid') ?? '' })
+  // Auch wenn der Notruf nicht rausgeht (kein Konto, gesperrt): gerade dann sollen es andere erfahren
+  if (isEmergency(num, fwd)) setImmediate(() => emergencyNotify(ext, num))
   if (!result.startsWith('ok|') || !isInternational(store.config, num)) return result
   const day = new Date().toISOString().slice(0, 10)
   if (international.day !== day) international = { day, count: 0 }
@@ -583,6 +648,75 @@ pub.put('/provision/:token/forward', async (r) => {
 const pinFailures = new Map<string, number>()
 const PIN_MAX_FAILURES = 5
 
+/** Besetztanzeige der Kollegen, geparkte Gespräche, Stand der eigenen Voicemail (die Apps fragen alle paar Sekunden) */
+pub.get('/provision/:token/presence', (r) => {
+  const ext = tokenExtension(r.params.token)
+  const view = presence.view(store.config, store.state)
+  const vm = ext.voicemail.enabled ? { revision: voicemail.revision(ext.number), unread: voicemail.unread(ext.number) } : null
+  return { ...view, voicemail: vm }
+})
+
+function voicemailExtension(token: string): Extension {
+  const ext = tokenExtension(token)
+  if (!ext.voicemail.enabled) throw new HttpError(403, 'Für diese Nebenstelle ist keine Voicemail eingerichtet.')
+  return ext
+}
+
+pub.get('/provision/:token/voicemail', (r) => voicemail.list(voicemailExtension(r.params.token).number))
+
+pub.get('/provision/:token/voicemail/:id', (r) => {
+  const ext = voicemailExtension(r.params.token)
+  const file = voicemail.file(ext.number, r.params.id)
+  if (!file) throw new HttpError(404, 'Nachricht nicht gefunden.')
+  sendFile(r.res, file)
+})
+
+/** Als gehört markieren (INBOX → Old); Asterisk schaltet dabei die Anzeige an den Telefonen aus */
+pub.put('/provision/:token/voicemail/:id', async (r) => {
+  const ext = voicemailExtension(r.params.token)
+  const msg = voicemail.find(ext.number, r.params.id)
+  if (!msg) throw new HttpError(404, 'Nachricht nicht gefunden.')
+  if (msg.folder === 'INBOX') {
+    await voicemailAction({ Action: 'VoicemailMove', Context: 'default', Mailbox: ext.number, Folder: 'INBOX', ID: msg.id, ToFolder: 'Old' })
+  }
+  return voicemail.list(ext.number)
+})
+
+pub.delete('/provision/:token/voicemail/:id', async (r) => {
+  const ext = voicemailExtension(r.params.token)
+  const msg = voicemail.find(ext.number, r.params.id)
+  if (!msg) throw new HttpError(404, 'Nachricht nicht gefunden.')
+  await voicemailAction({ Action: 'VoicemailRemove', Context: 'default', Mailbox: ext.number, Folder: msg.folder, ID: msg.id })
+  return voicemail.list(ext.number)
+})
+
+async function voicemailAction(fields: Record<string, string>): Promise<void> {
+  const [res] = await asterisk.ami.action(fields).catch((e: Error) => {
+    throw new HttpError(503, `Asterisk antwortet nicht: ${e.message}`)
+  })
+  if (res?.Response !== 'Success') throw new HttpError(500, res?.Message || 'Asterisk hat die Nachricht nicht geändert.')
+}
+
+/** Anrufer aus der App heraus sperren (Recht „Rufnummern sperren“) */
+pub.post('/provision/:token/blocklist', async (r) => {
+  const ext = tokenExtension(r.params.token)
+  if (!appPermissions(store.config, ext.number).includes('block_numbers')) throw new HttpError(403, 'Sperren ist für diese Nebenstelle nicht freigegeben.')
+  const { number, note } = await r.json<{ number: string; note?: string }>()
+  const clean = cleanNumber(String(number ?? ''))
+  if (!clean || store.config.extensions.some((e) => e.number === clean)) throw new HttpError(400, 'Diese Nummer kann nicht gesperrt werden.')
+  const existing = store.config.blocklist.find((b) => b.number === clean)
+  if (existing) return existing
+  return store.upsert('blocklist', { number: clean, note: String(note ?? '').slice(0, 200), created: '', by: ext.number })
+})
+
+pub.delete('/provision/:token/blocklist/:number', (r) => {
+  const ext = tokenExtension(r.params.token)
+  if (!appPermissions(store.config, ext.number).includes('block_numbers')) throw new HttpError(403, 'Sperren ist für diese Nebenstelle nicht freigegeben.')
+  const entry = store.config.blocklist.find((b) => b.number === cleanNumber(r.params.number))
+  if (entry) store.remove('blocklist', entry.id)
+  return { ok: true }
+})
+
 /** Einrichtung mit Nebenstelle und Einrichtungs-PIN (gilt einmal und befristet) */
 pub.post('/provision', async (r) => {
   if (isBlocked(r.ip)) throw new HttpError(429, TOO_MANY)
@@ -664,7 +798,41 @@ pub.get('/api/integration/status', async (r) => {
     r.res.setHeader('WWW-Authenticate', 'Bearer')
     throw new HttpError(401, 'Zugriffsschlüssel fehlt oder ist falsch.')
   }
-  return integrationReport(store.config, store.state, await asterisk.status(), readCalls(500), updater.info, SETTINGS.version, guard.bans.length)
+  return integrationReport(store.config, store.state, await asterisk.status(), readCalls(500), updater.info, SETTINGS.version, guard.bans.length, new Date(), {
+    emergency: emergencies.calls,
+    problems: offsiteStatus.ok ? [] : [{ key: 'backup', message: `Externe Sicherung fehlgeschlagen: ${offsiteStatus.error}` }],
+  })
+})
+
+/** Anruf auslösen (CRM, Hausautomation): erst klingelt die Nebenstelle, nach dem Abheben wird gewählt */
+pub.post('/api/integration/call', async (r) => {
+  if (!validToken(store.config, r.raw.headers.authorization)) {
+    r.res.setHeader('WWW-Authenticate', 'Bearer')
+    throw new HttpError(401, 'Zugriffsschlüssel fehlt oder ist falsch.')
+  }
+  if (!store.config.integration.call_api) throw new HttpError(403, 'Anrufe über die Schnittstelle sind ausgeschaltet.')
+  const body = await r.json<{ extension: string; number: string }>()
+  const ext = store.config.extensions.find((e) => e.number === String(body.extension ?? '').trim())
+  if (!ext) throw new HttpError(404, 'Unbekannte Nebenstelle.')
+  const number = cleanNumber(String(body.number ?? ''))
+  if (!/^\+?\d{2,20}$/.test(number)) throw new HttpError(400, 'Ungültige Rufnummer.')
+  const [res] = await asterisk.ami
+    .action({
+      Action: 'Originate',
+      Channel: `Local/${ext.number}@p4a-originate`,
+      Context: 'p4a-from-ext',
+      Exten: number,
+      Priority: '1',
+      CallerID: `"${ext.name.replace(/["<>]/g, '')}" <${ext.number}>`,
+      Variable: `P4A_EXT=${ext.number},_P4A_DIAL=${number}`,
+      Timeout: '35000',
+      Async: 'true',
+    })
+    .catch((e: Error) => {
+      throw new HttpError(503, `Asterisk antwortet nicht: ${e.message}`)
+    })
+  if (res?.Response !== 'Success') throw new HttpError(500, res?.Message || 'Der Anruf konnte nicht gestartet werden.')
+  return { ok: true }
 })
 
 // -- Verwaltung (angemeldet) ----------------------------------------------------------
@@ -1026,6 +1194,81 @@ api.get('/api/backups/:name', (r) => {
   sendFile(r.res, path.join(PATHS.backups, name), name)
 })
 
+// Externe Sicherung (WebDAV, S3)
+
+async function runOffsite(): Promise<OffsiteStatus> {
+  const s = store.config.offsite
+  if (!s.enabled) throw new HttpError(400, 'Die externe Sicherung ist ausgeschaltet.')
+  const json = JSON.stringify(store.exportData(true, false, SETTINGS.version))
+  try {
+    const file = await offsiteUpload(s, json)
+    if (!offsiteStatus.ok) watchdog.log('ok', 'backup', `Externe Sicherung wieder erfolgreich (${file})`)
+    offsiteStatus = { time: Date.now(), ok: true, file, error: '' }
+  } catch (e) {
+    const error = (e as Error).message
+    if (offsiteStatus.ok) watchdog.log('error', 'backup', `Externe Sicherung fehlgeschlagen: ${error}`)
+    offsiteStatus = { time: Date.now(), ok: false, file: '', error }
+  }
+  return offsiteStatus
+}
+
+api.get('/api/offsite', () => offsiteStatus)
+api.post('/api/offsite/run', () => runOffsite())
+api.get('/api/offsite/files', async () => {
+  if (!store.config.offsite.enabled) return []
+  try {
+    return await offsiteTarget(store.config.offsite).list()
+  } catch (e) {
+    throw new HttpError(502, (e as Error).message)
+  }
+})
+api.post('/api/offsite/restore', async (r) => {
+  const { name } = await r.json<{ name: string }>()
+  let data: ExportFile
+  try {
+    data = JSON.parse(await offsiteDownload(store.config.offsite, String(name ?? ''))) as ExportFile
+  } catch (e) {
+    if (e instanceof OffsiteError) throw new HttpError(400, e.message)
+    throw new HttpError(502, (e as Error).message)
+  }
+  store.importData(data)
+  calendars.revision++
+  applySoon()
+  return { ok: true }
+})
+
+// Webhooks
+
+api.get('/api/webhooks/status', () => ({ events: WEBHOOK_EVENTS, status: Object.fromEntries(webhooks.status) }))
+api.post('/api/webhooks/:id/test', async (r) => {
+  const w = store.config.webhooks.find((x) => x.id === r.params.id)
+  if (!w) throw new HttpError(404, 'Webhook nicht gefunden.')
+  const body = JSON.stringify({ event: 'test', time: new Date().toISOString(), data: {}, pbx: store.config.system.name })
+  await webhooks.deliver(w, 'test', body)
+  return webhooks.status.get(w.id)
+})
+
+// Ansagen aus Text (Piper)
+
+api.get('/api/tts', () => ({ ...tts.status(), all: VOICES.map(({ id, name }) => ({ id, name })) }))
+api.post('/api/tts/install', async (r) => {
+  const { voice } = await r.json<{ voice: string }>()
+  // Läuft im Hintergrund (Programm und Stimme sind zusammen etwa 90 MB)
+  tts.install(String(voice ?? '')).catch((e: Error) => console.error('Sprachausgabe laden:', e.message))
+  return tts.status()
+})
+api.post('/api/tts/speak', async (r) => {
+  const { text, voice } = await r.json<{ text: string; voice: string }>()
+  try {
+    const wav = await tts.speak(String(text ?? ''), String(voice ?? ''))
+    r.res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': wav.length, 'Cache-Control': 'no-store' })
+    r.res.end(wav)
+  } catch (e) {
+    if (e instanceof TtsError) throw new HttpError(400, e.message)
+    throw e
+  }
+})
+
 // Ansagen und Wartemusik
 
 api.get('/api/sounds', () => ({ custom: listSounds('custom'), moh: listSounds('moh') }))
@@ -1178,6 +1421,7 @@ async function main(): Promise<void> {
     if (lastBackup !== today) {
       lastBackup = today
       store.backup('taeglich')
+      if (store.config.offsite.enabled) await runOffsite()
     }
     const expired = expire(store.config.storage)
     if (expired.recordings || expired.voicemail) {

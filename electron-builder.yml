@@ -16,6 +16,9 @@ artifactName: Phone4All-${version}-${os}-${arch}.${ext}
 protocols:
   - name: SIP-Telefon-Einrichtung
     schemes: [sip-telefon]
+  # Wähl-Links (tel:, callto:, sip:); Standard wird die App erst, wenn man es in den Einstellungen einschaltet
+  - name: Telefonnummer
+    schemes: [tel, callto, sip]
 
 linux:
   # tar.gz: Update für den entpackten Ordner aus scripts/install-linux.sh
@@ -31,7 +34,7 @@ linux:
       Comment: Telefonieren über deine SIP-Telefonanlage
       Keywords: SIP;VoIP;Telefon;Anruf;Softphone;
       StartupWMClass: SIP-Telefon
-      MimeType: x-scheme-handler/sip-telefon;
+      MimeType: x-scheme-handler/sip-telefon;x-scheme-handler/tel;x-scheme-handler/callto;x-scheme-handler/sip;
   extraResources:
     - from: resources/linux
       to: linux

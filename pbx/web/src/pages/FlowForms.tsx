@@ -3,6 +3,7 @@
 import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import MicIcon from '@mui/icons-material/Mic'
+import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver'
 import StopIcon from '@mui/icons-material/Stop'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
 import {
@@ -24,6 +25,7 @@ import { useEffect, useRef, useState } from 'react'
 import { type Announcement, HANGUP, type InboundRoute, type Ivr, type TimeCondition } from '../../../server/model'
 import { api } from '../api'
 import { startRecording, toTelephoneWav } from '../components/audio'
+import { TtsDialog } from '../components/TtsDialog'
 import { ChipsInput, DestinationPicker, FormGrid, Full, NumberField, NumberPicker, Select, trunkNumberOptions } from '../components/common'
 import { usePbx } from '../state'
 
@@ -193,6 +195,7 @@ export function AnnouncementForm({ value, onChange }: { value: Announcement; onC
   const [recording, setRecording] = useState<{ stop: () => Promise<ArrayBuffer> } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [version, setVersion] = useState(0)
+  const [tts, setTts] = useState(false)
 
   const upload = async (data: ArrayBuffer, name: string): Promise<void> => {
     setBusy(true)
@@ -256,6 +259,9 @@ export function AnnouncementForm({ value, onChange }: { value: Announcement; onC
                 Mit Mikrofon aufnehmen
               </Button>
             )}
+            <Button variant="outlined" startIcon={<RecordVoiceOverIcon />} disabled={busy || Boolean(recording)} onClick={() => setTts(true)}>
+              Aus Text sprechen
+            </Button>
             {value.file && <audio key={version} controls src={`/api/sounds/custom/${value.file}.wav?v=${version}`} style={{ height: 36 }} />}
           </Stack>
           <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 1 }}>
@@ -266,6 +272,7 @@ export function AnnouncementForm({ value, onChange }: { value: Announcement; onC
           <DestinationPicker label="Danach (wenn direkt als Ziel genutzt)" value={value.next} onChange={(d) => set('next', d)} />
         </Full>
       </FormGrid>
+      <TtsDialog open={tts} onClose={() => setTts(false)} onResult={(wav) => upload(wav, 'ansage')} />
     </Box>
   )
 }

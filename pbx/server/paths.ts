@@ -18,6 +18,7 @@ export const PATHS = {
   backups: path.join(DATA, 'backups'),
   calendars: path.join(DATA, 'calendars'),
   messenger: path.join(DATA, 'messenger'),
+  tts: path.join(DATA, 'tts'),
   sounds: path.join(DATA, 'sounds', 'custom'),
   moh: path.join(DATA, 'sounds', 'moh'),
   recordings: path.join(DATA, 'recordings'),

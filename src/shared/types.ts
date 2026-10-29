@@ -91,7 +91,7 @@ export interface SqlSourceConf {
   query: string
 }
 
-export type HomeCard = 'status' | 'today' | 'favorites' | 'recent' | 'events'
+export type HomeCard = 'status' | 'today' | 'favorites' | 'recent' | 'events' | 'team'
 export type PageName = 'home' | 'dial' | 'contacts' | 'calendar' | 'history' | 'messenger'
 
 export interface Settings {
@@ -122,6 +122,8 @@ export interface Settings {
   watchdog: boolean
   /** Neue Versionen selbst laden und einspielen, sobald kein Gespräch läuft */
   auto_update: boolean
+  /** Wähl-Links: tel:, callto: und sip: mit dieser App öffnen; Tastenkürzel wählt markierte Nummer ('' = aus) */
+  links: { handler: boolean; hotkey: string }
   /** Von einer Phone4all-Telefonanlage eingerichtet (leer = von Hand) */
   provisioning: {
     pbx: string
@@ -138,6 +140,12 @@ export interface Settings {
     messenger: boolean
     /** Videoanrufe im Messenger (null = aus) */
     video?: VideoAccount | null
+    /** Parken: Weiterleiten an number parkt (null = aus) */
+    parking?: { number: string; slots: string[] } | null
+    /** Anrufer im CRM öffnen: Adresse mit {nummer}, {e164}, {name} */
+    crm?: { url: string; auto: boolean } | null
+    /** Voicemail der Nebenstelle in der App */
+    voicemail?: boolean
   }
 }
 
@@ -151,7 +159,7 @@ export interface VideoAccount {
   ice_servers: { urls: string[]; username?: string; credential?: string }[]
 }
 
-export type PbxPermission = 'forward' | 'forward_external' | 'forward_rules' | 'calendar_edit' | 'phonebook_edit'
+export type PbxPermission = 'forward' | 'forward_external' | 'forward_rules' | 'calendar_edit' | 'phonebook_edit' | 'block_numbers'
 
 /** Umleitung, die die Anlage nach Zeit oder Zustand selbst schaltet */
 export interface PbxForwardRule {
@@ -197,6 +205,41 @@ export interface PbxCalendar {
   name: string
   color: string
   writable: boolean
+}
+
+/** Kollege in der Telefonanlage (Besetztanzeige) */
+export interface TeamMember {
+  number: string
+  name: string
+  state: 'idle' | 'ringing' | 'busy' | 'offline'
+  dnd: boolean
+  /** Umleitung: interne Nummer oder „extern“, leer = keine */
+  forward: string
+}
+
+/** Geparktes Gespräch */
+export interface ParkedCall {
+  /** Parkplatz, zum Zurückholen wählen */
+  slot: string
+  number: string
+  name: string
+  /** Nebenstelle, die geparkt hat */
+  by: string
+  since: number
+  until: number
+}
+
+/** Nachricht auf der Voicemail der Anlage */
+export interface VoicemailMessage {
+  id: string
+  folder: 'INBOX' | 'Old'
+  unread: boolean
+  /** ms */
+  time: number
+  number: string
+  name: string
+  /** Sekunden */
+  duration: number
 }
 
 /** Gefundene oder abgefragte Telefonanlage, bevor das Konto übernommen wird. */
@@ -323,6 +366,10 @@ export interface AppState {
   forward: PbxForward | null
   /** Messenger der Telefonanlage: verfügbar, verbunden, ungelesene Nachrichten */
   messenger: { available: boolean; status: MessengerState['status']; unread: number; video: boolean }
+  /** Kollegen und geparkte Gespräche (null = keine Anlage oder zu alt) */
+  team: { extensions: TeamMember[]; parked: ParkedCall[] } | null
+  /** Voicemail der Anlage: neue Nachrichten, version ändert sich bei jeder Änderung (null = keine) */
+  voicemail: { unread: number; version: string } | null
 }
 
 /** Stand der App-Aktualisierung */

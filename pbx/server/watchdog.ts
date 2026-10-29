@@ -43,6 +43,7 @@ const NAMES: Record<CheckId, string> = {
   trunks: 'SIP-Konten',
   disk: 'Speicherplatz',
   security: 'Sicherheit',
+  backup: 'Externe Sicherung',
 }
 
 const MAX_EVENTS = 300

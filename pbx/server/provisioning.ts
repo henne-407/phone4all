@@ -12,6 +12,7 @@ import type { AppHomeCard, AppPage, AppPermission, CentralCalendar, Extension, P
 import { SETTINGS } from './paths'
 import { type IceServer, appEndpoint, publicBase, videoEnabled, videoEndpoint, websocketUrl } from './remote'
 import { appPermissions } from './routing'
+import { parkingNumbers } from './store'
 
 export const DISCOVERY_PORT = 15060
 export const PROVISIONING_FORMAT = 'phone4all-provisioning'
@@ -53,6 +54,12 @@ export interface ProvisioningProfile {
   remote: RemoteAccount | null
   /** Videoanrufe im Messenger (Benutzer <nummer>-video, ruft sip:<raum>@<domain>), null = aus */
   video: RemoteAccount | null
+  /** Gespräche parken: Weiterleiten auf number parkt, slots holen zurück (null = aus) */
+  parking: { number: string; slots: string[] } | null
+  /** Anrufer im CRM öffnen: Adresse mit {nummer}, {e164}, {name} (null = aus) */
+  crm: { url: string; auto: boolean } | null
+  /** Voicemail in der App unter <url>/voicemail; Besetztanzeige unter <url>/presence */
+  voicemail: boolean
   /** Ändert sich mit jeder Änderung am Profil; die App fragt <url>/revision ab */
   revision: string
 }
@@ -86,6 +93,11 @@ function policy(cfg: PbxConfig, ext: Extension): AppPolicy | null {
   const p = cfg.appprofiles.find((x) => x.id === ext.app_profile)
   if (!p) return null
   return { pages: p.pages, start_tab: p.start_tab, home_cards: p.home_cards, lock_layout: p.lock_layout, lock_account: p.lock_account }
+}
+
+function crm(cfg: PbxConfig, ext: Extension): { url: string; auto: boolean } | null {
+  const p = cfg.appprofiles.find((x) => x.id === ext.app_profile)
+  return p?.crm_url.trim() ? { url: p.crm_url.trim(), auto: p.crm_auto } : null
 }
 
 /** Basis für Links an Telefone: die öffentliche Adresse, sonst die aufgerufene */
@@ -174,6 +186,9 @@ export function profile(cfg: PbxConfig, ext: Extension, base: string, ice: IceSe
       videoEnabled(cfg) && messengerUsers(cfg).some((e) => e.id === ext.id)
         ? { websocket: websocketUrl(base.replace(/\/+$/, '')), user: videoEndpoint(ext.number), domain, ice_servers: cfg.remote.enabled ? ice : [] }
         : null,
+    parking: cfg.parking.enabled ? { number: cfg.parking.number, slots: parkingNumbers(cfg).slice(1) } : null,
+    crm: crm(cfg, ext),
+    voicemail: ext.voicemail.enabled,
   }
   const revision = createHash('sha256').update(JSON.stringify(result)).digest('hex').slice(0, 16)
   return { ...result, revision }

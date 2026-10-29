@@ -88,7 +88,7 @@ export interface ForwardRule {
 }
 
 /** Was eine Nebenstelle in der App selbst einstellen darf */
-export type AppPermission = 'forward' | 'forward_external' | 'forward_rules' | 'calendar_edit' | 'phonebook_edit' | 'voicemail_other'
+export type AppPermission = 'forward' | 'forward_external' | 'forward_rules' | 'calendar_edit' | 'phonebook_edit' | 'voicemail_other' | 'block_numbers'
 
 export const APP_PERMISSIONS: [AppPermission, string, string][] = [
   ['forward', 'Umleitung schalten', 'In der App die Sofort-Umleitung ein- und ausschalten'],
@@ -97,6 +97,7 @@ export const APP_PERMISSIONS: [AppPermission, string, string][] = [
   ['calendar_edit', 'Zentrale Kalender bearbeiten', 'Termine in beschreibbaren zentralen Kalendern anlegen und ändern'],
   ['phonebook_edit', 'Telefonbuch bearbeiten', 'Einträge im zentralen Telefonbuch anlegen und ändern'],
   ['voicemail_other', 'Fremde Voicemail abhören', 'Mit *98 andere Mailboxen abhören (mit deren PIN)'],
+  ['block_numbers', 'Rufnummern sperren', 'Anrufer aus dem Verlauf auf die Sperrliste der Anlage setzen'],
 ]
 
 export type GroupMode = 'all' | 'sequential' | 'queue'
@@ -230,6 +231,86 @@ export interface Announcement {
   next: Destination
 }
 
+/** Gesperrte Rufnummer für eingehende Anrufe */
+export interface BlockedNumber {
+  id: string
+  /** Rufnummer wie eingegeben; endet sie auf *, gilt sie für alle Nummern mit diesem Anfang */
+  number: string
+  note: string
+  /** ISO-Datum der Sperre */
+  created: string
+  /** Nebenstelle, die gesperrt hat (leer = Weboberfläche) */
+  by: string
+}
+
+/** Eingehende Anrufe sperren (Liste unter blocklist) */
+export interface BlockingSettings {
+  /** Anrufe ohne Rufnummer annehmen oder abweisen */
+  anonymous: 'allow' | 'reject'
+}
+
+/** Gespräche parken (res_parking): Weiterleiten auf number parkt, number+1 … holt zurück */
+export interface ParkingSettings {
+  enabled: boolean
+  number: string
+  slots: number
+  /** Danach klingelt es wieder bei dem, der geparkt hat */
+  seconds: number
+}
+
+/** Wer erfährt, dass jemand 110 oder 112 gewählt hat */
+export interface EmergencySettings {
+  /** E-Mail-Adressen (leer = keine E-Mail) */
+  notify_email: string
+  /** Nebenstellen, die eine Nachricht im Messenger bekommen */
+  notify_exts: string[]
+}
+
+/** Sicherung zusätzlich auf einem anderen Speicher (WebDAV oder S3) */
+export interface OffsiteSettings {
+  enabled: boolean
+  type: 'webdav' | 's3'
+  /** WebDAV: Adresse des Ordners · S3: Adresse des Dienstes, z. B. https://s3.eu-central-1.amazonaws.com */
+  url: string
+  /** WebDAV: Benutzer · S3: Access Key */
+  user: string
+  /** WebDAV: Passwort · S3: Secret Key */
+  password: string
+  /** Nur S3 */
+  bucket: string
+  region: string
+  /** Unterordner bzw. Präfix */
+  folder: string
+  /** So viele Sicherungen bleiben am Ziel */
+  keep: number
+  /** Verschlüsseln mit diesem Kennwort (leer = unverschlüsselt) */
+  passphrase: string
+}
+
+export type WebhookEvent = 'call.ringing' | 'call.answered' | 'call.ended' | 'call.missed' | 'voicemail.new' | 'call.blocked' | 'emergency'
+
+export const WEBHOOK_EVENTS: [WebhookEvent, string][] = [
+  ['call.ringing', 'Anruf klingelt'],
+  ['call.answered', 'Anruf angenommen'],
+  ['call.ended', 'Anruf beendet'],
+  ['call.missed', 'Anruf verpasst'],
+  ['voicemail.new', 'Neue Voicemail'],
+  ['call.blocked', 'Anruf gesperrt'],
+  ['emergency', 'Notruf gewählt'],
+]
+
+/** Webhook: die Anlage meldet Ereignisse per HTTP POST */
+export interface Webhook {
+  id: string
+  name: string
+  url: string
+  enabled: boolean
+  /** Leer = alle Ereignisse */
+  events: WebhookEvent[]
+  /** Schlüssel für die Signatur (X-Phone4all-Signature), vergibt der Server */
+  secret: string
+}
+
 export interface PhonebookEntry {
   id: string
   name: string
@@ -346,7 +427,7 @@ export interface StorageSettings {
 
 /** ok: wieder in Ordnung, info: Maßnahme, warning/error: Störung */
 export type WatchLevel = 'ok' | 'info' | 'warning' | 'error'
-export type CheckId = 'asterisk' | 'trunks' | 'disk' | 'security'
+export type CheckId = 'asterisk' | 'trunks' | 'disk' | 'security' | 'backup'
 export type CheckLevel = 'ok' | 'warning' | 'error'
 
 export interface WatchEvent {
@@ -379,6 +460,8 @@ export interface IntegrationSettings {
   enabled: boolean
   /** Zugriffsschlüssel (Bearer-Token), vergibt der Server */
   token: string
+  /** Anrufe über POST /api/integration/call starten */
+  call_api: boolean
 }
 
 /** Messenger: Chats zwischen den Nebenstellen (server/messenger.ts) */
@@ -431,7 +514,7 @@ export interface ChatMessage {
 
 /** Seiten und Startkarten der Phone4All-App (wie dort benannt) */
 export type AppPage = 'home' | 'dial' | 'contacts' | 'calendar' | 'history' | 'messenger'
-export type AppHomeCard = 'status' | 'today' | 'favorites' | 'recent' | 'events'
+export type AppHomeCard = 'status' | 'today' | 'favorites' | 'recent' | 'events' | 'team'
 
 export const APP_PAGES: [AppPage, string][] = [
   ['home', 'Start'],
@@ -448,6 +531,7 @@ export const APP_HOME_CARDS: [AppHomeCard, string][] = [
   ['favorites', 'Favoriten'],
   ['recent', 'Letzte Anrufe'],
   ['events', 'Nächste Termine'],
+  ['team', 'Kollegen und geparkte Gespräche'],
 ]
 
 /** Vorgaben für die Ansichten der App, Nebenstellen wählen ein Profil */
@@ -464,6 +548,10 @@ export interface AppProfile {
   lock_account: boolean
   /** Sichtbare zentrale Kalender (leer = alle) */
   calendars: string[]
+  /** Anrufer im CRM öffnen: Adresse mit {nummer}, {e164}, {name} (leer = aus) */
+  crm_url: string
+  /** Beim Annehmen automatisch öffnen (sonst nur per Knopf) */
+  crm_auto: boolean
 }
 
 /** Zentraler Kalender; Termine liegen in data/calendars/<id>.json */
@@ -552,6 +640,8 @@ export interface PbxConfig {
   conferences: Conference[]
   announcements: Announcement[]
   phonebook: PhonebookEntry[]
+  blocklist: BlockedNumber[]
+  webhooks: Webhook[]
   contactsources: ContactSource[]
   appprofiles: AppProfile[]
   calendars: CentralCalendar[]
@@ -568,6 +658,10 @@ export interface PbxConfig {
   ldap: LdapSettings
   messenger: MessengerSettings
   storage: StorageSettings
+  blocking: BlockingSettings
+  parking: ParkingSettings
+  emergency: EmergencySettings
+  offsite: OffsiteSettings
 }
 
 export const HANGUP: Destination = { type: 'hangup', target: '' }
@@ -601,6 +695,8 @@ export const DEFAULT_CONFIG: PbxConfig = {
   conferences: [],
   announcements: [],
   phonebook: [],
+  blocklist: [],
+  webhooks: [],
   contactsources: [],
   appprofiles: [],
   calendars: [],
@@ -630,9 +726,13 @@ export const DEFAULT_CONFIG: PbxConfig = {
   remote: { enabled: true, public_url: '', turn: true, turn_port: 3478, turn_host: '' },
   watchdog: { auto_repair: true, trunk_grace: 3, notify_email: '' },
   storage: { recordings_days: 0, voicemail_days: 0 },
-  integration: { enabled: false, token: '' },
+  integration: { enabled: false, token: '', call_api: false },
   ldap: { enabled: false, port: 389, password: '' },
   messenger: { enabled: true, max_file_mb: 25, max_storage_mb: 5120, min_free_mb: 200, video: true, quota_mb: 500 },
+  blocking: { anonymous: 'allow' },
+  parking: { enabled: true, number: '700', slots: 8, seconds: 120 },
+  emergency: { notify_email: '', notify_exts: [] },
+  offsite: { enabled: false, type: 'webdav', url: '', user: '', password: '', bucket: '', region: '', folder: 'phone4all', keep: 30, passphrase: '' },
 }
 
 /** Listen der Konfiguration, die die Weboberfläche einheitlich bearbeitet. */
@@ -647,6 +747,8 @@ export const COLLECTIONS = [
   'conferences',
   'announcements',
   'phonebook',
+  'blocklist',
+  'webhooks',
   'contactsources',
   'appprofiles',
   'calendars',
@@ -654,7 +756,10 @@ export const COLLECTIONS = [
 ] as const
 export type CollectionName = (typeof COLLECTIONS)[number]
 
-export const SECTIONS = ['system', 'mail', 'security', 'updates', 'provisioning', 'remote', 'watchdog', 'integration', 'ldap', 'messenger', 'storage'] as const
+export const SECTIONS = [
+  'system', 'mail', 'security', 'updates', 'provisioning', 'remote', 'watchdog', 'integration', 'ldap', 'messenger', 'storage',
+  'blocking', 'parking', 'emergency', 'offsite',
+] as const
 export type SectionName = (typeof SECTIONS)[number]
 
 export const DESTINATION_LABELS: Record<DestinationType, string> = {
@@ -791,6 +896,10 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
       return { name: '', file: '', next: HANGUP } satisfies Omit<Announcement, 'id'>
     case 'phonebook':
       return { name: '', company: '', phone: '', mobile: '' } satisfies Omit<PhonebookEntry, 'id'>
+    case 'blocklist':
+      return { number: '', note: '', created: '', by: '' } satisfies Omit<BlockedNumber, 'id'>
+    case 'webhooks':
+      return { name: '', url: '', enabled: true, events: [], secret: '' } satisfies Omit<Webhook, 'id'>
     case 'appprofiles':
       return {
         name: '',
@@ -800,6 +909,8 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         lock_layout: false,
         lock_account: true,
         calendars: [],
+        crm_url: '',
+        crm_auto: false,
       } satisfies Omit<AppProfile, 'id'>
     case 'calendars':
       return {

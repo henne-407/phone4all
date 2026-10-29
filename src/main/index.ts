@@ -3,12 +3,13 @@
 import { Menu, app as electronApp, systemPreferences } from 'electron'
 import path from 'node:path'
 import { App } from './app'
+import { isDialLink } from './links'
 import { LINK_SCHEME } from './provisioning'
 
 const background = process.argv.includes('--background') || process.argv.includes('-b')
 
-/** Einrichtungslink der Telefonanlage aus der Befehlszeile (Windows/Linux) */
-const linkArg = (argv: string[]): string | undefined => argv.find((a) => a.startsWith(`${LINK_SCHEME}://`))
+/** Einrichtungslink der Telefonanlage oder Wähl-Link (tel: …) aus der Befehlszeile (Windows/Linux) */
+const linkArg = (argv: string[]): string | undefined => argv.find((a) => a.startsWith(`${LINK_SCHEME}://`) || isDialLink(a))
 
 // Interner Name bleibt „SIP-Telefon“: davon hängen der Ordner der Einstellungen
 // (macOS/Windows), der Schlüssel im Schlüsselbund und die Fensterklasse ab.

@@ -47,6 +47,12 @@
       "active_calls": { "name": "Active calls" }
     },
     "event": {
+      "emergency_event": {
+        "name": "Emergency call",
+        "state_attributes": {
+          "event_type": { "state": { "emergency_call": "Emergency call" } }
+        }
+      },
       "missed_call_event": {
         "name": "Missed call",
         "state_attributes": {

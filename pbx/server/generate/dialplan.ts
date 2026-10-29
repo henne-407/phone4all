@@ -77,13 +77,28 @@ function limitSteps(maxExt: number, maxTotal: number): string[] {
   ]
 }
 
-function genericContexts(app: boolean, maxExt: number, maxTotal: number): string[] {
+function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTotal: number): string[] {
   const limits = limitSteps(maxExt, maxTotal)
   return [
     ...(app ? [contactsContext()] : []),
     ctx(
       'p4a-from-ext',
-      ['include => p4a-features', 'include => p4a-local', 'include => p4a-outbound'],
+      // Parkplätze (res_parking legt p4a-park selbst an) vor den Wahlregeln, sonst ginge 701 nach außen
+      ['include => p4a-features', 'include => p4a-local', ...(parking ? ['include => p4a-park'] : []), 'include => p4a-outbound'],
+    ),
+    // Anruf über die Schnittstelle (/api/integration/call): erst klingeln die Geräte der
+    // Nebenstelle (ohne Umleitungen), nach dem Abheben wählt die Anlage die Nummer
+    ctx(
+      'p4a-originate',
+      exten('_X.', [
+        'Set(P4A_TARGET=${EXTEN})',
+        contacts('P4A_TARGET', app),
+        'GotoIf($["${C}" = ""]?end)',
+        'Set(CALLERID(num)=${P4A_DIAL})',
+        'Set(CALLERID(name)=Anruf an ${P4A_DIAL})',
+        'Dial(${C},30)',
+        '(end)Hangup()',
+      ]),
     ),
     ctx(
       'p4a-from-trunk',
@@ -321,6 +336,8 @@ function genericContexts(app: boolean, maxExt: number, maxTotal: number): string
       exten('_X.', ['Answer()', 'Wait(0.5)', 'VoiceMail(${EXTEN}@default,b)', 'Hangup()']),
     ),
     ctx('p4a-hangup', exten('s', ['Hangup()'])),
+    // Gesperrter Anrufer (Sperrliste): abweisen, in der Anrufliste als gesperrt vermerken
+    ctx('p4a-blocked', exten('s', ['Set(CDR(userfield)=blocked)', 'Hangup(21)'])),
   ]
 }
 
@@ -329,7 +346,7 @@ export function extensionsConf(cfg: PbxConfig, gen: GenContext): string {
     '; Erzeugt von Phone4all – Änderungen in der Weboberfläche vornehmen',
     ctx('general', ['static=yes', 'writeprotect=yes', 'clearglobalvars=yes']),
     ctx('globals', [`P4A_API=${gen.apiUrl}`, `P4A_REC=${gen.dirs.recordings}`, 'P4A_DIALOPTS=']),
-    ...genericContexts(cfg.remote.enabled, cfg.security.max_calls_ext, cfg.security.max_calls_total),
+    ...genericContexts(cfg.remote.enabled, cfg.parking.enabled, cfg.security.max_calls_ext, cfg.security.max_calls_total),
   ]
 
   // Interne Rufnummern

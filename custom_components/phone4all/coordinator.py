@@ -17,6 +17,7 @@ from homeassistant.util import dt as dt_util
 from .api import Phone4allApi, Phone4allAuthError, Phone4allError
 from .const import (
     DOMAIN,
+    EVENT_EMERGENCY_CALL,
     EVENT_MISSED_CALL,
     EVENT_PROBLEM,
     EVENT_PROBLEM_RESOLVED,
@@ -48,6 +49,7 @@ class Phone4allCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # verpasst wurde, wird nachgemeldet, Älteres nicht
         self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.seen")
         self._since: str | None = None
+        self._seen_emergency: list[str] | None = None
         self._problems: dict[str, str] = {}
         self._event_listeners: list[Callable[[str, dict[str, Any]], None]] = []
 
@@ -87,6 +89,8 @@ class Phone4allCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._seen is None:
             await self._load_seen()
         self._check_missed(data.get("missed", {}).get("calls", []))
+        # Notrufe (110/112) von Nebenstellen; ältere Anlagen liefern keine
+        self._check_emergency(data.get("emergency", []))
         return data
 
     async def _load_seen(self) -> None:
@@ -98,6 +102,30 @@ class Phone4allCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _save_seen(self) -> None:
         seen = list(self._seen or [])
         self._store.async_delay_save(lambda: {"seen": seen, "time": dt_util.utcnow().isoformat()}, 5)
+
+    def _check_emergency(self, calls: list[dict[str, Any]]) -> None:
+        ids = [c["id"] for c in calls]
+        if self._seen_emergency is None:
+            # Erster Abruf: frühere Notrufe nicht nachträglich melden
+            self._seen_emergency = ids
+            return
+        for call in reversed(calls):
+            if call["id"] in self._seen_emergency:
+                continue
+            self._seen_emergency.append(call["id"])
+            _LOGGER.warning("%s: Notruf %s von Nebenstelle %s", self.config_entry.title, call["number"], call["extension"])
+            self._fire(
+                EVENT_EMERGENCY_CALL,
+                "emergency_call",
+                {
+                    "call_id": call["id"],
+                    "time": call["time"],
+                    "extension": call["extension"],
+                    "name": call["name"],
+                    "number": call["number"],
+                },
+            )
+        del self._seen_emergency[:-SEEN_LIMIT]
 
     def _check_missed(self, calls: list[dict[str, Any]]) -> None:
         ids = [c["id"] for c in calls]

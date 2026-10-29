@@ -86,7 +86,11 @@ den Proxy. `X-Forwarded-For` gilt nur von *vertrauenswürdigen Proxys* (Einstell
   Feiertage je Bundesland, Betriebsferien, Nachtschaltung) → Sprachmenü → Gruppe →
   Voicemail; jeder Schritt ist anklickbar, Zweige lassen sich per Auswahlmenü oder
   Drag & Drop umhängen
-- **Ansagen** hochladen oder im Browser aufnehmen, eigene Wartemusik
+- **Ansagen** hochladen, im Browser aufnehmen oder aus Text sprechen lassen (Piper,
+  läuft lokal), eigene Wartemusik
+- **Anrufsperren**: Nummern und Nummernbereiche (`+44*`), unterdrückte Nummern; sperren
+  aus der Anrufliste und den Apps
+- **Gespräche parken** (700, Parkplätze 701–708), Besetztanzeige der Kollegen in den Apps
 - **Konferenzräume** mit PIN
 - **SIP-Konten** mit Vorlagen für Telekom (auch CompanyFlex), Vodafone (Kabel, DSL),
   Deutsche Glasfaser, 1&1, o2, sipgate (basic und trunking), easybell, Placetel und FRITZ!Box;
@@ -105,11 +109,14 @@ den Proxy. `X-Forwarded-For` gilt nur von *vertrauenswürdigen Proxys* (Einstell
 - **App-Profile**: legen fest, welche Bereiche, Startansicht und Startseiten-Karten
   die Phone4All-App zeigt, und können Startseite und Kontodaten sperren
 - **Anrufliste**, laufende Gespräche, Anmeldestatus aller Geräte
+- **Benachrichtigung bei Notrufen** (110/112) per E-Mail, Messenger, Home Assistant und Webhooks
+- **Webhooks** (signiert) und **Anrufe über die Schnittstelle** für CRM und Automationen
 - **Funktionscodes**: \*97 Voicemail, \*76 Nicht stören, \*21 Rufumleitung,
   \*8 / \*\*Nr. Heranholen, \*28 Nachtschaltung, \*31 anonym, \*43 Echo-Test
 - **Sicherheit**: Sperre nach Fehlanmeldungen, erlaubte Netze, TLS/SRTP
 - **Konfiguration als Datei** exportieren und importieren (wahlweise mit Passwörtern
-  und Ansagen), tägliche automatische Sicherung (14 Tage, Sicherungen vor Import und Update getrennt davon)
+  und Ansagen), tägliche automatische Sicherung (14 Tage, Sicherungen vor Import und Update getrennt davon),
+  zusätzlich auf WebDAV oder S3 (auf Wunsch mit AES-256 verschlüsselt)
 - **Home Assistant**: verpasste Anrufe, abgemeldete SIP-Konten und andere Störungen als
   Sensoren und Ereignisse, auch über HTTPS hinter einem Reverse-Proxy
 - **Online-Updates** aus der Weboberfläche (stabil oder Beta), auf Wunsch automatisch
@@ -146,7 +153,7 @@ antwortet mit 410, ein abgemeldetes Gerät mit 404.
 
 | Anfrage | Ergebnis |
 | --- | --- |
-| `GET /provision/<token>` | Profil (auch zum Auffrischen): Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `permissions`, `messenger`, `remote`, `video`, `revision` |
+| `GET /provision/<token>` | Profil (auch zum Auffrischen): Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `permissions`, `messenger`, `remote`, `video`, `parking` (`{ number, slots }` oder `null`), `crm` (`{ url, auto }` oder `null`), `voicemail`, `revision` |
 | `GET /provision/<token>/revision` | `{ profile, events }` – ändert sich, sobald Profil oder Termine sich ändern |
 | `GET /provision/<token>/events?start=…&end=…&calendar=…` | Termine im Zeitraum (höchstens 400 Tage) |
 | `PUT /provision/<token>/events/<kalender>/<uid>` | Termin anlegen oder ändern (nur beschreibbare Kalender) |
@@ -156,6 +163,11 @@ antwortet mit 410, ein abgemeldetes Gerät mit 404.
 | `GET /provision/<token>/chat/files/<raum>/<id>` | Datei abrufen (nur Mitglieder des Raums) |
 | `GET /provision/<token>/forward` | Umleitungen: `cfu`, `active`, `busy`, `noanswer`, `rules`, `permissions`, interne `targets`, `timeconditions` |
 | `POST /provision/<token>/phonebook`, `PUT`/`DELETE …/phonebook/<id>` | Telefonbuch bearbeiten (Recht `phonebook_edit`; bearbeitbare Einträge haben im Profil eine `id`) |
+| `GET /provision/<token>/presence` | Besetztanzeige: `extensions` (`number`, `name`, `state` = `idle`/`ringing`/`busy`/`offline`, `dnd`, `forward` = interne Nummer oder `extern`), `parked` (`slot`, `number`, `name`, `by`, `since`, `until`), `voicemail` (`{ unread, revision }` oder `null`), `revision` – die Apps fragen alle paar Sekunden |
+| `GET /provision/<token>/voicemail` | Nachrichten: `id`, `folder` (`INBOX`/`Old`), `unread`, `time` (ms), `number`, `name`, `duration` |
+| `GET /provision/<token>/voicemail/<id>` | Nachricht als WAV (8 kHz) |
+| `PUT /provision/<token>/voicemail/<id>`, `DELETE …` | als gehört markieren bzw. löschen, Antwort ist die neue Liste |
+| `POST /provision/<token>/blocklist`, `DELETE …/blocklist/<nummer>` | Nummer sperren (`{ number, note }`) bzw. freigeben (Recht `block_numbers`) |
 | `PUT /provision/<token>/forward` | Änderungen davon (`cfu` braucht das Recht `forward`, der Rest `forward_rules`; externe Ziele `forward_external`) |
 
 `remote` ist der Zugang für die Mobil-App (`null`, wenn der Fernzugriff aus ist):
@@ -244,7 +256,7 @@ für den Docker-Healthcheck und Überwachung von außen (z. B. Home Assistant).
 Die Integration *Phone4all-Telefonanlage* zeigt verpasste Anrufe und Störungen der
 Anlage in Home Assistant an, etwa ein SIP-Konto, das sich beim Anbieter abgemeldet hat.
 
-1. In der Weboberfläche unter *System → Home Assistant* die Schnittstelle einschalten
+1. In der Weboberfläche unter *System → Schnittstellen* die Schnittstelle einschalten
    und den Zugriffsschlüssel kopieren.
 2. In Home Assistant über HACS installieren: *HACS → ⋮ → Benutzerdefinierte Repositories*,
    `https://github.com/henne-407/phone4all` als Typ *Integration* hinzufügen und
@@ -268,7 +280,7 @@ Zugriffsschlüssel, alles andere bleibt hinter der Anmeldung des Proxys.
 | `sensor.<anlage>_verpasste_anrufe_heute` | verpasste Anrufe seit Mitternacht (auch auf die Voicemail gelaufene); Attribut `calls` mit den letzten zehn |
 | `sensor.<anlage>_letzter_verpasster_anruf` | Zeitpunkt, Anrufer als Attribute `caller`, `caller_name`, `called`, `voicemail` |
 | `sensor.<anlage>_laufende_gesprache` | laufende Gespräche |
-| `event.<anlage>_verpasster_anruf`, `event.<anlage>_storungsmeldung` | letztes Ereignis für Verlauf und Automationen |
+| `event.<anlage>_verpasster_anruf`, `event.<anlage>_notruf`, `event.<anlage>_storungsmeldung` | letztes Ereignis für Verlauf und Automationen |
 | `binary_sensor.<anlage>_asterisk`, `binary_sensor.<anlage>_update` | Diagnose: Asterisk läuft, neue Version verfügbar |
 
 Für Automationen löst die Integration Ereignisse aus:
@@ -276,6 +288,7 @@ Für Automationen löst die Integration Ereignisse aus:
 | Ereignis | Daten |
 | --- | --- |
 | `phone4all_missed_call` | `caller`, `caller_name`, `called`, `time`, `voicemail`, `pbx` |
+| `phone4all_emergency_call` | `extension`, `name`, `number` (110 oder 112), `time`, `pbx` |
 | `phone4all_problem` | `key` (`trunk:<id>`, `asterisk` oder `connection` = Anlage nicht erreichbar), `message`, `pbx` |
 | `phone4all_problem_resolved` | wie oben, sobald das Problem behoben ist |
 
@@ -288,7 +301,28 @@ die Adresse dieser Datei eintragen.
 Schnittstelle für eigene Anbindungen (Node-RED, Skripte):
 `GET /api/integration/status` mit `Authorization: Bearer <Zugriffsschlüssel>` liefert
 SIP-Konten, Nebenstellen, laufende Gespräche, die letzten 25 verpassten Anrufe und die
-aktuellen Probleme als JSON.
+aktuellen Probleme als JSON, außerdem `emergency` (die letzten zehn Notrufe seit dem Start).
+
+`POST /api/integration/call` mit demselben Schlüssel und `{ "extension": "10", "number": "030123456" }`
+löst einen Anruf aus (erst klingelt die Nebenstelle, dann wählt die Anlage); dafür unter
+*System → Schnittstellen* *Anrufe über die Schnittstelle erlauben* einschalten.
+
+### Webhooks
+
+Unter *System → Schnittstellen → Webhooks* eingetragene Adressen bekommen Ereignisse per
+`POST` als JSON: `{ event, time, data, pbx }`. Kopfzeilen: `X-Phone4all-Event` und
+`X-Phone4all-Signature: sha256=<HMAC-SHA256 des Bodys mit dem Schlüssel des Webhooks>`.
+Zeitlimit 5 Sekunden, keine Wiederholung, Umleitungen werden nicht verfolgt.
+
+| Ereignis | `data` |
+| --- | --- |
+| `call.ringing` | `call`, `direction` (`in`/`out`/`internal`), `from`, `from_name`, `extension` |
+| `call.answered` | wie oben, `extension` = wer angenommen hat (`extern` bei ausgehenden) |
+| `call.ended` | `call`, `direction`, `from`, `from_name`, `answered`, `answered_by`, `duration` |
+| `call.missed` | `call`, `from`, `from_name`, `extensions` (bei wem es geklingelt hat) |
+| `voicemail.new` | `extension`, `new` (Anzahl neuer Nachrichten) |
+| `call.blocked` | `from`, `from_name`, `to` |
+| `emergency` | `extension`, `name`, `number`, `time` |
 
 ## Daten
 
@@ -304,6 +338,7 @@ Alles liegt im Ordner `data/` neben der `docker-compose.yml`:
 | `messenger/` | Chats (`rooms.json`, `rooms/*.jsonl`) und Anhänge (`files/`) |
 | `log/` | Anrufliste (CDR) und Protokoll |
 | `watchdog.json` | Ereignisse des Watchdogs |
+| `tts/` | Sprachausgabe (Piper und Stimmen, erst nach dem ersten Gebrauch) |
 
 Umziehen: `data/` kopieren und auf dem neuen Rechner `docker compose up -d` – oder
 die Konfiguration unter *System → Sicherung* exportieren und dort importieren.

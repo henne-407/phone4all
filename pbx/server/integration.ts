@@ -7,6 +7,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import type { PbxStatus } from './asterisk'
 import type { CallRecord } from './cdr'
+import type { EmergencyCall } from './emergency'
 import type { PbxConfig } from './model'
 import type { RuntimeState } from './routing'
 import type { UpdateInfo } from './updates'
@@ -58,6 +59,14 @@ export interface IntegrationReport {
   problems: Problem[]
   update: { available: boolean; current: string; latest: string }
   bans: number
+  /** Letzte Notrufe (110/112) aus der Anlage, neueste zuerst */
+  emergency: EmergencyCall[]
+}
+
+/** Weitere Angaben, die nicht aus Asterisk kommen */
+export interface ReportExtras {
+  emergency: EmergencyCall[]
+  problems: Problem[]
 }
 
 /** CDR-Zeit „2026-10-24 14:05:00“ (Ortszeit des Containers) als ISO-Zeitpunkt */
@@ -69,7 +78,7 @@ export function cdrTime(start: string): string {
 /** Eingehende Anrufe, die niemand angenommen hat (auch Voicemail), ohne laufende */
 export function missedCalls(calls: CallRecord[], active: Set<string>): MissedCall[] {
   return calls
-    .filter((c) => c.direction === 'in' && !active.has(c.id))
+    .filter((c) => c.direction === 'in' && c.status !== 'blocked' && !active.has(c.id))
     .filter((c) => c.status !== 'answered' || c.answeredBy === 'Voicemail')
     .map((c) => ({
       id: c.id,
@@ -95,9 +104,10 @@ export function integrationReport(
   version: string,
   bans: number,
   now = new Date(),
+  extras: ReportExtras = { emergency: [], problems: [] },
 ): IntegrationReport {
   const running = status.asterisk === 'running'
-  const problems: Problem[] = []
+  const problems: Problem[] = [...extras.problems]
   if (!running) {
     problems.push({ key: 'asterisk', message: status.message || `Asterisk läuft nicht (${status.asterisk})` })
   }
@@ -138,6 +148,7 @@ export function integrationReport(
     problems,
     update: { available: update.available, current: update.current, latest: update.latest?.version ?? '' },
     bans,
+    emergency: extras.emergency,
   }
 }
 

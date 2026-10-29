@@ -730,6 +730,14 @@ export class MessengerHub {
     }
   }
 
+  /** Hinweis der Anlage (z. B. Notruf) im Einzelchat zwischen zwei Nebenstellen */
+  notice(to: string, about: string, text: string): void {
+    const users = messengerUsers(this.config())
+    if (to === about || !users.some((e) => e.number === to) || !users.some((e) => e.number === about)) return
+    const r = this.store.direct(to, about)
+    this.publishMessage(r, this.store.post(r, '', text))
+  }
+
   /** Unterhaltung wurde in der Verwaltung gelöscht */
   removed(room: string, members: string[]): void {
     for (const m of members) this.sendTo(m, { t: 'removed', room })

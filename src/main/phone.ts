@@ -49,6 +49,8 @@ export interface PhoneUi {
   showPage(page: string): void
   newEvent(prefill: Partial<CalEvent>): void
   showCalendarEvent(): void
+  /** Gespräch angenommen (z. B. Anrufer im CRM öffnen) */
+  established(call: Call): void
 }
 
 function lastLine(data: string): string {
@@ -311,6 +313,7 @@ export class Phone {
     } else if (kind === 'CALL_ESTABLISHED' && call.state !== 'established') {
       call.state = 'established'
       call.established = Date.now()
+      this.ui.established(call)
       this.ui.withdraw(`call-${id}`)
       if (!call.mini) this.ui.closePopup(id)
       if (call.pendingTransfer) {

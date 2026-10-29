@@ -147,7 +147,25 @@ function usedNumbers(cfg: PbxConfig): Map<string, string> {
   for (const g of cfg.groups) add(g.number, `Gruppe ${g.name || g.number}`)
   for (const c of cfg.conferences) add(c.number, `Konferenz ${c.name || c.number}`)
   for (const i of cfg.ivrs) add(i.number, `Sprachmenü ${i.name || i.number}`)
+  for (const n of parkingNumbers(cfg)) add(n, n === cfg.parking.number ? 'Parken' : `Parkplatz ${n}`)
   return used
+}
+
+/** Parknummer und Parkplätze (leer, wenn Parken aus ist) */
+export function parkingNumbers(cfg: PbxConfig): string[] {
+  const p = cfg.parking
+  if (!p.enabled || !isInternalNumber(p.number)) return []
+  const first = Number(p.number) + 1
+  return [p.number, ...Array.from({ length: Math.max(1, Math.min(50, p.slots)) }, (_, i) => String(first + i))]
+}
+
+const EMAIL = /^[^\s@<>,;]+@[^\s@<>,;]+$/
+
+/** „a@b.de, c@d.de“ → Liste; wirft bei ungültigen Adressen */
+export function emailList(raw: string, what: string): string[] {
+  const list = raw.split(/[,;\s]+/).filter(Boolean)
+  for (const m of list) if (!EMAIL.test(m)) throw new ValidationError(`Ungültige E-Mail-Adresse für ${what}: ${m}`)
+  return list
 }
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
@@ -174,6 +192,8 @@ export function isAddressOrNet(entry: string): boolean {
 }
 
 export function validate(cfg: PbxConfig): void {
+  // Sperrlisten-Einträge aus den Apps kommen ohne ID
+  for (const b of cfg.blocklist) if (!b.id) b.id = newId()
   for (const kind of COLLECTIONS) {
     for (const item of cfg[kind] as unknown as { id: unknown }[]) {
       if (typeof item.id !== 'string' || !ID.test(item.id)) throw new ValidationError(`Ungültige ID „${String(item.id)}“ (nur Buchstaben, Ziffern, - und _).`)
@@ -222,6 +242,8 @@ export function validate(cfg: PbxConfig): void {
     if (!p.name.trim()) throw new ValidationError('App-Profil ohne Namen.')
     if (!p.pages.length) throw new ValidationError(`App-Profil ${p.name}: mindestens eine Seite muss sichtbar sein.`)
     if (!p.pages.includes(p.start_tab)) throw new ValidationError(`App-Profil ${p.name}: Die Startseite muss sichtbar sein.`)
+    p.crm_url = p.crm_url.trim()
+    if (p.crm_url && !/^https?:\/\/\S+$/i.test(p.crm_url)) throw new ValidationError(`App-Profil ${p.name}: Die CRM-Adresse muss mit http:// oder https:// beginnen.`)
   }
   for (const c of cfg.calendars) {
     if (!c.name.trim()) throw new ValidationError('Kalender ohne Namen.')
@@ -259,7 +281,39 @@ export function validate(cfg: PbxConfig): void {
       handsets.set(n, b.name)
     }
   }
+  const pk = cfg.parking
+  if (pk.enabled) {
+    if (!isInternalNumber(pk.number)) throw new ValidationError(`Parken: ungültige Nummer „${pk.number}“ (2–6 Ziffern, nicht mit 0 beginnend).`)
+    if (!(pk.slots >= 1 && pk.slots <= 50)) throw new ValidationError('Parken: 1 bis 50 Parkplätze.')
+    if (!(pk.seconds >= 15 && pk.seconds <= 3600)) throw new ValidationError('Parken: Wartezeit 15 bis 3600 Sekunden.')
+    if (String(Number(pk.number) + pk.slots).length !== pk.number.length) throw new ValidationError('Parken: Die Parkplätze müssen dieselbe Stellenzahl wie die Parknummer haben.')
+  }
   usedNumbers(cfg)
+  for (const b of cfg.blocklist) {
+    b.number = b.number.trim().replace(/[\s\-/().]/g, '')
+    if (!b.created) b.created = new Date().toISOString().slice(0, 10)
+    if (!/^\+?\d+\*?$/.test(b.number) || b.number.replace(/\D/g, '').length < 2) {
+      throw new ValidationError(`Sperrliste: „${b.number}“ ist keine Rufnummer. Erlaubt sind Ziffern, vorne +, hinten * für alle Nummern mit diesem Anfang.`)
+    }
+  }
+  for (const w of cfg.webhooks) {
+    if (!w.name.trim()) throw new ValidationError('Webhook ohne Namen.')
+    w.url = w.url.trim()
+    if (!/^https?:\/\/\S+$/i.test(w.url)) throw new ValidationError(`Webhook ${w.name}: Adresse mit http:// oder https:// angeben.`)
+    if (!w.secret) w.secret = newSecret(32)
+  }
+  const em = cfg.emergency
+  emailList(em.notify_email, 'Notrufe')
+  for (const n of em.notify_exts) if (!cfg.extensions.some((e) => e.number === n)) throw new ValidationError(`Notrufe: Nebenstelle ${n} gibt es nicht.`)
+  const o = cfg.offsite
+  if (o.enabled) {
+    o.url = o.url.trim().replace(/\/+$/, '')
+    if (!/^https?:\/\/\S+$/i.test(o.url)) throw new ValidationError('Externe Sicherung: Adresse mit http:// oder https:// angeben.')
+    if (o.type === 's3' && !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(o.bucket)) throw new ValidationError('Externe Sicherung: Name des Buckets fehlt oder ist ungültig.')
+    if (!(o.keep >= 1 && o.keep <= 365)) throw new ValidationError('Externe Sicherung: 1 bis 365 Sicherungen aufheben.')
+    o.folder = o.folder.trim().replace(/^\/+|\/+$/g, '')
+    if (/[^\w./-]|\.\./.test(o.folder)) throw new ValidationError('Externe Sicherung: Der Ordner darf nur Buchstaben, Ziffern, - _ . und / enthalten.')
+  }
   const l = cfg.ldap
   if (!Number.isInteger(l.port) || l.port < 1 || l.port > 65535) throw new ValidationError('Ungültiger Port für das LDAP-Telefonbuch.')
   if ([cfg.system.sip_port, cfg.system.tls_port].includes(l.port)) throw new ValidationError('Der LDAP-Port ist schon für SIP belegt.')
@@ -383,6 +437,9 @@ export function stripSecrets(cfg: PbxConfig): PbxConfig {
   c.mail.password = ''
   c.integration.token = ''
   c.ldap.password = ''
+  c.offsite.password = ''
+  c.offsite.passphrase = ''
+  for (const w of c.webhooks) w.secret = ''
   return c
 }
 
@@ -399,6 +456,14 @@ export class ConfigStore {
     const fresh = !fs.existsSync(PATHS.config)
     const raw = fresh ? structuredClone(DEFAULT_CONFIG) : this.loadConfig()
     this.config = withDefaults(raw)
+    // Parken ist neu und standardmäßig an: belegen bestehende Nummern die Parkplätze, bleibt es aus
+    if (!raw.parking) {
+      try {
+        usedNumbers(this.config)
+      } catch {
+        this.config.parking.enabled = false
+      }
+    }
     const before = JSON.stringify(this.config)
     migrateDevices(raw.extensions, this.config.extensions)
     for (const e of this.config.extensions) fillSecrets(e)
@@ -477,6 +542,8 @@ export class ConfigStore {
         if (kind === 'extensions') {
           for (const k of ['provision_token', 'provision_expires', 'provision_pin', 'provision_pin_expires', 'devices']) saved[k] = list[i][k]
         }
+        // Den Schlüssel des Webhooks vergibt nur der Server
+        if (kind === 'webhooks') saved.secret = list[i].secret
         // Link und PIN der Basis vergibt nur der Server
         if (kind === 'dect') {
           saved.token = list[i].token
@@ -535,6 +602,10 @@ export class ConfigStore {
       }
       if (kind === 'appprofiles') for (const e of draft.extensions) if (e.app_profile === id) e.app_profile = ''
       if (kind === 'calendars') for (const p of draft.appprofiles) p.calendars = p.calendars.filter((c) => c !== id)
+      if (kind === 'extensions') {
+        const ext = this.config.extensions.find((e) => e.id === id)
+        if (ext) draft.emergency.notify_exts = draft.emergency.notify_exts.filter((n) => n !== ext.number)
+      }
     })
     if (removed) {
       delete this.state.dnd[removed]
@@ -634,6 +705,9 @@ export class ConfigStore {
     incoming.mail.password ||= this.config.mail.password
     incoming.integration.token ||= this.config.integration.token
     incoming.ldap.password ||= this.config.ldap.password
+    incoming.offsite.password ||= this.config.offsite.password
+    incoming.offsite.passphrase ||= this.config.offsite.passphrase
+    for (const w of incoming.webhooks) w.secret ||= this.config.webhooks.find((x) => x.id === w.id)?.secret ?? ''
     this.backup('vor-import')
     this.update((draft) => Object.assign(draft, incoming))
     if (data.state) {

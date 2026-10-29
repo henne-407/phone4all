@@ -6,7 +6,7 @@
 
 import { type DirectoryEntry, external } from './directory'
 import { closedReason, localTime } from './holidays'
-import type { AppPermission, Extension, ForwardRule, PbxConfig, Trunk } from './model'
+import type { AppPermission, BlockedNumber, Extension, ForwardRule, PbxConfig, Trunk } from './model'
 import { SPECIAL_NUMBER, cleanNumber, formatFor, prefixToE164, toE164 } from './numbers'
 import { HANGUP_TARGET, destTarget } from './targets'
 
@@ -113,6 +113,24 @@ function userPart(header: string): string {
   return m ? decodeURIComponent(m[1]) : ''
 }
 
+/** Ziel im Wählplan für gesperrte Anrufer */
+export const BLOCKED_TARGET = 'p4a-blocked^s'
+
+/** Sperre, die für einen Anrufer greift (Nummer wie angezeigt), oder 'anonymous' */
+export function blockedBy(cfg: PbxConfig, caller: string): BlockedNumber | 'anonymous' | null {
+  if (caller === 'anonymous') return cfg.blocking.anonymous === 'reject' ? 'anonymous' : null
+  const cc = cfg.system.country_code
+  const e164 = toE164(caller, cc)
+  for (const b of cfg.blocklist) {
+    const raw = b.number.trim()
+    if (raw.endsWith('*')) {
+      const prefix = prefixToE164(raw.slice(0, -1), cc)
+      if (prefix && (e164.startsWith(prefix) || cleanNumber(caller).startsWith(cleanNumber(raw.slice(0, -1))))) return b
+    } else if (cleanNumber(raw) && sameNumber(raw, caller, cfg)) return b
+  }
+  return null
+}
+
 export interface InboundRequest {
   trunk: string
   did: string
@@ -126,6 +144,7 @@ export function routeInbound(cfg: PbxConfig, req: InboundRequest): string {
   let called = req.did
   if (trunk?.did_source === 'to' || !called || called === 's') called = userPart(req.to) || called
   const caller = displayNumber(req.cid, cfg)
+  if (blockedBy(cfg, caller)) return reply(BLOCKED_TARGET, lookupName(cfg, caller), caller, displayNumber(called, cfg))
 
   const candidates = cfg.inbound
     .filter((r) => !r.trunk || r.trunk === req.trunk)

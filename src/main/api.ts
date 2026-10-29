@@ -121,6 +121,8 @@ export function createApi(app: App) {
       if ('autostart' in values) app.updateAutostart()
       app.stateChanged()
     },
+    /** Wähl-Links und Tastenkürzel; false = Tastenkürzel ist belegt */
+    setLinks: (values: { handler?: boolean; hotkey?: string }) => app.setLinks(values),
     setReminderMinutes: (minutes: number) => {
       store.settings.calendar.reminder_minutes = minutes
       store.saveSettings()
@@ -166,6 +168,17 @@ export function createApi(app: App) {
       attempt(() => app.provisioning.savePhonebookEntry(contact)),
     pbxDeleteContact: (id: string) => attempt(() => app.provisioning.deletePhonebookEntry(id)),
     takePbxLink: () => app.takePendingLink(),
+    pbxVoicemail: () => attempt(() => app.provisioning.voicemailList()),
+    pbxVoicemailAudio: (id: string) => attempt(() => app.provisioning.voicemailAudio(id)),
+    pbxVoicemailRead: (id: string) => attempt(() => app.provisioning.voicemailRead(id)),
+    pbxVoicemailDelete: (id: string) => attempt(() => app.provisioning.voicemailDelete(id)),
+    pbxBlock: (number: string, note: string) => attempt(() => app.provisioning.blockNumber(number, note)),
+    /** Gespräch parken: Weiterleiten an die Parknummer der Anlage */
+    park: (id: string) => {
+      const parking = store.settings.provisioning.parking
+      if (parking) phone.transfer(id, parking.number)
+    },
+    openCrm: (number: string, name: string) => app.openCrm(number, name),
     setTitleBarColors: (color: string, symbolColor: string) => app.setTitleBarColors(color, symbolColor),
 
     // -- Kontakte ------------------------------------------------------------

@@ -9,6 +9,8 @@ import ArrowUpIcon from '@mui/icons-material/ArrowUpward'
 import CallIcon from '@mui/icons-material/Call'
 import CalendarIcon from '@mui/icons-material/CalendarMonth'
 import EditIcon from '@mui/icons-material/Edit'
+import GroupsIcon from '@mui/icons-material/Groups'
+import LocalParkingIcon from '@mui/icons-material/LocalParking'
 import HistoryIcon from '@mui/icons-material/History'
 import InsightsIcon from '@mui/icons-material/Insights'
 import StarIcon from '@mui/icons-material/Star'
@@ -39,7 +41,7 @@ import { type ReactNode, useEffect, useState } from 'react'
 import { dayLabel, formatTalk, relativeStart } from '../../../shared/format'
 import { contactNumbers, hasDigit } from '../../../shared/numbers'
 import { frequent, summary } from '../../../shared/stats'
-import type { CalEvent, HomeCard, PageName } from '../../../shared/types'
+import type { CalEvent, HomeCard, PageName, TeamMember } from '../../../shared/types'
 import { api } from '../api'
 import { emit } from '../bus'
 import { ContactAvatar, StatusDot } from '../components/common'
@@ -53,11 +55,12 @@ const CARDS: Record<HomeCard, [string, ReactNode]> = {
   favorites: ['Favoriten', <StarIcon key="i" />],
   recent: ['Letzte Anrufe', <HistoryIcon key="i" />],
   events: ['Nächste Termine', <CalendarIcon key="i" />],
+  team: ['Kollegen', <GroupsIcon key="i" />],
 }
 // Karten mit Listen dürfen in die Höhe wachsen, die anderen behalten ihre natürliche Größe
-const GROWS = new Set<HomeCard>(['recent', 'events'])
+const GROWS = new Set<HomeCard>(['recent', 'events', 'team'])
 // Ungefährer Platzbedarf, um die Karten gleichmäßig auf die Spalten zu verteilen
-const WEIGHT: Record<HomeCard, number> = { status: 2, today: 1, favorites: 2, recent: 3, events: 3 }
+const WEIGHT: Record<HomeCard, number> = { status: 2, today: 1, favorites: 2, recent: 3, events: 3, team: 3 }
 export const START_TABS: [PageName, string][] = [
   ['home', 'Startseite'],
   ['dial', 'Wählen'],
@@ -294,6 +297,101 @@ function EventsCard({ grow, fill }: { grow: boolean; fill: boolean }) {
   )
 }
 
+const LINE: Record<TeamMember['state'], [string, 'success' | 'warning' | 'error' | 'disabled']> = {
+  idle: ['Frei', 'success'],
+  ringing: ['Klingelt', 'warning'],
+  busy: ['Im Gespräch', 'error'],
+  offline: ['Nicht erreichbar', 'disabled'],
+}
+
+function minutes(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+/** Kollegen mit Besetztanzeige und geparkte Gespräche (Telefonanlage) */
+function TeamCard({ grow, fill }: { grow: boolean; fill: boolean }) {
+  const { state } = useApp()
+  const team = state.team
+  const me = state.settings.provisioning.extension
+  const [now, setNow] = useState(Date.now())
+  const parked = team?.parked ?? []
+  useEffect(() => {
+    if (!parked.length) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [parked.length])
+  const name = (n: string): string => team?.extensions.find((e) => e.number === n)?.name || n
+  const others = (team?.extensions ?? []).filter((e) => e.number !== me)
+  return (
+    <HomeCardBox card="team" grow={grow}>
+      {!team ? (
+        <Typography sx={{ color: 'text.secondary' }}>Die Telefonanlage ist gerade nicht erreichbar.</Typography>
+      ) : (
+        <>
+          {parked.length > 0 && (
+            <Stack sx={{ gap: 0.5 }}>
+              {parked.map((c) => (
+                <Stack key={c.slot} direction="row" sx={{ alignItems: 'center', gap: 1.25, p: 1, borderRadius: 2, bgcolor: 'action.hover' }}>
+                  <LocalParkingIcon color="primary" />
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography variant="body2" noWrap sx={{ fontWeight: 500 }}>
+                      {c.name || c.number || 'Unbekannt'} auf {c.slot}
+                    </Typography>
+                    <Typography variant="caption" noWrap sx={{ color: 'text.secondary', display: 'block' }}>
+                      {[c.name && c.number, c.by && `von ${name(c.by)}`, `seit ${minutes(now - c.since)}`].filter(Boolean).join(' · ')}
+                    </Typography>
+                  </Box>
+                  <Button size="small" variant="contained" startIcon={<CallIcon />} onClick={() => void api.dial(c.slot)}>
+                    Übernehmen
+                  </Button>
+                </Stack>
+              ))}
+            </Stack>
+          )}
+          {others.length ? (
+            <CardList fill={fill}>
+              {others.map((e) => {
+                const [label, color] = LINE[e.state]
+                const detail = e.dnd ? 'Nicht stören' : e.forward ? `Umgeleitet${e.forward === 'extern' ? '' : ` an ${name(e.forward)}`}` : label
+                return (
+                  <ListItem key={e.number} disablePadding>
+                    <CardActionArea sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 1, py: 0.75, borderRadius: 2 }} onClick={() => void api.dial(e.number)}>
+                      <Box sx={{ position: 'relative', display: 'flex' }}>
+                        <ContactAvatar name={e.name || e.number} size={34} />
+                        <Box sx={{ position: 'absolute', right: -2, bottom: -2, display: 'flex', bgcolor: 'background.paper', borderRadius: '50%', p: '1px' }}>
+                          <TeamDot color={e.dnd ? 'error' : color} ringing={e.state === 'ringing'} />
+                        </Box>
+                      </Box>
+                      <ListItemText primary={e.name || e.number} secondary={`${e.number} · ${detail}`} slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }} />
+                    </CardActionArea>
+                  </ListItem>
+                )
+              })}
+            </CardList>
+          ) : (
+            <Typography sx={{ color: 'text.secondary' }}>Keine weiteren Nebenstellen.</Typography>
+          )}
+        </>
+      )}
+    </HomeCardBox>
+  )
+}
+
+function TeamDot({ color, ringing }: { color: 'success' | 'warning' | 'error' | 'disabled'; ringing: boolean }) {
+  return (
+    <Box
+      sx={{
+        width: 10,
+        height: 10,
+        borderRadius: '50%',
+        bgcolor: color === 'disabled' ? 'action.disabled' : `${color}.main`,
+        ...(ringing && { animation: 'pulse 1.2s ease-in-out infinite', '@keyframes pulse': { '50%': { opacity: 0.3 } } }),
+      }}
+    />
+  )
+}
+
 export function HomePage({ columns }: { columns: number }) {
   const { state } = useApp()
   const [, setMinute] = useState(0)
@@ -305,11 +403,13 @@ export function HomePage({ columns }: { columns: number }) {
 
   const fill = columns > 1
   const policy = state.settings.provisioning.policy
-  const cards = policy?.home_cards.length
-    ? policy.home_cards
-    : homeLayout(state.settings.home.cards)
-        .filter(([, v]) => v)
-        .map(([k]) => k)
+  const cards = (
+    policy?.home_cards.length
+      ? policy.home_cards
+      : homeLayout(state.settings.home.cards)
+          .filter(([, v]) => v)
+          .map(([k]) => k)
+  ).filter((k) => k !== 'team' || state.settings.provisioning.pbx)
   const n = Math.max(1, Math.min(columns, cards.length))
   const placed: HomeCard[][] = Array.from({ length: n }, () => [])
   const load = new Array(n).fill(0)
@@ -334,6 +434,8 @@ export function HomePage({ columns }: { columns: number }) {
         return <RecentCard key={key} grow={grow} fill={fill} />
       case 'events':
         return <EventsCard key={key} grow={grow} fill={fill} />
+      case 'team':
+        return <TeamCard key={key} grow={grow} fill={fill} />
     }
   }
 
@@ -375,7 +477,8 @@ export function CustomizeHomeDialog({ onClose }: { onClose: () => void }) {
           Karten ein- und ausblenden, mit den Pfeilen sortieren.
         </Typography>
         <List disablePadding>
-          {layout.map(([key, visible], i) => (
+          {layout.map(([key, visible], i) =>
+            key === 'team' && !state.settings.provisioning.pbx ? null : (
             <ListItem key={key} disablePadding sx={{ gap: 0.5 }}>
               <ListItemIcon sx={{ minWidth: 40 }}>{CARDS[key][1]}</ListItemIcon>
               <ListItemText primary={CARDS[key][0]} />
@@ -390,7 +493,8 @@ export function CustomizeHomeDialog({ onClose }: { onClose: () => void }) {
                 onChange={(e) => save(layout.map(([k, v], j) => [k, j === i ? e.target.checked : v]))}
               />
             </ListItem>
-          ))}
+            ),
+          )}
         </List>
         {!state.settings.provisioning.policy && (
         <TextField

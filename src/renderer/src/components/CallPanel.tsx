@@ -8,8 +8,10 @@ import CallIcon from '@mui/icons-material/Call'
 import CallEndIcon from '@mui/icons-material/CallEnd'
 import DialpadIcon from '@mui/icons-material/Dialpad'
 import EventIcon from '@mui/icons-material/EventAvailable'
+import LocalParkingIcon from '@mui/icons-material/LocalParking'
 import MicOffIcon from '@mui/icons-material/MicOff'
 import NotificationsOffIcon from '@mui/icons-material/NotificationsOff'
+import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import PauseIcon from '@mui/icons-material/Pause'
 import SwapCallsIcon from '@mui/icons-material/SwapCalls'
 import ForwardIcon from '@mui/icons-material/PhoneForwarded'
@@ -191,6 +193,12 @@ export function CallPanel({ call, popup = false }: { call: CallInfo; popup?: boo
               disabled={!established}
               onClick={(e) => setTransferAnchor(e.currentTarget)}
             />
+            {state.settings.provisioning.parking && (
+              <CallToggle icon={<LocalParkingIcon />} label="Parken" disabled={!established} onClick={() => void api.park(call.id)} />
+            )}
+            {state.settings.provisioning.crm && (
+              <CallToggle icon={<OpenInNewIcon />} label="CRM" onClick={() => void api.openCrm(call.number, call.name)} />
+            )}
             {!popup && (
               <CallToggle
                 icon={<EventIcon />}
