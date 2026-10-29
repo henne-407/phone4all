@@ -85,6 +85,13 @@ export class Guard extends EventEmitter {
     }
   }
 
+  /** Sperre aus anderer Quelle (Weboberfläche, Einrichtung): beachtet Schalter und „Nie sperren“ */
+  report(ip: string, reason: string): void {
+    const s = this.settings()
+    if (!s.ban_enabled || !ip || inList(ip, ['127.0.0.1', '::1', ...s.whitelist]) || this.isBanned(ip)) return
+    this.ban(ip, reason, s.ban_minutes)
+  }
+
   ban(ip: string, reason: string, minutes: number): void {
     this.bans = [...this.bans.filter((b) => b.ip !== ip), { ip, reason, until: Date.now() + minutes * 60000 }]
     console.log(`Gesperrt: ${ip} – ${reason}`)

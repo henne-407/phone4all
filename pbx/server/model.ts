@@ -46,8 +46,10 @@ export interface Extension {
    */
   forward: { busy: string; noanswer: string; rules: ForwardRule[] }
   record: boolean
-  /** Einrichtungs-PIN für die App (zusammen mit der Nebenstelle) */
+  /** Einrichtungs-PIN für die App (zusammen mit der Nebenstelle), gilt einmal */
   provision_pin: string
+  /** PIN gültig bis (ms seit 1970); 0 = abgelaufen oder schon benutzt */
+  provision_pin_expires: number
   /** Geheimer Teil des Einrichtungslinks */
   provision_token: string
   /** App-Profil (Ansichten der Phone4All-App), leer = ohne Vorgaben */
@@ -363,6 +365,8 @@ export interface MessengerSettings {
   min_free_mb: number
   /** Videoanrufe in den Chats (WebRTC über /ws, Konferenzraum je Unterhaltung) */
   video: boolean
+  /** Speicher für Anhänge je Nebenstelle (MB, 0 = unbegrenzt) */
+  quota_mb: number
 }
 
 /** Unterhaltung: Einzelchat (zwei Nebenstellen) oder Gruppe */
@@ -529,7 +533,8 @@ export interface PbxConfig {
   security: SecuritySettings
   updates: UpdateSettings
   /** discovery: im Netz auffindbar · permissions: Rechte aller Nebenstellen in der App */
-  provisioning: { discovery: boolean; permissions: AppPermission[] }
+  /** pin_remote: Einrichtung per PIN auch von außerhalb der lokalen Netze */
+  provisioning: { discovery: boolean; permissions: AppPermission[]; pin_remote: boolean }
   remote: RemoteSettings
   watchdog: WatchdogSettings
   integration: IntegrationSettings
@@ -592,12 +597,12 @@ export const DEFAULT_CONFIG: PbxConfig = {
   updates: { channel: 'stable', auto: false, hour: 3 },
   // Umleiten (*21) und Schreiben in zentrale Kalender darf jede Nebenstelle; nach außen
   // umleiten nur mit Freigabe (Schutz vor Umleitungsbetrug mit erbeuteten Zugängen)
-  provisioning: { discovery: true, permissions: ['forward', 'forward_rules', 'calendar_edit'] },
+  provisioning: { discovery: true, permissions: ['forward', 'forward_rules', 'calendar_edit'], pin_remote: false },
   remote: { enabled: true, public_url: '', turn: true, turn_port: 3478, turn_host: '' },
   watchdog: { auto_repair: true, trunk_grace: 3, notify_email: '' },
   integration: { enabled: false, token: '' },
   ldap: { enabled: false, port: 389, password: '' },
-  messenger: { enabled: true, max_file_mb: 25, min_free_mb: 2048, video: true },
+  messenger: { enabled: true, max_file_mb: 25, min_free_mb: 2048, video: true, quota_mb: 500 },
 }
 
 /** Listen der Konfiguration, die die Weboberfläche einheitlich bearbeitet. */
@@ -671,6 +676,7 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         forward: { busy: '', noanswer: '', rules: [] },
         record: false,
         provision_pin: '',
+        provision_pin_expires: 0,
         provision_token: '',
         app_profile: '',
       } satisfies Omit<Extension, 'id'>

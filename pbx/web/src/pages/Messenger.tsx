@@ -84,9 +84,16 @@ function Settings() {
               onChange={(v) => setDraft({ ...draft, min_free_mb: v })}
               helperText="Erst wenn weniger frei ist, werden die ältesten Nachrichten gelöscht"
             />
+            <NumberField
+              label="Speicher je Nebenstelle (MB)"
+              value={draft.quota_mb}
+              min={0}
+              onChange={(v) => setDraft({ ...draft, quota_mb: v })}
+              helperText="Für verschickte Anhänge, 0 = unbegrenzt"
+            />
           </FormGrid>
           <Stack direction="row" sx={{ justifyContent: 'flex-end' }}>
-            <Button variant="contained" onClick={() => save({ max_file_mb: draft.max_file_mb, min_free_mb: draft.min_free_mb })}>
+            <Button variant="contained" onClick={() => save({ max_file_mb: draft.max_file_mb, min_free_mb: draft.min_free_mb, quota_mb: draft.quota_mb })}>
               Speichern
             </Button>
           </Stack>

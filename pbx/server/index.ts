@@ -1,5 +1,6 @@
 /** Verwaltungsdienst der Telefonanlage: Weboberfläche, API, Anruflogik für Asterisk. */
 
+import { timingSafeEqual } from 'node:crypto'
 import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
@@ -34,10 +35,10 @@ import {
   routeOutbound,
   timeConditionTarget,
 } from './routing'
-import { Guard } from './security'
+import { Guard, inList } from './security'
 import { SourceSync } from './sources/sync'
 import { listSounds, saveSound, soundDir, soundFile, type SoundKind } from './sounds'
-import { ConfigStore, type ExportFile, ValidationError, fillSecrets, newPin, newSecret } from './store'
+import { ConfigStore, type ExportFile, ValidationError, consumePin, fillSecrets, newPin, newSecret, pinValid, renewPin } from './store'
 import type { DectBase } from './model'
 import { Updater } from './updates'
 import { type WatchEvent, Watchdog } from './watchdog'
@@ -168,6 +169,25 @@ function forwardAlert(ext: string, target: string): void {
 
 guard.on('ban', (ip: string, reason: string) => securityAlert(`ban:${ip}`, `Adresse ${ip} gesperrt: ${reason}`))
 
+/** Adresse im eigenen Netz? (Dort bremst nur die Anmeldung, damit sich niemand aussperrt) */
+function isLocal(ip: string): boolean {
+  return ip === '127.0.0.1' || ip === '::1' || inList(ip, store.config.system.local_nets)
+}
+
+// Zu viele Fehlversuche über HTTP (Anmeldung, PIN, Einrichtungslinks): von außen auf die
+// gemeinsame Sperrliste – gilt dann auch für SIP
+auth.onBlock = (ip, reason) => {
+  if (!isLocal(ip)) guard.report(ip, `${reason} (Weboberfläche/Einrichtung)`)
+  else securityAlert(`http:${ip}`, `Viele Fehlversuche von ${ip}: ${reason}. Die Adresse ist 15 Minuten gebremst.`)
+}
+
+/** Gebremst (zu viele Fehlversuche) oder gesperrt? */
+function isBlocked(ip: string): boolean {
+  return auth.blocked(ip) || guard.isBanned(ip)
+}
+
+const TOO_MANY = 'Zu viele Fehlversuche. Bitte 15 Minuten warten.'
+
 // -- Interne Schnittstelle für den Wählplan (nur von localhost) ------------------
 
 const internal = new Router()
@@ -252,10 +272,10 @@ pub.get('/api/session', (r) => ({
 }))
 
 pub.post('/api/login', async (r) => {
-  if (auth.blocked(r.ip)) throw new HttpError(429, 'Zu viele Fehlversuche. Bitte 15 Minuten warten.')
+  if (isBlocked(r.ip)) throw new HttpError(429, TOO_MANY)
   const { password } = await r.json<{ password: string }>()
   if (!auth.check(String(password ?? ''))) {
-    auth.failed(r.ip)
+    auth.failed(r.ip, 'Falsches Passwort der Weboberfläche')
     throw new HttpError(401, 'Das Passwort ist falsch.')
   }
   const token = auth.login()
@@ -448,16 +468,38 @@ pub.put('/provision/:token/forward', async (r) => {
   return forwardInfo(store.config, store.state, tokenExtension(r.params.token))
 })
 
-/** Einrichtung mit Nebenstelle und Einrichtungs-PIN */
+/** Fehlversuche mit der PIN je Nebenstelle; danach ist die PIN verbraucht */
+const pinFailures = new Map<string, number>()
+const PIN_MAX_FAILURES = 5
+
+/** Einrichtung mit Nebenstelle und Einrichtungs-PIN (gilt einmal und befristet) */
 pub.post('/provision', async (r) => {
-  if (auth.blocked(r.ip)) throw new HttpError(429, 'Zu viele Fehlversuche. Bitte 15 Minuten warten.')
+  if (isBlocked(r.ip)) throw new HttpError(429, TOO_MANY)
+  if (!store.config.provisioning.pin_remote && !isLocal(r.ip)) {
+    throw new HttpError(403, 'Die Einrichtung per PIN geht nur im Netz der Anlage. Bitte den Einrichtungslink aus der Einladung verwenden.')
+  }
   const { extension, pin } = await r.json<{ extension: string; pin: string }>()
   const ext = store.config.extensions.find((e) => e.number === String(extension ?? '').trim())
-  if (!ext || !pin || ext.provision_pin !== String(pin).trim()) {
-    auth.failed(r.ip)
-    throw new HttpError(403, 'Nebenstelle oder Einrichtungs-PIN stimmen nicht.')
+  const ok = ext && pinValid(ext) && Boolean(pin) && String(pin).trim().length === ext.provision_pin.length &&
+    timingSafeEqual(Buffer.from(String(pin).trim()), Buffer.from(ext.provision_pin))
+  if (!ext || !ok) {
+    auth.failed(r.ip, 'Falsche Einrichtungs-PIN')
+    if (ext) {
+      const n = (pinFailures.get(ext.id) ?? 0) + 1
+      pinFailures.set(ext.id, n)
+      if (n >= PIN_MAX_FAILURES && pinValid(ext)) {
+        pinFailures.delete(ext.id)
+        store.update((draft) => consumePin(draft.extensions.find((e) => e.id === ext.id)!))
+        securityAlert(`pin:${ext.number}`, `Einrichtungs-PIN der Nebenstelle ${ext.number} nach ${n} Fehlversuchen ungültig gemacht (zuletzt von ${r.ip}).`)
+      }
+    }
+    throw new HttpError(403, 'Nebenstelle oder Einrichtungs-PIN stimmen nicht, oder die PIN ist abgelaufen.')
   }
-  return extProfile(r, ext)
+  pinFailures.delete(ext.id)
+  // Einmal benutzt: Für das nächste Gerät erzeugt die Verwaltung eine neue PIN
+  store.update((draft) => consumePin(draft.extensions.find((e) => e.id === ext.id)!))
+  securityAlert(`pinok:${ext.number}`, `Nebenstelle ${ext.number} per PIN eingerichtet (von ${r.ip}).`, 'info')
+  return extProfile(r, store.config.extensions.find((e) => e.id === ext.id)!)
 })
 
 /** Seite für den Link aus der Einladungs-E-Mail */
@@ -561,10 +603,10 @@ api.post('/api/extensions/:id/renew', (r) => {
     const ext = draft.extensions.find((e) => e.id === r.params.id)
     if (!ext) throw new HttpError(404, 'Nebenstelle nicht gefunden.')
     if (what === 'secret') ext.secret = newSecret()
-    else if (what === 'pin') ext.provision_pin = newPin()
+    else if (what === 'pin') renewPin(ext)
     else {
       ext.provision_token = newSecret(32)
-      ext.provision_pin = newPin()
+      renewPin(ext)
     }
     fillSecrets(ext)
   })
@@ -576,13 +618,24 @@ api.get('/api/extensions/:id/provisioning', (r) => {
   const ext = store.config.extensions.find((e) => e.id === r.params.id)
   if (!ext) throw new HttpError(404, 'Nebenstelle nicht gefunden.')
   const base = linkBase(store.config, requestBase(r))
-  return { base, setup: `${base}/setup/${ext.provision_token}`, app: appLink(base, ext), pin: ext.provision_pin }
+  return {
+    base,
+    setup: `${base}/setup/${ext.provision_token}`,
+    app: appLink(base, ext),
+    pin: ext.provision_pin,
+    pin_expires: pinValid(ext) ? ext.provision_pin_expires : 0,
+  }
 })
 
 api.post('/api/extensions/:id/invite', async (r) => {
-  const ext = store.config.extensions.find((e) => e.id === r.params.id)
+  let ext = store.config.extensions.find((e) => e.id === r.params.id)
   if (!ext) throw new HttpError(404, 'Nebenstelle nicht gefunden.')
   if (!ext.email) throw new HttpError(400, 'Für diese Nebenstelle ist keine E-Mail-Adresse eingetragen.')
+  // Abgelaufene oder benutzte PIN: für die Einladung eine neue erzeugen
+  if (!pinValid(ext)) {
+    store.update((draft) => renewPin(draft.extensions.find((e) => e.id === r.params.id)!))
+    ext = store.config.extensions.find((e) => e.id === r.params.id)!
+  }
   const base = linkBase(store.config, requestBase(r))
   await sendMail(
     store.config.mail,
@@ -599,7 +652,7 @@ api.post('/api/extensions/:id/invite', async (r) => {
       'Oder in der App unter Einstellungen → Konto → „Von Telefonanlage einrichten“:',
       `  Anlage:          ${base}`,
       `  Nebenstelle:     ${ext.number}`,
-      `  Einrichtungs-PIN: ${ext.provision_pin}`,
+      `  Einrichtungs-PIN: ${ext.provision_pin} (gilt einmal, bis ${new Date(ext.provision_pin_expires).toLocaleString('de-DE')}, nur im Netz der Anlage)`,
       '',
       'Funktionen am Telefon: *97 Voicemail, *76 Nicht stören, *21<Nummer> Weiterleitung (*21 aus), *8 Heranholen.',
     ].join('\n'),
@@ -848,6 +901,9 @@ function isLoopback(ip: string): boolean {
   return ip === '127.0.0.1' || ip === '::1'
 }
 
+/** Pfade mit geheimem Token im zweiten Teil */
+const SECRET_PATH = /^\/(?:provision|setup|dect)\/([^/]+)/
+
 async function handle(raw: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const isUpload = raw.url?.startsWith('/api/sounds') || raw.url?.startsWith('/api/import')
   const isChatFile = CHAT_UPLOAD.test((raw.url ?? '').split('?')[0])
@@ -864,6 +920,8 @@ async function handle(raw: http.IncomingMessage, res: http.ServerResponse): Prom
     }
     const p = pub.match(req.method, req.path)
     if (p) {
+      // Geheime Links (App, Einladung, DECT): Raten bremsen und sperren
+      if (SECRET_PATH.test(req.path) && isBlocked(req.ip)) throw new HttpError(429, TOO_MANY)
       req.params = p.params
       const result = await p.handler(req)
       if (!res.headersSent) sendJson(res, 200, result)
@@ -887,6 +945,9 @@ async function handle(raw: http.IncomingMessage, res: http.ServerResponse): Prom
     serveStatic(PATHS.web, req.path, res)
   } catch (e) {
     const status = e instanceof HttpError ? e.status : e instanceof ValidationError ? 400 : 500
+    // Unbekannter Link: jeder andere zählt als Fehlversuch, derselbe nur einmal
+    const secret = SECRET_PATH.exec(req.path)
+    if (status === 404 && secret) auth.failed(req.ip, 'Ungültige Einrichtungslinks', secret[1])
     if (status === 500) console.error(e)
     if (!res.headersSent) sendJson(res, status, { error: (e as Error).message || 'Fehler' })
     else res.end()
@@ -904,10 +965,10 @@ async function main(): Promise<void> {
     const m = /^\/provision\/([^/?]+)\/chat\/?(\?.*)?$/.exec(req.url ?? '')
     if (!m) return ws.upgrade(req, socket, head)
     const ip = clientIp(req)
-    if (auth.blocked(ip)) return reject(socket, 429, 'Too Many Requests')
+    if (isBlocked(ip)) return reject(socket, 429, 'Too Many Requests')
     const ext = store.config.extensions.find((e) => e.provision_token && e.provision_token === decodeURIComponent(m[1]))
     if (!ext) {
-      auth.failed(ip)
+      auth.failed(ip, 'Ungültige Einrichtungslinks', m[1])
       return reject(socket, 404, 'Not Found')
     }
     if (!messengerUsers(store.config).some((e) => e.id === ext.id)) return reject(socket, 403, 'Forbidden')

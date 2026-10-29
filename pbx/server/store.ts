@@ -34,6 +34,25 @@ export function newSecret(length = 20): string {
   return Array.from({ length }, () => chars[randomInt(chars.length)]).join('')
 }
 
+/** Wie lange eine neue Einrichtungs-PIN gilt */
+export const PIN_HOURS = 72
+
+/** Neue Einrichtungs-PIN, gültig für PIN_HOURS Stunden und eine Einrichtung */
+export function renewPin(ext: Extension, now = Date.now()): void {
+  ext.provision_pin = newPin()
+  ext.provision_pin_expires = now + PIN_HOURS * 3600000
+}
+
+/** PIN verbrauchen (nach Einrichtung oder zu vielen Fehlversuchen) */
+export function consumePin(ext: Extension): void {
+  ext.provision_pin = newPin()
+  ext.provision_pin_expires = 0
+}
+
+export function pinValid(ext: Extension, now = Date.now()): boolean {
+  return Boolean(ext.provision_pin) && ext.provision_pin_expires > now
+}
+
 export function newPin(digits = 6): string {
   return Array.from({ length: digits }, () => randomInt(10)).join('')
 }
@@ -42,7 +61,7 @@ export function newPin(digits = 6): string {
 export function fillSecrets(ext: Extension): void {
   if (!ext.secret) ext.secret = newSecret()
   if (!ext.provision_token) ext.provision_token = newSecret(32)
-  if (!/^\d{6,}$/.test(ext.provision_pin)) ext.provision_pin = newPin()
+  if (!/^\d{6,}$/.test(ext.provision_pin)) renewPin(ext)
   if (!ext.voicemail.pin) ext.voicemail.pin = newPin(4)
 }
 
@@ -202,6 +221,7 @@ export function validate(cfg: PbxConfig): void {
   const m = cfg.messenger
   if (!(m.max_file_mb >= 1 && m.max_file_mb <= 1024)) throw new ValidationError('Größte Datei im Messenger: 1 bis 1024 MB.')
   if (!(m.min_free_mb >= 100)) throw new ValidationError('Freier Speicher für den Messenger: mindestens 100 MB.')
+  if (!(m.quota_mb >= 0)) throw new ValidationError('Speicher je Nebenstelle im Messenger: 0 (unbegrenzt) oder mehr.')
 }
 
 export interface ExportFile {

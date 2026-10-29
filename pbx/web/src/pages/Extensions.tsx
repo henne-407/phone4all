@@ -46,11 +46,11 @@ function copy(text: string, toast: (t: string) => void): void {
 
 function Provisioning({ ext }: { ext: Extension }) {
   const { toast, reload } = usePbx()
-  const [info, setInfo] = useState<{ setup: string; app: string; pin: string; base: string } | null>(null)
+  const [info, setInfo] = useState<{ setup: string; app: string; pin: string; pin_expires: number; base: string } | null>(null)
   const [qr, setQr] = useState('')
   useEffect(() => {
     void api.get<typeof info>(`/api/extensions/${ext.id}/provisioning`).then(setInfo)
-  }, [ext.id, ext.provision_token, ext.provision_pin])
+  }, [ext.id, ext.provision_token, ext.provision_pin, ext.provision_pin_expires])
   useEffect(() => {
     if (info) void QRCode.toDataURL(info.setup, { margin: 1, width: 360 }).then(setQr)
   }, [info])
@@ -62,6 +62,11 @@ function Provisioning({ ext }: { ext: Extension }) {
     } catch (e) {
       toast((e as Error).message, 'error')
     }
+  }
+  const renewPin = async (): Promise<void> => {
+    await api.post(`/api/extensions/${ext.id}/renew?what=pin`)
+    await reload()
+    toast('Neue PIN erstellt')
   }
   const renew = async (): Promise<void> => {
     await api.post(`/api/extensions/${ext.id}/renew?what=link`)
@@ -98,7 +103,28 @@ function Provisioning({ ext }: { ext: Extension }) {
             },
           }}
         />
-        <TextField label="Einrichtungs-PIN" value={info.pin} slotProps={{ input: { readOnly: true } }} />
+        <TextField
+          label="Einrichtungs-PIN"
+          value={info.pin_expires ? info.pin : 'abgelaufen oder benutzt'}
+          error={!info.pin_expires}
+          helperText={
+            info.pin_expires
+              ? `Gilt einmal, bis ${new Date(info.pin_expires).toLocaleString('de-DE')}`
+              : 'Für ein weiteres Gerät eine neue PIN erstellen'
+          }
+          slotProps={{
+            input: {
+              readOnly: true,
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton aria-label="Neue PIN" onClick={() => void renewPin()}>
+                    <RefreshIcon />
+                  </IconButton>
+                </InputAdornment>
+              ),
+            },
+          }}
+        />
       </FormGrid>
       <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
         <Button variant="outlined" startIcon={<MailOutlineIcon />} disabled={!ext.email} onClick={() => void invite()}>

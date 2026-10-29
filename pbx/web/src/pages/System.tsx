@@ -499,6 +499,11 @@ function Access() {
       </Section>
       <Section title="Automatische Einrichtung der App" description="Die Phone4All-App sucht im lokalen Netz nach der Anlage (UDP-Port 15060).">
         <FormControlLabel control={<Switch checked={p.discovery} onChange={(e) => set({ discovery: e.target.checked })} />} label="Im lokalen Netz auffindbar" />
+        <FormControlLabel
+          control={<Switch checked={p.pin_remote} onChange={(e) => set({ pin_remote: e.target.checked })} />}
+          label="Einrichtung per PIN auch von außerhalb (sonst nur per Einrichtungslink)"
+          sx={{ display: 'flex' }}
+        />
       </Section>
       <Section
         title="Rechte in der App"
