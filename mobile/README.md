@@ -46,6 +46,23 @@ GitHub Actions baut bei jeder Änderung (Artefakte) bzw. für jeden Tag `mobile-
 
 - **Android:** `SIP-Telefon-<version>.apk` – direkt auf dem Handy installieren
   („Unbekannte Apps installieren“ erlauben).
+### Eigener Signaturschlüssel für Android
+
+Ohne eigenen Schlüssel signiert der Build mit dem öffentlich bekannten Debug-Schlüssel;
+dann könnte jeder ein „Update“ bauen, das Android ohne Rückfrage annimmt. Einmalig
+erzeugen und sicher aufbewahren (geht er verloren, lassen sich Updates nur nach
+Deinstallation einspielen):
+
+```sh
+keytool -genkeypair -v -keystore phone4all.jks -alias phone4all -keyalg RSA -keysize 4096 -validity 10000
+base64 -w0 phone4all.jks   # Ausgabe als Secret ANDROID_KEYSTORE_BASE64
+```
+
+Unter *Settings → Secrets and variables → Actions* `ANDROID_KEYSTORE_BASE64` und
+`ANDROID_KEYSTORE_PASSWORD` anlegen (optional `ANDROID_KEY_ALIAS`, Standard `phone4all`,
+und `ANDROID_KEY_PASSWORD`, falls abweichend). Der Wechsel vom Debug-Schlüssel erfordert
+einmal Deinstallieren und neu Installieren der App; danach gehen Updates wieder direkt.
+
 - **iPhone:** `SIP-Telefon-<version>-unsigniert.ipa` – ohne Apple-Entwicklerkonto z. B.
   mit [Sideloadly](https://sideloadly.io) und der eigenen Apple-ID aufspielen (gilt dann
   7 Tage). Für TestFlight oder den App Store braucht es ein Entwicklerkonto.

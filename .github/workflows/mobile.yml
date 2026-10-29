@@ -33,7 +33,7 @@ jobs:
       - name: JavaScript für Android und iOS bündeln
         run: npm run bundle
 
-  # APK zum direkten Installieren (signiert mit dem Debug-Schlüssel von Expo)
+  # APK zum direkten Installieren (signiert mit dem eigenen Schlüssel, falls hinterlegt)
   android:
     needs: test
     runs-on: ubuntu-latest
@@ -55,6 +55,28 @@ jobs:
       - name: APK bauen
         working-directory: mobile/android
         run: ./gradlew assembleRelease --no-daemon
+      # Eigener Schlüssel aus den Repository-Secrets (siehe mobile/README.md). Ohne ihn bleibt
+      # die APK mit dem öffentlich bekannten Debug-Schlüssel signiert.
+      - name: Mit dem Release-Schlüssel signieren
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'phone4all' }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          if [ -z "$KEYSTORE" ]; then
+            echo "::warning::Kein Release-Schlüssel (ANDROID_KEYSTORE_BASE64) – APK ist mit dem Debug-Schlüssel signiert."
+            exit 0
+          fi
+          tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
+          "$tools/apksigner" sign --ks "$RUNNER_TEMP/release.jks" --ks-pass env:KEYSTORE_PASSWORD \
+            --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASSWORD \
+            --out "$RUNNER_TEMP/signed.apk" "$apk"
+          rm -f "$RUNNER_TEMP/release.jks"
+          "$tools/apksigner" verify --print-certs "$RUNNER_TEMP/signed.apk" | grep -i 'certificate SHA-256'
+          mv "$RUNNER_TEMP/signed.apk" "$apk"
       - name: APK benennen
         run: |
           version=$(node -p "require('./package.json').version")
