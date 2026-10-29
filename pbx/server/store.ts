@@ -311,6 +311,8 @@ export function validate(cfg: PbxConfig): void {
     if (!/^https?:\/\/\S+$/i.test(o.url)) throw new ValidationError('Externe Sicherung: Adresse mit http:// oder https:// angeben.')
     if (o.type === 's3' && !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(o.bucket)) throw new ValidationError('Externe Sicherung: Name des Buckets fehlt oder ist ungültig.')
     if (!(o.keep >= 1 && o.keep <= 365)) throw new ValidationError('Externe Sicherung: 1 bis 365 Sicherungen aufheben.')
+    // Die Sicherung enthält alle Passwörter der Anlage: nie unverschlüsselt auf fremden Speicher
+    if (o.passphrase.length < EXPORT_PASSWORD_MIN) throw new ValidationError(`Externe Sicherung: Das Kennwort zum Verschlüsseln braucht mindestens ${EXPORT_PASSWORD_MIN} Zeichen.`)
     o.folder = o.folder.trim().replace(/^\/+|\/+$/g, '')
     if (/[^\w./-]|\.\./.test(o.folder)) throw new ValidationError('Externe Sicherung: Der Ordner darf nur Buchstaben, Ziffern, - _ . und / enthalten.')
   }
@@ -707,6 +709,8 @@ export class ConfigStore {
     incoming.ldap.password ||= this.config.ldap.password
     incoming.offsite.password ||= this.config.offsite.password
     incoming.offsite.passphrase ||= this.config.offsite.passphrase
+    // Ohne Kennwort (Export ohne Passwörter) bleibt die externe Sicherung aus, bis eines eingetragen ist
+    if (!incoming.offsite.passphrase) incoming.offsite.enabled = false
     for (const w of incoming.webhooks) w.secret ||= this.config.webhooks.find((x) => x.id === w.id)?.secret ?? ''
     this.backup('vor-import')
     this.update((draft) => Object.assign(draft, incoming))
