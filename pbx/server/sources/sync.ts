@@ -158,6 +158,8 @@ export function toCentralEvent(e: RawEvent): CalendarEvent {
 export class SourceSync {
   status: Record<string, SourceStatus> = {}
   private contacts = new Map<string, DirectoryEntry[]>()
+  /** Zählt Änderungen an den Kontakten (für Zwischenspeicher von Profilen und Namenssuche) */
+  revision = 0
   private timer: NodeJS.Timeout | null = null
 
   constructor(
@@ -237,6 +239,7 @@ export class SourceSync {
       const before = JSON.stringify(this.contacts.get(src.id) ?? [])
       if (JSON.stringify(list) !== before) {
         this.contacts.set(src.id, list)
+        this.revision++
         // Die Apps merken die Änderung an der Profil-Revision, LDAP liest bei jeder Suche neu
         saveJson(path.join(DIR, `${src.id}.json`), list)
       }
@@ -261,6 +264,7 @@ export class SourceSync {
     for (const id of [...this.contacts.keys()]) {
       if (cfg.contactsources.some((s) => s.id === id)) continue
       this.contacts.delete(id)
+      this.revision++
       fs.rmSync(path.join(DIR, `${id}.json`), { force: true })
     }
     saveJson(path.join(DIR, 'status.json'), this.status)

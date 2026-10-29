@@ -36,7 +36,7 @@ import { SourceSync } from './sources/sync'
 import { listSounds, saveSound, soundDir, soundFile, type SoundKind } from './sounds'
 import { expire, moveMailbox, recordingFile, removeMailbox, report as storageReport } from './storage'
 import { ConfigStore, type ExportFile, ValidationError, fillSecrets, newPin, newSecret } from './store'
-import type { DectBase } from './model'
+import type { DectBase, PbxConfig } from './model'
 import { Updater } from './updates'
 import { type WatchEvent, Watchdog } from './watchdog'
 import { reject, upgrade } from './websocket'
@@ -55,6 +55,7 @@ const sources = new SourceSync(
   (id, events) => calendars.replace(id, events),
 )
 external.entries = () => sources.entries()
+external.revision = () => sources.revision
 const ldap = new LdapServer(() => store.config)
 const messenger = new MessengerHub(new MessengerStore(PATHS.messenger), () => store.config)
 auth.init()
@@ -196,10 +197,24 @@ function requestBase(r: Request): string {
   return baseUrl(host, store.config, (r.raw.headers['x-forwarded-proto'] as string | undefined) ?? 'http')
 }
 
+// Jede App fragt minütlich nach der Profil-Revision. Das Profil hängt nur an Konfiguration,
+// Kontaktquellen, Adresse und TURN-Zugang (wechselt täglich) – bis sich davon etwas ändert,
+// reicht das zuletzt gebaute.
+const profiles = new WeakMap<PbxConfig, Map<string, { key: string; profile: ReturnType<typeof profile> }>>()
+
 /** Profil der Nebenstelle mit Zugangsdaten für den TURN-Server */
 function extProfile(r: Request, ext: Extension) {
+  const cfg = store.config
   const base = requestBase(r)
-  return profile(store.config, ext, base, turn.iceServers(store.config, linkBase(store.config, base), appEndpoint(ext.number)))
+  const ice = turn.iceServers(cfg, linkBase(cfg, base), appEndpoint(ext.number))
+  const key = `${base}|${sources.revision}|${JSON.stringify(ice)}`
+  let cache = profiles.get(cfg)
+  if (!cache) profiles.set(cfg, (cache = new Map()))
+  const hit = cache.get(ext.id)
+  if (hit?.key === key) return hit.profile
+  const result = profile(cfg, ext, base, ice)
+  cache.set(ext.id, { key, profile: result })
+  return result
 }
 
 pub.get('/api/session', (r) => ({

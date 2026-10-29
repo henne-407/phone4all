@@ -1,10 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import { EMPTY_STATE, extensionPlan, feature, groupPlan, routeInbound, routeOutbound, type RuntimeState } from '../server/routing'
+import { EMPTY_STATE, extensionPlan, feature, groupPlan, lookupName, routeInbound, routeOutbound, type RuntimeState } from '../server/routing'
 import { sampleConfig, to } from './helpers'
 
 const state = (): RuntimeState => structuredClone(EMPTY_STATE)
 
 describe('Eingehende Anrufe', () => {
+  it('findet Namen über alle Nummernformate und auch kurze Einträge', () => {
+    const cfg = sampleConfig()
+    const base = cfg.phonebook[0]
+    cfg.phonebook = [
+      { ...base, id: 'a', name: 'Kurz', company: '', phone: '5550', mobile: '' },
+      { ...base, id: 'b', name: 'Erster', company: '', phone: '', mobile: '0171 5551234' },
+      { ...base, id: 'c', name: 'Zweiter', company: '', phone: '+49 171 5551234', mobile: '' },
+    ]
+    expect(lookupName(cfg, '+491715551234')).toBe('Erster')
+    expect(lookupName(cfg, '00491715551234')).toBe('Erster')
+    expect(lookupName(cfg, '1715551234')).toBe('Erster')
+    expect(lookupName(cfg, '0305550')).toBe('Kurz')
+    expect(lookupName(cfg, '0309999')).toBe('')
+  })
+
   it('nimmt das Standardziel des Kontos und sucht den Namen im Telefonbuch', () => {
     const cfg = sampleConfig()
     const r = routeInbound(cfg, { trunk: 't1', did: '+49301234567', to: '', cid: '+49301111111', name: '' }).split('|')

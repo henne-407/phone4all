@@ -107,6 +107,7 @@ describe('Externe Kontakte', () => {
     cfg.contactsources = [source({ type: 'url', url: `${base}/geheim.vcf`, user: 'anna', password: 'pw' })]
     const sync = new SourceSync(() => cfg, () => undefined)
     external.entries = () => sync.entries()
+    external.revision = () => sync.revision
     await sync.syncContacts(cfg.contactsources[0])
     expect(sync.status.crm).toMatchObject({ error: '', count: 1 })
     expect(directory(cfg).at(-1)).toMatchObject({ name: 'Erika Muster', company: 'Muster GmbH', phone: '030 5550100', mobile: '0171 5550100' })

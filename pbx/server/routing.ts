@@ -4,7 +4,7 @@
  * Antworten sind durch „|“ getrennte Felder; Ziele haben die Form „Kontext^Extension“.
  */
 
-import { external } from './directory'
+import { type DirectoryEntry, external } from './directory'
 import { closedReason } from './holidays'
 import type { AppPermission, Extension, ForwardRule, PbxConfig, Trunk } from './model'
 import { SPECIAL_NUMBER, cleanNumber, formatFor, prefixToE164, toE164 } from './numbers'
@@ -56,15 +56,56 @@ export function displayNumber(raw: string, cfg: PbxConfig): string {
   return e164.startsWith('+') ? formatFor(e164, 'national', cc) : n
 }
 
+interface NameIndex {
+  revision: number
+  /** Einträge je letzte 6 Ziffern der nationalen Nummer */
+  bySuffix: Map<string, { pos: number; entry: DirectoryEntry }[]>
+  /** Kurze Nummern, die über das Suffix nicht sicher zu finden sind */
+  short: { pos: number; entry: DirectoryEntry }[]
+}
+
+const SUFFIX = 6
+const nameIndexes = new WeakMap<PbxConfig, NameIndex>()
+
+function suffixOf(n: string, cfg: PbxConfig): string {
+  const cc = cfg.system.country_code
+  return significant(toE164(n, cc, cfg.system.area_code), cc).replace(/\D/g, '').slice(-SUFFIX)
+}
+
+// Externe Quellen bringen schnell tausende Kontakte mit – nicht bei jedem Anruf alle umrechnen
+function nameIndex(cfg: PbxConfig): NameIndex {
+  const revision = external.revision()
+  const known = nameIndexes.get(cfg)
+  if (known?.revision === revision) return known
+  const index: NameIndex = { revision, bySuffix: new Map(), short: [] }
+  ;[...cfg.phonebook, ...external.entries()].forEach((entry, pos) => {
+    const keys = new Set<string>()
+    for (const n of [entry.phone, entry.mobile]) {
+      if (!n) continue
+      const key = suffixOf(n, cfg)
+      if (key.length < SUFFIX) index.short.push({ pos, entry })
+      else keys.add(key)
+    }
+    for (const key of keys) index.bySuffix.set(key, [...(index.bySuffix.get(key) ?? []), { pos, entry }])
+  })
+  nameIndexes.set(cfg, index)
+  return index
+}
+
 /** Bekannter Name zu einer Nummer (Telefonbuch, Nebenstellen). */
 export function lookupName(cfg: PbxConfig, number: string): string {
   if (!/\d{3,}/.test(number)) return ''
-  for (const e of [...cfg.phonebook, ...external.entries()]) {
-    if ([e.phone, e.mobile].some((n) => n && sameNumber(n, number, cfg))) {
-      return e.company && e.name ? `${e.name} (${e.company})` : e.name || e.company
-    }
-  }
-  return ''
+  const index = nameIndex(cfg)
+  const key = suffixOf(number, cfg)
+  // Kurze gesuchte Nummern können zu jedem längeren Eintrag passen, der so endet
+  const candidates =
+    key.length < SUFFIX ? [...index.bySuffix.values()].flat().concat(index.short) : [...(index.bySuffix.get(key) ?? []), ...index.short]
+  const e = candidates
+    .sort((a, b) => a.pos - b.pos)
+    .map((c) => c.entry)
+    .find((c) => [c.phone, c.mobile].some((n) => n && sameNumber(n, number, cfg)))
+  if (!e) return ''
+  return e.company && e.name ? `${e.name} (${e.company})` : e.name || e.company
 }
 
 function userPart(header: string): string {
