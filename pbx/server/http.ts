@@ -78,11 +78,20 @@ export class Router {
       if (r.method !== method) continue
       const m = r.pattern.exec(pathname)
       if (m) {
-        const params = Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])]))
+        const params = Object.fromEntries(r.keys.map((k, i) => [k, decode(m[i + 1])]))
         return { handler: r.handler, params }
       }
     }
     return null
+  }
+}
+
+/** Pfadteil entschlüsseln; kaputte %-Folgen sind ein Fehler der Anfrage, kein Absturz */
+function decode(part: string): string {
+  try {
+    return decodeURIComponent(part)
+  } catch {
+    throw new HttpError(400, 'Ungültige Adresse.')
   }
 }
 
@@ -168,6 +177,7 @@ export function sendText(res: http.ServerResponse, status: number, text: string,
 }
 
 export function sendFile(res: http.ServerResponse, file: string, download?: string): void {
+  if (!fs.existsSync(file)) throw new HttpError(404, 'Datei nicht gefunden.')
   const st = fs.statSync(file)
   res.writeHead(200, {
     'Content-Type': mimeOf(file),
@@ -179,7 +189,7 @@ export function sendFile(res: http.ServerResponse, file: string, download?: stri
 
 /** Dateien der Weboberfläche; unbekannte Pfade liefern index.html (Single-Page-App). */
 export function serveStatic(root: string, pathname: string, res: http.ServerResponse): void {
-  const rel = path.normalize(decodeURIComponent(pathname)).replace(/^(\.\.[/\\])+/, '')
+  const rel = path.normalize(decode(pathname)).replace(/^(\.\.[/\\])+/, '')
   let file = path.join(root, rel)
   if (!file.startsWith(root) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(root, 'index.html')
   if (!fs.existsSync(file)) {
