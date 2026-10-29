@@ -39,6 +39,7 @@ import { playTestTone, startLevelMeter } from '../audio'
 import { emit } from '../bus'
 import { useApp } from '../state'
 import { StatusDot } from './common'
+import { FaxDialog } from './FaxDialog'
 import { ForwardPopover, ForwardRulesDialog, forwardLabel } from './Forward'
 
 const noDrag = { WebkitAppRegion: 'no-drag' } as const
@@ -192,6 +193,7 @@ export function TopBar({ compact, showTitle }: { compact: boolean; showTitle: bo
   const { state } = useApp()
   const [menu, setMenu] = useState<null | 'account' | 'forward' | 'mic' | 'speaker' | 'main'>(null)
   const [rules, setRules] = useState(false)
+  const [fax, setFax] = useState(false)
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const open = (name: typeof menu) => (e: React.MouseEvent<HTMLElement>) => {
     setAnchor(e.currentTarget)
@@ -338,6 +340,7 @@ export function TopBar({ compact, showTitle }: { compact: boolean; showTitle: bo
 
       <ForwardPopover anchor={menu === 'forward' ? anchor : null} onClose={close} onRules={() => setRules(true)} />
       <ForwardRulesDialog open={rules} onClose={() => setRules(false)} />
+      <FaxDialog open={fax} onClose={() => setFax(false)} />
       <MicPopover anchor={menu === 'mic' ? anchor : null} onClose={close} />
       <SpeakerPopover anchor={menu === 'speaker' ? anchor : null} onClose={close} />
 
@@ -345,6 +348,7 @@ export function TopBar({ compact, showTitle }: { compact: boolean; showTitle: bo
         {[
           ['Einstellungen', () => emit('open-preferences', 'account')],
           ...(state.settings.provisioning.policy?.lock_layout ? [] : [['Startseite anpassen', () => emit('customize-home')] as const]),
+          ...(state.settings.provisioning.permissions.includes('fax_send') ? [['Fax senden …', () => setFax(true)] as const] : []),
           ['Verlauf löschen', () => void api.clearHistory()],
           ['Neu verbinden', () => void api.restartEngine()],
           ['Diagnose', () => emit('open-preferences', 'diagnose')],

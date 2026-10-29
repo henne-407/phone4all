@@ -115,7 +115,7 @@ export function createApi(app: App) {
       return secure
     },
     setAppearance: (values: Parameters<App['setAppearance']>[0]) => app.setAppearance(values),
-    setBehaviour: (values: { run_in_background?: boolean; autostart?: boolean; mini_call?: boolean }) => {
+    setBehaviour: (values: { run_in_background?: boolean; autostart?: boolean; mini_call?: boolean; auto_answer_page?: boolean }) => {
       Object.assign(store.settings, values)
       store.saveSettings()
       if ('autostart' in values) app.updateAutostart()
@@ -173,6 +173,20 @@ export function createApi(app: App) {
     pbxVoicemailRead: (id: string) => attempt(() => app.provisioning.voicemailRead(id)),
     pbxVoicemailDelete: (id: string) => attempt(() => app.provisioning.voicemailDelete(id)),
     pbxBlock: (number: string, note: string) => attempt(() => app.provisioning.blockNumber(number, note)),
+    consult: (id: string, target: string) => phone.consult(id, target),
+    pbxJoinCalls: (mode: 'transfer' | 'conference') =>
+      attempt(async () => {
+        await app.provisioning.joinCalls(mode)
+        phone.afterJoin(mode)
+      }),
+    pbxSetGroup: (id: string, active: boolean) => attempt(() => app.provisioning.setGroup(id, active)),
+    pbxGroupMissed: () => attempt(() => app.provisioning.groupMissedList()),
+    pbxGroupMissedAct: (group: string, id: string, action: 'claim' | 'release' | 'done' | 'reopen') =>
+      attempt(() => app.provisioning.groupMissedAct(group, id, action)),
+    pbxFaxInfo: () => attempt(() => app.provisioning.faxInfo()),
+    pbxSendFax: (box: string, number: string, pdf: Uint8Array) => attempt(() => app.provisioning.sendFax(box, number, pdf)),
+    /** PDF zum Faxen auswählen */
+    pickPdf: () => attempt(() => app.pickPdf()),
     /** Gespräch parken: Weiterleiten an die Parknummer der Anlage */
     park: (id: string) => {
       const parking = store.settings.provisioning.parking

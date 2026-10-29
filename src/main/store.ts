@@ -33,6 +33,7 @@ export const DEFAULT_SETTINGS: Settings = {
   home: { cards: [], start_tab: 'home' },
   ringtone: 'marimba',
   mini_call: true,
+  auto_answer_page: true,
   dnd: false,
   registered: true,
   run_in_background: true,

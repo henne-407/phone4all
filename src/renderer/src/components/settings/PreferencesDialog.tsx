@@ -499,6 +499,14 @@ function GeneralTab() {
           checked={settings.mini_call}
           onChange={(v) => void api.setBehaviour({ mini_call: v })}
         />
+        {state.settings.provisioning.pbx && (
+          <SwitchRow
+            title="Durchsagen selbst annehmen"
+            subtitle="Durchsagen und Gegensprechen der Telefonanlage gehen ohne Klingeln direkt auf den Lautsprecher, wenn kein anderes Gespräch läuft"
+            checked={settings.auto_answer_page}
+            onChange={(v) => void api.setBehaviour({ auto_answer_page: v })}
+          />
+        )}
       </Group>
 
       <Group title="Klingelton" description="Wird auf dem Gerät abgespielt, das unter „Klingeln auf“ gewählt ist.">

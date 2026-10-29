@@ -1,8 +1,8 @@
-/** Ziel für eine Weiterleitung wählen: Nummer eintippen oder Kontakt anklicken. */
+/** Ziel für eine Weiterleitung oder Rückfrage wählen: Nummer eintippen oder Kontakt anklicken. */
 
 import ForwardIcon from '@mui/icons-material/PhoneForwarded'
 import { Fab, List, ListItemAvatar, ListItemButton, ListItemText, Popover, Stack, TextField, Typography } from '@mui/material'
-import { useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { contactNumbers, hasDigit } from '../../../shared/numbers'
 import type { Contact } from '../../../shared/types'
 import { api } from '../api'
@@ -13,10 +13,14 @@ export function TransferPopover({
   anchor,
   onClose,
   onTransfer,
+  title = 'Weiterleiten an',
+  icon = <ForwardIcon />,
 }: {
   anchor: HTMLElement | null
   onClose: () => void
   onTransfer: (target: string) => void
+  title?: string
+  icon?: ReactNode
 }) {
   const { state } = useApp()
   const [text, setText] = useState('')
@@ -59,7 +63,7 @@ export function TransferPopover({
       transformOrigin={{ vertical: 'top', horizontal: 'center' }}
     >
       <Stack sx={{ p: 2, width: 320, gap: 1 }}>
-        <Typography variant="subtitle1">Weiterleiten an</Typography>
+        <Typography variant="subtitle1">{title}</Typography>
         <Stack direction="row" sx={{ gap: 1, alignItems: 'center' }}>
           <TextField
             autoFocus
@@ -70,8 +74,8 @@ export function TransferPopover({
             onKeyDown={(e) => e.key === 'Enter' && submit(text)}
             slotProps={{ htmlInput: { inputMode: 'tel' } }}
           />
-          <Fab size="small" color="primary" aria-label="Weiterleiten" onClick={() => submit(text)} sx={{ flexShrink: 0 }}>
-            <ForwardIcon />
+          <Fab size="small" color="primary" aria-label={title} onClick={() => submit(text)} sx={{ flexShrink: 0 }}>
+            {icon}
           </Fab>
         </Stack>
         {rows.length > 0 && (

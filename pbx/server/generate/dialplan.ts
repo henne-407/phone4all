@@ -220,6 +220,8 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
         'Set(D=${D}&${C})',
         'Goto(next)',
         '(page)GotoIf($["${D}" = ""]?deny)',
+        // Am Namen erkennen die Apps Durchsagen und nehmen sie selbst an (nicht jede wertet Call-Info aus)
+        'Set(CALLERID(name)=${IF($["${PM}" = "intercom"]?Gegensprechen:Durchsage)} ${CALLERID(name)})',
         'Page(${D:1},${IF($["${PM}" = "intercom"]?d:)}isb(p4a-autoanswer^s^1),20)',
         'Hangup()',
         '(deny)Answer()',

@@ -295,7 +295,11 @@ export class Phone {
         pendingTransfer: null,
       }
       this.calls.set(id, call)
-      if (direction === 'in') {
+      if (direction === 'in' && this.isPage(call)) {
+        // Durchsage oder Gegensprechen: ohne Klingeln annehmen (die Anlage stellt den Namen voran)
+        this.engine.callCommand(id, 'accept')
+        this.ui.toast(call.name)
+      } else if (direction === 'in') {
         this.ring(call)
       } else {
         call.mini = this.pendingMini
@@ -335,6 +339,12 @@ export class Phone {
       return
     }
     this.ui.stateChanged()
+  }
+
+  /** Durchsage/Gegensprechen der Anlage, die von selbst angenommen werden soll */
+  private isPage(call: Call): boolean {
+    if (!this.store.settings.auto_answer_page || !/^(Durchsage|Gegensprechen) /.test(call.name)) return false
+    return [...this.calls.values()].every((c) => c.id === call.id)
   }
 
   private ring(call: Call): void {
@@ -410,7 +420,8 @@ export class Phone {
       this.ui.toast('Keine Verbindung zur Telefonanlage')
       return false
     }
-    if (this.activeCall()) {
+    // Während einer Rückfrage ist das erste Gespräch gehalten – dann darf gewählt werden
+    if ([...this.calls.values()].some((c) => c.state !== 'established' || !c.held) || this.calls.size > 1) {
       this.ui.toast('Es läuft bereits ein Gespräch')
       return false
     }
@@ -498,6 +509,28 @@ export class Phone {
     if (call.state !== 'incoming') this.ui.closePopup(id)
     this.ui.presentMain()
     this.ui.stateChanged()
+  }
+
+  /** Rückfrage: das Gespräch halten und `target` anrufen */
+  consult(id: string, rawTarget: string): boolean {
+    const call = this.calls.get(id)
+    if (!call || call.state !== 'established' || this.calls.size > 1) return false
+    this.setHold(true, id)
+    return this.dial(rawTarget)
+  }
+
+  /** Nach dem Zusammenführen durch die Anlage (Verbinden oder Dreierkonferenz) */
+  afterJoin(mode: 'transfer' | 'conference'): void {
+    if (mode === 'transfer') {
+      // Die Gegenüber sprechen jetzt miteinander, die eigenen Gespräche sind übrig
+      for (const c of this.calls.values()) this.engine.send('hangup', c.id)
+      this.notifyInfo('Gespräche verbunden')
+      return
+    }
+    // Das zweite eigene Gespräch legt die Anlage auf, das gehaltene ist jetzt die Konferenz
+    setTimeout(() => {
+      for (const c of this.calls.values()) if (c.held) this.setHold(false, c.id)
+    }, 1500)
   }
 
   /** Anruf an `target` weiterleiten. Klingelnde Anrufe werden dafür kurz angenommen. */

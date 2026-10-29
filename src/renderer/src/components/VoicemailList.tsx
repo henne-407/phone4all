@@ -1,10 +1,10 @@
-/** Voicemail der Telefonanlage: Nachrichten anhören, zurückrufen, löschen */
+/** Voicemail der Telefonanlage: Nachrichten anhören (oder lesen), zurückrufen, löschen */
 
 import CallIcon from '@mui/icons-material/Call'
 import DeleteIcon from '@mui/icons-material/DeleteOutlined'
 import PlayIcon from '@mui/icons-material/PlayArrow'
 import VoicemailIcon from '@mui/icons-material/Voicemail'
-import { Box, Card, CircularProgress, IconButton, List, ListItem, ListItemIcon, ListItemText, Stack, Tooltip } from '@mui/material'
+import { Box, Card, CircularProgress, IconButton, List, ListItem, ListItemIcon, ListItemText, Stack, Tooltip, Typography } from '@mui/material'
 import { useEffect, useState } from 'react'
 import { formatDuration, formatTime } from '../../../shared/format'
 import type { VoicemailMessage } from '../../../shared/types'
@@ -92,6 +92,14 @@ export function VoicemailList({ wide }: { wide: boolean }) {
                     </IconButton>
                   </Tooltip>
                 </Stack>
+                {(m.text || m.transcribing) && (
+                  <Typography
+                    variant="body2"
+                    sx={{ width: '100%', pl: 5, pr: 1, pb: 1, color: m.text ? 'text.primary' : 'text.secondary', fontStyle: m.text ? undefined : 'italic', whiteSpace: 'pre-wrap' }}
+                  >
+                    {m.text ? `„${m.text}“` : 'Wird in Text umgewandelt …'}
+                  </Typography>
+                )}
                 {playing?.id === m.id && (
                   <Box sx={{ width: '100%', pl: 5, pb: 1 }}>
                     <audio controls autoPlay src={playing.url} style={{ width: '100%' }} />
