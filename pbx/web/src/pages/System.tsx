@@ -1221,7 +1221,7 @@ export default function System() {
   const Page = TABS[tab][1]
   return (
     <Box>
-      <PageHeader overline="System" title="Einstellungen und Wartung" description="Name, Funktionen, E-Mail, Sicherheit, Sicherungen, Speicher, Updates, Diagnose und Schnittstellen." />
+      <PageHeader overline="Auswertung und System" title="System" description="Name, Funktionen, E-Mail, Sicherheit, Sicherungen, Speicher, Updates, Diagnose und Schnittstellen." />
       <Tabs value={tab} onChange={(_e, v: number) => confirmDiscard() && setTab(v)} variant="scrollable" sx={{ mb: 2 }}>
         {TABS.map(([label]) => (
           <Tab key={label} label={label} />

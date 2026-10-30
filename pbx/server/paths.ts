@@ -20,6 +20,7 @@ export const PATHS = {
   messenger: path.join(DATA, 'messenger'),
   tts: path.join(DATA, 'tts'),
   missed: path.join(DATA, 'missed.json'),
+  dectSeen: path.join(DATA, 'dect-seen.json'),
   transcripts: path.join(DATA, 'transcripts'),
   whisper: path.join(DATA, 'whisper'),
   fax: path.join(DATA, 'fax'),

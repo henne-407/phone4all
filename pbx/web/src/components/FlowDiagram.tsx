@@ -472,8 +472,8 @@ export function FlowPalette() {
                     px: 1,
                     py: 0.5,
                     borderRadius: 2,
+                    // Farbe nur am Symbol: ein dicker linker Rand wirkt an runden Bausteinen wie eine Klammer
                     border: `1px solid ${theme.m3.outlineVariant}`,
-                    borderLeft: `4px solid ${theme.m3.node[type]}`,
                     bgcolor: 'background.paper',
                     cursor: 'grab',
                     userSelect: 'none',

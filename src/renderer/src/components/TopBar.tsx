@@ -76,7 +76,8 @@ function Chip({
           variant={active ? 'contained' : 'text'}
           color={active ? color : 'inherit'}
           startIcon={icon}
-          sx={{ ...noDrag, maxWidth: 220 }}
+          // Statusanzeige, kein Befehl: auch im klassischen Stil ohne Großbuchstaben
+          sx={{ ...noDrag, maxWidth: 220, textTransform: 'none' }}
         >
           <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {label}

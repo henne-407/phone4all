@@ -343,7 +343,7 @@ export default function Dect() {
                         <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>
                           <b>{n}</b> {ext?.name}
                         </Typography>
-                        <StatusDot color={on ? 'success' : 'default'} label={on ? 'angemeldet' : 'nicht angemeldet'} />
+                        <StatusDot color={on ? 'success' : 'default'} label={on ? 'Angemeldet' : 'Nicht angemeldet'} />
                       </Stack>
                     )
                   })}

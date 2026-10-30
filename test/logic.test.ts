@@ -35,7 +35,7 @@ describe('Rufnummern', () => {
 
 describe('Formate', () => {
   it('Dauer und Gesprächszeit', () => {
-    expect(formatDuration(83)).toBe('01:23')
+    expect(formatDuration(83)).toBe('1:23')
     expect(formatDuration(3723)).toBe('1:02:03')
     expect(formatTalk(59)).toBe('0 Min.')
     expect(formatTalk(3900)).toBe('1 Std. 05 Min.')

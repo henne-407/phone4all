@@ -877,7 +877,7 @@ export function MessengerPage({ wide }: { wide: boolean }) {
       <EmptyState
         icon={<ChatIcon />}
         title="Messenger nicht verfügbar"
-        description="Der Messenger kommt von der Phone4all-Telefonanlage. Richte die App über die Anlage ein und schalte dort den Messenger ein."
+        description="Der Messenger kommt von der Phone4All-Telefonanlage. Richte die App über die Anlage ein und schalte dort den Messenger ein."
       />
     )
   }
