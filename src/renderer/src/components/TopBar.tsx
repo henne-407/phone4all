@@ -34,7 +34,7 @@ import {
 } from '@mui/material'
 import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import type { AudioDevice } from '../../../shared/types'
-import { api, platform } from '../api'
+import { api, platform, web } from '../api'
 import { playTestTone, startLevelMeter } from '../audio'
 import { emit, useUiEvent } from '../bus'
 import { useApp } from '../state'
@@ -358,10 +358,12 @@ export function TopBar({ compact, showTitle }: { compact: boolean; showTitle: bo
           ['Verlauf löschen', () => void api.clearHistory()],
           ['Neu verbinden', () => void api.restartEngine()],
           ['Diagnose', () => emit('open-preferences', 'diagnose')],
-          ['Nach Updates suchen', () => emit('open-preferences', 'general')],
+          // Den Web-Client aktualisiert die Anlage
+          ...(web ? [] : [['Nach Updates suchen', () => emit('open-preferences', 'general')] as const]),
           null,
           ['Über Phone4All', () => emit('about')],
-          ['Beenden', () => void api.quit()],
+          // Im Browser: Gerät auf der Anlage freigeben und alles hier löschen
+          web ? ['Abmelden', () => confirm('Diesen Browser abmelden? Er wird aus der Geräteliste der Nebenstelle entfernt.') && void api.quit()] : ['Beenden', () => void api.quit()],
         ].map((item, i) =>
           item ? (
             <MenuItem

@@ -4,9 +4,9 @@ on:
   push:
     branches: ['**']
     tags: ['pbx-v*']
-    paths: ['pbx/**', '.github/workflows/pbx.yml']
+    paths: ['pbx/**', 'src/**', '.github/workflows/pbx.yml']
   pull_request:
-    paths: ['pbx/**', '.github/workflows/pbx.yml']
+    paths: ['pbx/**', 'src/**', '.github/workflows/pbx.yml']
   workflow_dispatch:
 
 defaults:
@@ -40,7 +40,7 @@ jobs:
         with:
           filters: |
             image:
-              - 'pbx/Dockerfile'
+              - 'pbx/Dockerfile*'
               - 'pbx/package*.json'
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
         if: steps.changes.outputs.image == 'true'
@@ -49,7 +49,8 @@ jobs:
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         if: steps.changes.outputs.image == 'true'
         with:
-          context: pbx
+          context: .
+          file: pbx/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: false
           cache-from: type=gha
@@ -57,7 +58,8 @@ jobs:
         if: steps.changes.outputs.image == 'true'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
-          context: pbx
+          context: .
+          file: pbx/Dockerfile
           platforms: linux/amd64
           load: true
           tags: phone4all-pbx:check
@@ -106,7 +108,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
-          context: pbx
+          context: .
+          file: pbx/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

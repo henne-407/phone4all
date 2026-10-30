@@ -30,7 +30,7 @@ Sprache hinter Docker-NAT unzuverlässig sind. Benötigte Ports:
 
 | Port | Zweck |
 | --- | --- |
-| 8080/tcp | Weboberfläche, Einrichtung der App, SIP über WebSocket (`/ws`) für die Mobil-App |
+| 8080/tcp | Weboberfläche, Web-Client (`/web/`), Einrichtung der App, SIP über WebSocket (`/ws`) für Mobil-App und Web-Client |
 | 8443/tcp | dieselbe Weboberfläche per HTTPS (Zertifikat aus `data/keys`, `PBX_HTTPS_PORT`, 0 = aus) |
 | 5060/udp+tcp, 5061/tcp | SIP, SIP über TLS |
 | 10000–10999/udp | Sprache (RTP) |
@@ -58,7 +58,8 @@ ablaufen.
 Mit **Pangolin** (oder einem anderen Proxy, der WebSockets durchreicht):
 
 1. HTTP-Ressource anlegen, z. B. `telefon.example.de` → `http://<Anlage>:8080`.
-2. In den Regeln der Ressource für `/provision/*`, `/setup/*` und `/ws` die Pangolin-Anmeldung
+2. In den Regeln der Ressource für `/provision/*`, `/setup/*`, `/ws` und (für den Web-Client)
+   `/web/*` die Pangolin-Anmeldung
    umgehen. Die App weist sich dort mit dem geheimen Einrichtungslink bzw. dem
    SIP-Passwort aus; die Weboberfläche bleibt hinter der Pangolin-Anmeldung.
 3. Raw-Ressource für TCP **und** UDP auf Port 3478 → `<Anlage>:3478` (Raw-Ressourcen in
@@ -177,6 +178,7 @@ antwortet mit 410, ein abgemeldetes Gerät mit 404.
 | Anfrage | Ergebnis |
 | --- | --- |
 | `GET /provision/<token>` | Profil (auch zum Auffrischen): Konto, Passwort, Kontakte, `app` (Ansichten oder `null`), `calendars`, `permissions`, `messenger`, `remote`, `video`, `parking` (`{ number, slots }` oder `null`), `crm` (`{ url, auto }` oder `null`), `voicemail`, `doors` (`{ number, name, dtmf }`: Türsprechstellen, `dtmf` öffnet im Gespräch), `revision` |
+| `DELETE /provision/<token>` | Gerät meldet sich selbst ab (Web-Client: *Abmelden*); danach 404 |
 | `GET /provision/<token>/revision` | `{ profile, events }` – ändert sich, sobald Profil oder Termine sich ändern |
 | `GET /provision/<token>/events?start=…&end=…&calendar=…` | Termine im Zeitraum (höchstens 400 Tage) |
 | `PUT /provision/<token>/events/<kalender>/<uid>` | Termin anlegen oder ändern (nur beschreibbare Kalender) |
@@ -201,7 +203,7 @@ antwortet mit 410, ein abgemeldetes Gerät mit 404.
 | `POST /provision/<token>/blocklist`, `DELETE …/blocklist/<nummer>` | Nummer sperren (`{ number, note }`) bzw. freigeben (Recht `block_numbers`) |
 | `PUT /provision/<token>/forward` | Änderungen davon (`cfu` braucht das Recht `forward`, der Rest `forward_rules`; externe Ziele `forward_external`) |
 
-`remote` ist der Zugang für die Mobil-App (`null`, wenn der Fernzugriff aus ist):
+`remote` ist der Zugang für Mobil-App und Web-Client (`null`, wenn der Fernzugriff aus ist):
 `{ websocket: "wss://…/ws", user: "<nummer>-app", domain, ice_servers: [RTCIceServer …] }`.
 Steht unter *System → Fernzugriff* eine öffentliche Adresse, zeigen `url` und
 `websocket` immer dorthin.
@@ -501,8 +503,9 @@ cd pbx
 npm install
 npm run dev:server   # Verwaltungsdienst mit Neustart bei Änderungen (braucht Asterisk)
 npm run dev:web      # Weboberfläche mit Hot Reload auf http://localhost:5173
+npm run dev:client   # Web-Client (/web) mit Hot Reload, fragt die Anlage auf :8080
 npm test
-docker build -t phone4all-pbx .
+docker build -f Dockerfile -t phone4all-pbx ..   # Bau-Kontext ist der Hauptordner (Web-Client nutzt ../src)
 ```
 
 Aufbau: Der Node-Dienst (`server/`) hält die Konfiguration als JSON, erzeugt daraus

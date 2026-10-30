@@ -94,7 +94,7 @@ function pulse(): Float64Array {
 }
 
 /** Deutsches Freizeichen: 425 Hz, 1 s Ton, 4 s Pause. */
-function ringback(): Float64Array {
+export function ringback(): Float64Array {
   const buf = new Float64Array(5 * RATE)
   for (let i = 0; i < RATE; i++) {
     const t = i / RATE
@@ -103,7 +103,7 @@ function ringback(): Float64Array {
   return buf
 }
 
-const GENERATORS: Record<string, () => Float64Array> = { marimba, chime, classic, pulse }
+export const GENERATORS: Record<string, () => Float64Array> = { marimba, chime, classic, pulse }
 
 /** 16-Bit-Mono-WAV */
 export function encodeWav(samples: ArrayLike<number>, rate = RATE, peak = PEAK): Buffer {

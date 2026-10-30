@@ -1,0 +1,7 @@
+# Bau-Kontext ist der Hauptordner des Repos: nur die Anlage und die Quellen der App-Oberfläche
+*
+!pbx
+!src
+pbx/node_modules
+pbx/dist
+**/*.log

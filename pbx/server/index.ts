@@ -29,7 +29,7 @@ import { type MissedAction, MissedList } from './missed'
 import { integrationReport, validToken } from './integration'
 import { LdapServer } from './ldap'
 import { aiReady, llmChat } from './llm'
-import { HttpError, type Request, Router, clientIp, makeRequest, proxyHints, sendFile, sendJson, sendText, serveStatic, setTrustedProxies, socketIp } from './http'
+import { CLIENT_CSP, CLIENT_PERMISSIONS, HttpError, type Request, Router, clientIp, makeRequest, proxyHints, sendFile, sendJson, sendText, serveStatic, setTrustedProxies, socketIp } from './http'
 import { type MailAttachment, sendMail } from './mail'
 import { PORTAL_COOKIE, PORTAL_JS, PORTAL_MAX_AGE, PortalSessions, portalPage } from './portal'
 import { ChatError, MessengerHub, MessengerStore, messengerUsers } from './messenger'
@@ -976,6 +976,19 @@ pub.get('/provision/:token', (r) => {
   if (!invited) throw new HttpError(404, 'Unbekannter Einrichtungslink.')
   if (!linkValid(invited)) throw new HttpError(410, 'Der Einrichtungslink ist abgelaufen. Bitte bei der Verwaltung eine neue Einladung anfordern.')
   return newDeviceProfile(r, invited.id, 'über den Einladungslink eingerichtet')
+})
+
+/** Ein Gerät meldet sich selbst ab (Web-Client: „Abmelden“) und gibt seinen Platz frei */
+pub.delete('/provision/:token', (r) => {
+  const found = findDevice(store.config, r.params.token)
+  if (!found) throw new HttpError(404, 'Unbekannter Einrichtungslink.')
+  store.update((draft) => {
+    const ext = draft.extensions.find((e) => e.id === found.ext.id)
+    if (ext) ext.devices = ext.devices.filter((d) => d.token !== r.params.token)
+  })
+  audit.add(r.ip, `Gerät „${found.device.name}“ der Nebenstelle ${found.ext.number} hat sich abgemeldet`)
+  applySoon()
+  return { ok: true }
 })
 
 /** Nebenstelle zum Token eines eingerichteten Geräts */
@@ -2606,6 +2619,13 @@ async function handle(raw: http.IncomingMessage, res: http.ServerResponse): Prom
       return
     }
     if (req.method !== 'GET') throw new HttpError(405, 'Nicht erlaubt.')
+    // Web-Client: die Oberfläche der App im Browser
+    if (req.path === '/web') {
+      res.writeHead(301, { Location: '/web/' })
+      res.end()
+      return
+    }
+    if (req.path.startsWith('/web/')) return serveStatic(PATHS.client, req.path.slice(4), res, { csp: CLIENT_CSP, permissions: CLIENT_PERMISSIONS })
     serveStatic(PATHS.web, req.path, res)
   } catch (e) {
     const status = e instanceof HttpError ? e.status : e instanceof ValidationError ? 400 : 500

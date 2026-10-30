@@ -46,6 +46,8 @@ export const PATHS = {
   asteriskData: env.PBX_ASTERISK_DATA || '/usr/share/asterisk',
   systemMoh: env.PBX_SYSTEM_MOH || '/usr/share/asterisk/moh',
   web: path.resolve(env.PBX_WEB || path.join(here, 'web')),
+  /** Web-Client (Oberfläche der App im Browser) unter /web */
+  client: path.resolve(env.PBX_CLIENT || path.join(here, 'client')),
 }
 
 export const SETTINGS = {

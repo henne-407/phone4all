@@ -14,5 +14,5 @@
     "resolveJsonModule": true,
     "noEmit": true
   },
-  "include": ["server/**/*", "test/**/*", "vite.config.ts", "vitest.config.ts"]
+  "include": ["server/**/*", "test/**/*", "vite.config.ts", "vite.client.config.ts", "vitest.config.ts"]
 }

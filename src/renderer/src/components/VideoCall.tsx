@@ -16,7 +16,7 @@ import { Alert, Box, Button, CardActionArea, CircularProgress, Dialog, DialogAct
 import { useEffect, useRef, useState } from 'react'
 import type { ChatRoom, MessengerState } from '../../../shared/types'
 import type { ScreenSource } from '../../../main/screenShare'
-import { api, onMain } from '../api'
+import { api, onMain, web } from '../api'
 import { roomTitle, useMessenger, userName } from '../messenger'
 import { clearNotice, joinVideo, leaveVideo, setCamera, setMinimized, setMuted, startScreenShare, stopScreenShare, useVideo, videoState } from '../video'
 import { ContactAvatar } from './common'
@@ -277,7 +277,7 @@ function CallView({ s, room }: { s: MessengerState; room: ChatRoom | undefined }
           {v.camera ? <VideocamIcon /> : <VideocamOffIcon />}
         </ControlButton>
         {(canShare || v.screen) && (
-          <ControlButton label={v.screen ? 'Teilen beenden' : 'Bildschirm teilen'} active={!v.screen} onClick={() => (v.screen ? void stopScreenShare() : setPicker(true))}>
+          <ControlButton label={v.screen ? 'Teilen beenden' : 'Bildschirm teilen'} active={!v.screen} onClick={() => (v.screen ? void stopScreenShare() : web ? void startScreenShare('') : setPicker(true))}>
             {v.screen ? <StopScreenShareIcon /> : <ScreenShareIcon />}
           </ControlButton>
         )}

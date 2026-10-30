@@ -46,7 +46,7 @@ import {
 import { type ReactNode, useEffect, useState } from 'react'
 import { SCHEMES, STYLES, THEMES, swatch } from '../../../../shared/themes'
 import type { AccountSettings, Diagnose, DesignStyle, WatchLevel } from '../../../../shared/types'
-import { api } from '../../api'
+import { api, web } from '../../api'
 import { convertToWav, playWav } from '../../audio'
 import { useApp } from '../../state'
 import { DAV_KINDS, DavAccountDialog, type DavKind } from './DavAccountDialog'
@@ -86,6 +86,7 @@ function AccountTab({
   // Die Anlage kann die Kontodaten sperren; sie kommen dann nur noch aus dem Profil
   const locked = Boolean(pbx.pbx && pbx.policy?.lock_account)
   const [pbxSetup, setPbxSetup] = useState(false)
+  if (web) return <WebAccount />
   const field = (key: keyof AccountSettings, label: string, extra: object = {}) => (
     <TextField key={key} label={label} value={acc[key] ?? ''} disabled={locked} onChange={(e) => setAcc({ ...acc, [key]: e.target.value })} {...extra} />
   )
@@ -171,6 +172,47 @@ function AccountTab({
           </Stack>
         </AccordionDetails>
       </Accordion>
+    </Stack>
+  )
+}
+
+/** Web-Client: Das Konto kommt immer von der Anlage, Abmelden gibt das Gerät frei */
+function WebAccount() {
+  const { state } = useApp()
+  const pbx = state.settings.provisioning
+  const acc = state.settings.account
+  return (
+    <Stack sx={{ gap: 2 }}>
+      <Alert
+        severity="success"
+        icon={false}
+        action={
+          <Button
+            color="inherit"
+            size="small"
+            onClick={() => confirm('Diesen Browser abmelden? Er wird aus der Geräteliste der Nebenstelle entfernt.') && void api.pbxDisconnect()}
+          >
+            Abmelden
+          </Button>
+        }
+      >
+        {`Angemeldet an „${pbx.pbx}“ als Nebenstelle ${pbx.extension}${acc.display_name ? ` (${acc.display_name})` : ''}. Änderungen an der Anlage werden automatisch übernommen.`}
+      </Alert>
+      <Group title="Telefonieren im Browser">
+        <Row>
+          <ListItemText primary="Verbindung" secondary={state.reg.text} />
+        </Row>
+        <Row>
+          <ListItemText
+            primary="Zugang"
+            secondary={pbx.remote ? `${pbx.remote.user}@${pbx.remote.domain} über WebRTC (verschlüsselt)` : 'Auf der Anlage nicht freigegeben (Verwaltung → System → Fernzugang)'}
+          />
+        </Row>
+      </Group>
+      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+        Dieser Browser ist ein eigenes Gerät der Nebenstelle, wie die Desktop- und die Mobil-App. Kontakte, Verlauf und Einstellungen
+        bleiben nur in diesem Browser gespeichert.
+      </Typography>
     </Stack>
   )
 }
@@ -288,7 +330,7 @@ function CalendarTab() {
           </ListItemButton>
         </Group>
       )}
-      <DavAccounts kind="caldav" />
+      {!web && <DavAccounts kind="caldav" />}
       <Group title="Erinnerungen">
         <Row>
           <TextField
@@ -372,44 +414,46 @@ function ContactsTab({ onClose }: { onClose: () => void }) {
           />
         </Group>
       )}
-      <DavAccounts kind="carddav" />
-      <Group
-        title="SQL-Server-Datenbanken"
-        description="Kontakte aus einer Microsoft-SQL-Server-Datenbank, z. B. CRM oder Warenwirtschaft (nur lesend; ein Datenbankbenutzer mit Leserechten genügt)."
-        action={
-          <Tooltip title="Datenbank hinzufügen">
-            <IconButton onClick={() => setSql({})}>
-              <AddIcon />
-            </IconButton>
-          </Tooltip>
-        }
-      >
-        {sources.length ? (
-          sources.map((c) => (
-            <Row
-              key={c.id}
-              action={
-                <Tooltip title="Datenbank entfernen">
-                  <IconButton edge="end" onClick={() => void api.sqlRemove(c.id)}>
-                    <DeleteIcon />
-                  </IconButton>
-                </Tooltip>
-              }
-            >
-              <ListItemButton onClick={() => setSql({ id: c.id })} sx={{ mx: -2, my: -1 }}>
-                <ListItemText
-                  primary={c.name || c.database}
-                  secondary={`${c.user}@${c.host}/${c.database} · ${c.mode === 'query' ? 'eigene Abfrage' : c.table}`}
-                />
-              </ListItemButton>
-            </Row>
-          ))
-        ) : (
-          <ListItemButton onClick={() => setSql({})}>
-            <ListItemText primary="Datenbank hinzufügen" secondary="Microsoft SQL Server" />
-          </ListItemButton>
-        )}
-      </Group>
+      {!web && <DavAccounts kind="carddav" />}
+      {!web && (
+        <Group
+          title="SQL-Server-Datenbanken"
+          description="Kontakte aus einer Microsoft-SQL-Server-Datenbank, z. B. CRM oder Warenwirtschaft (nur lesend; ein Datenbankbenutzer mit Leserechten genügt)."
+          action={
+            <Tooltip title="Datenbank hinzufügen">
+              <IconButton onClick={() => setSql({})}>
+                <AddIcon />
+              </IconButton>
+            </Tooltip>
+          }
+        >
+          {sources.length ? (
+            sources.map((c) => (
+              <Row
+                key={c.id}
+                action={
+                  <Tooltip title="Datenbank entfernen">
+                    <IconButton edge="end" onClick={() => void api.sqlRemove(c.id)}>
+                      <DeleteIcon />
+                    </IconButton>
+                  </Tooltip>
+                }
+              >
+                <ListItemButton onClick={() => setSql({ id: c.id })} sx={{ mx: -2, my: -1 }}>
+                  <ListItemText
+                    primary={c.name || c.database}
+                    secondary={`${c.user}@${c.host}/${c.database} · ${c.mode === 'query' ? 'eigene Abfrage' : c.table}`}
+                  />
+                </ListItemButton>
+              </Row>
+            ))
+          ) : (
+            <ListItemButton onClick={() => setSql({})}>
+              <ListItemText primary="Datenbank hinzufügen" secondary="Microsoft SQL Server" />
+            </ListItemButton>
+          )}
+        </Group>
+      )}
       {sql && <SqlSourceDialog existing={sources.find((c) => c.id === sql.id)} onClose={() => setSql(null)} />}
     </>
   )
@@ -496,12 +540,14 @@ function GeneralTab() {
             ))}
           </TextField>
         </Row>
-        <SwitchRow
-          title="Anrufe im Pop-up führen"
-          subtitle="Annehmen, stummschalten, weiterleiten und auflegen im kleinen Anruffenster, ohne das Hauptfenster zu öffnen"
-          checked={settings.mini_call}
-          onChange={(v) => void api.setBehaviour({ mini_call: v })}
-        />
+        {!web && (
+          <SwitchRow
+            title="Anrufe im Pop-up führen"
+            subtitle="Annehmen, stummschalten, weiterleiten und auflegen im kleinen Anruffenster, ohne das Hauptfenster zu öffnen"
+            checked={settings.mini_call}
+            onChange={(v) => void api.setBehaviour({ mini_call: v })}
+          />
+        )}
         {state.settings.provisioning.pbx && (
           <SwitchRow
             title="Durchsagen selbst annehmen"
@@ -547,22 +593,24 @@ function GeneralTab() {
         ))}
       </Group>
 
-      <UpdateGroup />
+      {!web && <UpdateGroup />}
 
-      <Group title="Verhalten">
-        <SwitchRow
-          title="Im Hintergrund weiterlaufen"
-          subtitle="Beim Schließen des Fensters bleibst du erreichbar (Symbol im Infobereich)"
-          checked={settings.run_in_background}
-          onChange={(v) => void api.setBehaviour({ run_in_background: v })}
-        />
-        <SwitchRow
-          title="Beim Anmelden starten"
-          subtitle="Startet unsichtbar im Hintergrund"
-          checked={settings.autostart}
-          onChange={(v) => void api.setBehaviour({ autostart: v })}
-        />
-      </Group>
+      {!web && (
+        <Group title="Verhalten">
+          <SwitchRow
+            title="Im Hintergrund weiterlaufen"
+            subtitle="Beim Schließen des Fensters bleibst du erreichbar (Symbol im Infobereich)"
+            checked={settings.run_in_background}
+            onChange={(v) => void api.setBehaviour({ run_in_background: v })}
+          />
+          <SwitchRow
+            title="Beim Anmelden starten"
+            subtitle="Startet unsichtbar im Hintergrund"
+            checked={settings.autostart}
+            onChange={(v) => void api.setBehaviour({ autostart: v })}
+          />
+        </Group>
+      )}
 
       <LinksGroup />
 
@@ -573,10 +621,12 @@ function GeneralTab() {
             secondary="Auswahl über die Titelleiste oben im Hauptfenster (Mikrofon- und Lautsprecher-Symbol), inklusive Testton und Pegelanzeige."
           />
         </Row>
-        <ListItemButton onClick={() => void api.openLog()}>
-          <ListItemText primary="Protokoll der SIP-Engine öffnen" secondary="Hilft bei der Fehlersuche (baresip.log)" />
-          <LaunchIcon fontSize="small" />
-        </ListItemButton>
+        {!web && (
+          <ListItemButton onClick={() => void api.openLog()}>
+            <ListItemText primary="Protokoll der SIP-Engine öffnen" secondary="Hilft bei der Fehlersuche (baresip.log)" />
+            <LaunchIcon fontSize="small" />
+          </ListItemButton>
+        )}
       </Group>
     </>
   )
@@ -608,6 +658,18 @@ function LinksGroup() {
       if (!ok) toast('Dieses Tastenkürzel ist schon belegt. Bitte ein anderes wählen.')
       else if (hotkey) toast(`Tastenkürzel ${showAccelerator(hotkey)} wählt jetzt markierte Nummern`)
     })
+  if (web) {
+    return (
+      <Group title="Nummern aus anderen Seiten wählen">
+        <SwitchRow
+          title="Telefon-Links mit dem Web-Client öffnen"
+          subtitle="Klick auf eine Nummer (tel:, sip:) auf anderen Webseiten öffnet Phone4All und ruft an. Der Browser fragt einmal nach."
+          checked={links.handler}
+          onChange={(v) => void api.setLinks({ handler: v })}
+        />
+      </Group>
+    )
+  }
   return (
     <Group title="Nummern aus anderen Programmen wählen">
       <SwitchRow
@@ -780,57 +842,62 @@ function DiagnoseTab() {
         ))}
       </Group>
 
-      <Group title="Watchdog">
-        <SwitchRow
-          title="Verbindung automatisch wiederherstellen"
-          subtitle="Meldet bei Abbruch neu an, startet die SIP-Engine neu und verbindet nach Netzwechsel oder Ruhezustand neu – nie während eines Gesprächs"
-          checked={state.settings.watchdog}
-          onChange={(v) => void api.setWatchdog(v)}
-        />
-        <ListItemButton
-          onClick={() => {
-            void api.restartEngine()
-            toast('Verbinde neu …')
-          }}
-        >
-          <ListItemText primary="Jetzt neu verbinden" secondary="Startet die SIP-Engine neu und meldet sich an" />
-          <RefreshIcon fontSize="small" />
-        </ListItemButton>
-        <ListItemButton onClick={() => void api.openLog()}>
-          <ListItemText primary="Protokoll der SIP-Engine öffnen" secondary="baresip.log und watchdog.json" />
-          <LaunchIcon fontSize="small" />
-        </ListItemButton>
-      </Group>
+      {/* Im Browser stellt JsSIP die Verbindung selbst wieder her; keinen Watchdog */}
+      {!web && (
+        <>
+          <Group title="Watchdog">
+            <SwitchRow
+              title="Verbindung automatisch wiederherstellen"
+              subtitle="Meldet bei Abbruch neu an, startet die SIP-Engine neu und verbindet nach Netzwechsel oder Ruhezustand neu – nie während eines Gesprächs"
+              checked={state.settings.watchdog}
+              onChange={(v) => void api.setWatchdog(v)}
+            />
+            <ListItemButton
+              onClick={() => {
+                void api.restartEngine()
+                toast('Verbinde neu …')
+              }}
+            >
+              <ListItemText primary="Jetzt neu verbinden" secondary="Startet die SIP-Engine neu und meldet sich an" />
+              <RefreshIcon fontSize="small" />
+            </ListItemButton>
+            <ListItemButton onClick={() => void api.openLog()}>
+              <ListItemText primary="Protokoll der SIP-Engine öffnen" secondary="baresip.log und watchdog.json" />
+              <LaunchIcon fontSize="small" />
+            </ListItemButton>
+          </Group>
 
-      <Group
-        title="Ereignisse"
-        description="Störungen und was der Watchdog dagegen getan hat, neueste zuerst."
-        action={
-          <Button
-            size="small"
-            color="error"
-            disabled={!data?.events.length}
-            onClick={() => void api.clearDiagnose().then(load)}
+          <Group
+            title="Ereignisse"
+            description="Störungen und was der Watchdog dagegen getan hat, neueste zuerst."
+            action={
+              <Button
+                size="small"
+                color="error"
+                disabled={!data?.events.length}
+                onClick={() => void api.clearDiagnose().then(load)}
+              >
+                Leeren
+              </Button>
+            }
           >
-            Leeren
-          </Button>
-        }
-      >
-        {data?.events.length ? (
-          data.events.slice(0, 100).map((e, i) => (
-            <ListItem key={i}>
-              <ListItemIcon>
-                <LevelIcon level={e.level} />
-              </ListItemIcon>
-              <ListItemText primary={e.text} secondary={fmtTime(e.time)} />
-            </ListItem>
-          ))
-        ) : (
-          <Row>
-            <ListItemText secondary="Keine Ereignisse." />
-          </Row>
-        )}
-      </Group>
+            {data?.events.length ? (
+              data.events.slice(0, 100).map((e, i) => (
+                <ListItem key={i}>
+                  <ListItemIcon>
+                    <LevelIcon level={e.level} />
+                  </ListItemIcon>
+                  <ListItemText primary={e.text} secondary={fmtTime(e.time)} />
+                </ListItem>
+              ))
+            ) : (
+              <Row>
+                <ListItemText secondary="Keine Ereignisse." />
+              </Row>
+            )}
+          </Group>
+        </>
+      )}
     </>
   )
 }

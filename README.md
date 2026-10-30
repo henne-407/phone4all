@@ -64,7 +64,8 @@ Asterisk 20 mit deutscher Weboberfläche, als ein Docker-Image für Server, VM, 
 Softphone mit Anruf-Pop-up, Kontakten, Kalender, Verlauf und Messenger. Läuft auch mit FRITZ!Box,
 3CX, Starface oder sipgate.
 
-[Anleitung](docs/desktop-app.md) · [Download](https://github.com/henne-407/phone4all/releases/latest)
+[Anleitung](docs/desktop-app.md) · [Download](https://github.com/henne-407/phone4all/releases/latest) ·
+[Im Browser](docs/web-client.md)
 
 </td>
 </tr>

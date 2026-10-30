@@ -249,6 +249,10 @@ dt{opacity:.7;font-size:14px}dd{margin:0 0 12px;font-size:18px;font-family:ui-mo
 <p>Der Link gilt bis ${esc(new Date(ext.provision_expires).toLocaleString('de-DE'))}. Jedes Gerät erhält dabei einen eigenen Zugang.</p>
 ${pin ? `<p>Alternativ im Netz der Anlage in der App unter Einstellungen → Konto → „Von Telefonanlage einrichten“ diese Angaben eintragen:</p>
 <dl><dt>Anlage</dt><dd>${esc(base)}</dd><dt>Nebenstelle</dt><dd>${esc(ext.number)}</dd><dt>Einrichtungs-PIN</dt><dd>${esc(pin)}</dd></dl>` : ''}
+</div>
+<div class="card"><h2>Im Browser</h2>
+<p>Ohne Installation telefonieren, chatten und Kontakte nutzen – im Browser am Computer. Zum Telefonieren muss die Anlage über HTTPS erreichbar sein.</p>
+<p><a class="btn" href="${esc(`${base}/web/#setup=${encodeURIComponent(ext.provision_token)}`)}">Im Browser öffnen</a></p>
 </div></main></body></html>`
 }
 

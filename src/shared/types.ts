@@ -53,6 +53,8 @@ export interface Banner {
   text: string
   button: string
   action: 'preferences' | 'reconnect'
+  /** Web-Client: Knopf öffnet diese Adresse (z. B. dieselbe Seite über HTTPS) */
+  url?: string
 }
 
 export interface AccountSettings {
@@ -142,6 +144,8 @@ export interface Settings {
     messenger: boolean
     /** Videoanrufe im Messenger (null = aus) */
     video?: VideoAccount | null
+    /** Zugang für Apps: SIP über WebSocket mit WebRTC (Web-Client; null = Fernzugang der Anlage aus) */
+    remote?: VideoAccount | null
     /** Parken: Weiterleiten an number parkt (null = aus) */
     parking?: { number: string; slots: string[] } | null
     /** Anrufer im CRM öffnen: Adresse mit {nummer}, {e164}, {name} */

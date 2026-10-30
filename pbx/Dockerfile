@@ -2,11 +2,14 @@
 
 # Bauen und Testen einmal auf der Bau-Plattform: das Ergebnis ist reines JavaScript, unter
 # Emulation (arm64) wären die Tests langsam und liefen in Zeitlimits
+# Gebaut wird aus dem Hauptordner des Repos (docker build -f pbx/Dockerfile .): Der Web-Client
+# unter /web nutzt die Oberfläche und geteilten Code der App aus src/
 FROM --platform=$BUILDPLATFORM node:24-slim AS build
-WORKDIR /src
-COPY package.json package-lock.json ./
+WORKDIR /src/pbx
+COPY pbx/package.json pbx/package-lock.json ./
 RUN npm ci --no-audit --no-fund
-COPY . .
+COPY pbx/ ./
+COPY src/ /src/src/
 RUN npm run typecheck && npm test && npm run build
 
 FROM node:24-slim AS node
@@ -59,7 +62,7 @@ RUN apt-get update \
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=whisper /out/ /opt/whisper/
 WORKDIR /opt/phone4all
-COPY --from=build /src/dist ./
+COPY --from=build /src/pbx/dist ./
 ENV PBX_DATA=/data \
     PBX_ASTERISK_USER=asterisk \
     PBX_VERSION=${PBX_VERSION} \
