@@ -10,6 +10,8 @@ export interface CallRecord {
   direction: 'in' | 'out' | 'internal'
   from: string
   fromName: string
+  /** Nebenstelle, die den Anruf begonnen hat ('' = von außen) */
+  ext?: string
   to: string
   answeredBy: string
   status: 'answered' | 'missed' | 'busy' | 'failed' | 'blocked'
@@ -84,6 +86,9 @@ export function groupCalls(rows: Row[], recordings: string[]): CallRecord[] {
     const answered = legs.find((l) => l.disposition === 'ANSWERED' && l.dstchannel) ?? legs.find((l) => l.disposition === 'ANSWERED')
     const direction = legs.some((l) => l.userfield === 'in' || l.userfield === 'blocked') ? 'in' : legs.some((l) => l.userfield === 'out') ? 'out' : 'internal'
     const blocked = legs.some((l) => l.userfield === 'blocked')
+    // „s“ ist der Einstieg eines Asterisk-Kontexts (Durchsage, Funktionen …), kein Ziel für Menschen
+    const dst = legs.find((l) => l.p4a_to)?.p4a_to || first.dst
+    const to = dst !== 's' ? dst : (answered && extOf(answered.dstchannel)) || legs.map((l) => extOf(l.dstchannel)).find(Boolean) || ''
     const status = blocked ? 'blocked' : answered ? 'answered' : legs.some((l) => l.disposition === 'BUSY') ? 'busy' : direction === 'out' && legs.some((l) => l.disposition === 'FAILED') ? 'failed' : 'missed'
     result.push({
       id,
@@ -91,7 +96,8 @@ export function groupCalls(rows: Row[], recordings: string[]): CallRecord[] {
       direction,
       from: first.src,
       fromName: nameOf(first.clid),
-      to: legs.find((l) => l.p4a_to)?.p4a_to || first.dst,
+      ext: extOf(first.channel),
+      to,
       answeredBy: !answered ? '' : extOf(answered.dstchannel) || (answered.lastapp === 'VoiceMail' ? 'Voicemail' : direction === 'internal' ? '' : 'Anlage'),
       status,
       duration: Math.max(0, ...legs.map((l) => Number(l.billsec) || 0)),

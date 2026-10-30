@@ -45,7 +45,7 @@ export function PhonePreview({ profile }: { profile: AppProfile }) {
   const theme = useTheme()
   const pages = profile.pages.map((p): [AppPage, string] => [p, label(APP_PAGES, p)])
   return (
-    <Box sx={{ display: 'flex', border: 2, borderColor: theme.m3.outline, borderRadius: 3, overflow: 'hidden', height: 216, bgcolor: 'background.default' }}>
+    <Box sx={{ display: 'flex', border: 2, borderColor: theme.m3.outline, borderRadius: 3, overflow: 'hidden', minHeight: 216, bgcolor: 'background.default' }}>
       <Stack sx={{ width: 56, py: 1, gap: 0.25, alignItems: 'center', bgcolor: theme.m3.sidebar, borderRight: 1, borderColor: theme.m3.outlineVariant }}>
         {pages.map(([p, l]) => (
           <Stack key={p} sx={{ alignItems: 'center' }}>

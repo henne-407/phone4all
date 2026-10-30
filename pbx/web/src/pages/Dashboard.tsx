@@ -14,10 +14,11 @@ import { useStatus } from '../useStatus'
 
 function Stat({ label, value, sub, color, icon, onClick }: { label: string; value: ReactNode; sub?: ReactNode; color: string; icon: ReactNode; onClick?: () => void }) {
   return (
-    <Card sx={{ flex: '1 1 220px' }}>
+    <Card sx={{ flex: { xs: '1 1 150px', sm: '1 1 220px' } }}>
       <CardActionArea onClick={onClick} disabled={!onClick} sx={{ height: '100%' }}>
         <CardContent sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          <Box sx={{ width: 48, height: 48, borderRadius: 3, bgcolor: color, color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{icon}</Box>
+          {/* Auf dem Handy zwei Kacheln nebeneinander, dafür ohne Symbol */}
+          <Box sx={{ width: 48, height: 48, borderRadius: 3, bgcolor: color, color: '#fff', display: { xs: 'none', sm: 'grid' }, placeItems: 'center', flexShrink: 0 }}>{icon}</Box>
           <Box sx={{ minWidth: 0 }}>
             <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 500 }}>
               {label}
@@ -43,7 +44,7 @@ const FEATURES: [string, string][] = [
   ['*8', 'Anruf in der Gruppe heranholen'],
   ['** + Nebenstelle', 'Anruf einer Nebenstelle heranholen'],
   ['*31 + Nummer', 'Anonym anrufen'],
-  ['*28 + Nr.', 'Zeitsteuerung umschalten (Nachtschaltung)'],
+  ['*28 + Nummer', 'Zeitsteuerung umschalten (Nachtschaltung)'],
   ['*43', 'Echo-Test (Mikrofon prüfen)'],
 ]
 
@@ -169,7 +170,7 @@ export default function Dashboard() {
             </Typography>
             {FEATURES.map(([code, text]) => (
               <Stack key={code} direction="row" sx={{ py: 0.5, gap: 2 }}>
-                <Chip size="small" label={code} sx={{ minWidth: 110, fontFamily: 'monospace' }} />
+                <Chip size="small" label={code} sx={{ width: 140, flexShrink: 0, fontFamily: 'monospace' }} />
                 <Typography variant="body2">{text}</Typography>
               </Stack>
             ))}

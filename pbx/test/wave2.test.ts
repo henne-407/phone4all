@@ -288,6 +288,13 @@ describe('Auswertungen', () => {
     expect(csv.split('\r\n')[1]).toBe('2026-10-26 09:15:00;eingehend;0301111111;;030 1234567;10;angenommen;60')
   })
 
+  it('ordnet Anrufe nach außen der Nebenstelle zu, auch wenn from die Rufnummer der Anlage ist', () => {
+    const cfg = sampleConfig()
+    const calls = [call({ direction: 'out', from: '0301234567', ext: '11', to: '0170', duration: 45 })]
+    const r = computeStats(cfg, calls, [], new Date('2026-10-26T00:00:00').getTime(), new Date('2026-11-02T00:00:00').getTime())
+    expect(r.by_extension).toEqual([{ number: '11', name: 'Person 11', answered: 0, outbound: 1, talk: 45 }])
+  })
+
   it('wertet Wartezeiten der Warteschlangen aus', () => {
     const cfg = sampleConfig()
     cfg.groups[0].mode = 'queue'

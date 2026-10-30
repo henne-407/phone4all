@@ -137,7 +137,7 @@ export default function Messenger() {
           <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(5, 1fr)' } }}>
             {[
               ['Nebenstellen mit Messenger', String(data.users)],
-              ['Gerade verbunden', `${data.online.length} (${data.connections} Geräte)`],
+              ['Gerade verbunden', `${data.online.length} (${data.connections} ${data.connections === 1 ? 'Gerät' : 'Geräte'})`],
               ['Laufende Videoanrufe', String(data.calls)],
               ['Belegt', bytes(data.usage)],
               ['Frei auf der Anlage', data.free === null ? '–' : bytes(data.free)],

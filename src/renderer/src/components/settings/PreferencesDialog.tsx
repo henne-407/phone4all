@@ -117,15 +117,18 @@ function AccountTab({
       >
         {pbx.pbx
           ? `Eingerichtet von „${pbx.pbx}“ als Nebenstelle ${pbx.extension}. Änderungen an der Anlage werden automatisch übernommen.${locked ? ' Die Kontodaten verwaltet die Anlage.' : ''}`
-          : 'Phone4all-Telefonanlage? Dann richtet sich die App mit Nebenstelle und Einrichtungs-PIN von selbst ein.'}
+          : 'Phone4All-Telefonanlage? Dann richtet sich die App mit Nebenstelle und Einrichtungs-PIN von selbst ein.'}
       </Alert>
       {pbxSetup && <PbxSetupDialog onClose={() => setPbxSetup(false)} onApplied={onPbxApplied} />}
       <Box sx={{ mt: 1 }}>
         <Typography variant="subtitle1">SIP-Konto</Typography>
-        <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.25 }}>
-          Die Zugangsdaten findest du in der Oberfläche deiner Telefonanlage (z. B. FRITZ!Box: Telefonie → Telefoniegeräte →
-          IP-Telefon).
-        </Typography>
+        {/* Hat die Anlage das Konto eingerichtet, wäre der FRITZ!Box-Hinweis irreführend */}
+        {!pbx.pbx && (
+          <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.25 }}>
+            Die Zugangsdaten findest du in der Oberfläche deiner Telefonanlage (z. B. FRITZ!Box: Telefonie → Telefoniegeräte →
+            IP-Telefon).
+          </Typography>
+        )}
       </Box>
       {field('domain', 'Server / Domain  (z. B. fritz.box oder 192.168.178.1)', { autoFocus: !acc.domain })}
       {field('user', 'Benutzername / Durchwahl')}
@@ -885,7 +888,7 @@ export function PreferencesDialog({ page, onClose }: { page: string; onClose: ()
     >
       <Box sx={{ px: 3, pt: 2.5 }}>
         <Typography variant="h5">Einstellungen</Typography>
-        <Tabs value={tab} onChange={(_e, v) => setTab(v)} variant="scrollable" sx={{ mt: 1 }}>
+        <Tabs value={tab} onChange={(_e, v) => setTab(v)} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile sx={{ mt: 1 }}>
           {TABS.map(([k, l]) => (
             <Tab key={k} value={k} label={l} />
           ))}

@@ -110,6 +110,7 @@ export interface CallRecord {
   direction: 'in' | 'out' | 'internal'
   from: string
   fromName: string
+  ext?: string
   to: string
   answeredBy: string
   status: 'answered' | 'missed' | 'busy' | 'failed' | 'blocked'

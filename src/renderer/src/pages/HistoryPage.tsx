@@ -238,7 +238,7 @@ export function HistoryPage({ wide }: { wide: boolean }) {
               key={key}
               label={label}
               variant={filter === key ? 'filled' : 'outlined'}
-              color={filter === key ? 'secondary' : 'default'}
+              color={filter === key ? 'primary' : 'default'}
               onClick={() => setFilter(key)}
             />
           ))}
@@ -247,7 +247,7 @@ export function HistoryPage({ wide }: { wide: boolean }) {
               <Chip
                 label="Voicemail"
                 variant={filter === 'voicemail' ? 'filled' : 'outlined'}
-                color={filter === 'voicemail' ? 'secondary' : 'default'}
+                color={filter === 'voicemail' ? 'primary' : 'default'}
                 onClick={() => setFilter('voicemail')}
               />
             </Badge>

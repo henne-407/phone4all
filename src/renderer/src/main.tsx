@@ -16,9 +16,11 @@ const hash = new URLSearchParams(window.location.hash.slice(1))
 const callId = hash.get('call')
 
 function Themed({ state }: { state: AppState }) {
-  // Hauptprozess setzt nativeTheme.themeSource, daher folgt prefers-color-scheme der Einstellung
-  const dark = useMediaQuery('(prefers-color-scheme: dark)')
-  const { theme: key, style } = state.settings.appearance
+  // Hell/Dunkel fest eingestellt: selbst auswerten. Unter Linux kommt nativeTheme.themeSource
+  // nicht immer als prefers-color-scheme in der Oberfläche an, dann bliebe „Dunkel“ hell.
+  const systemDark = useMediaQuery('(prefers-color-scheme: dark)')
+  const { theme: key, style, scheme } = state.settings.appearance
+  const dark = scheme === 'system' ? systemDark : scheme === 'dark'
   const theme = useMemo(() => {
     return buildTheme(style, paletteFor(key, dark, state.platform.accent), dark)
   }, [style, key, dark, state.platform.accent])

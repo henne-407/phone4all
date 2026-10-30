@@ -243,7 +243,12 @@ export function ContactsPage({ wide }: { wide: boolean }) {
                   <ContactAvatar name={c.name} />
                 </ListItemAvatar>
                 <ListItemText
-                  primary={c.name}
+                  primary={
+                    <>
+                      {c.favorite && <StarIcon aria-label="Favorit" sx={{ fontSize: 16, color: 'primary.main', verticalAlign: '-2px', mr: 0.5 }} />}
+                      {c.name}
+                    </>
+                  }
                   secondary={[c.source, c.company, numberKinds(c).map(([, n]) => n).join(' · ')].filter(Boolean).join(' — ')}
                   slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }}
                 />

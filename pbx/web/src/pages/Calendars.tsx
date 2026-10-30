@@ -285,7 +285,7 @@ export default function Calendars() {
     <CollectionPage<CentralCalendar>
       kind="calendars"
       overline="Zusammenarbeit"
-      title="Zentrale Kalender"
+      title="Kalender"
       singular="Kalender"
       description="Gemeinsame Kalender für alle Apps, z. B. Betriebsferien, Schichtplan oder Feiertage – auch aus anderen Kalendern (Abo-Link, CalDAV). Welche Kalender eine App zeigt, legt das App-Profil fest."
       emptyText="Lege z. B. einen Kalender „Betrieb“ für Betriebsferien und Termine an, die alle sehen sollen."

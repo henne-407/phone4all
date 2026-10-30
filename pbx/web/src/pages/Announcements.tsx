@@ -12,7 +12,7 @@ export default function Announcements() {
     <CollectionPage<Announcement>
       kind="announcements"
       overline="Eingehende Anrufe"
-      title="Ansagen und Wartemusik"
+      title="Ansagen und Musik"
       singular="Ansage"
       description="Begrüßungen, Menüansagen und Hinweise (z. B. Betriebsferien). Hochladen oder direkt im Browser aufnehmen."
       emptyText="Ansagen begrüßen Anrufer oder erklären ein Sprachmenü."

@@ -11,7 +11,7 @@ function Root() {
   const theme = useMemo(() => buildTheme(dark), [dark])
   return (
     <ThemeProvider theme={theme}>
-      <CssBaseline />
+      <CssBaseline enableColorScheme />
       <App />
     </ThemeProvider>
   )

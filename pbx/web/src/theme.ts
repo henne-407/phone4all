@@ -116,7 +116,8 @@ export function buildTheme(dark: boolean): Theme {
       overline: { fontWeight: 700, letterSpacing: '0.08em', fontSize: '0.6875rem' },
     },
     components: {
-      MuiCssBaseline: { styleOverrides: { body: { backgroundColor: c.background } } },
+      // Platz für die Bildlaufleiste fest einplanen, sonst springt der Inhalt beim Wechsel auf lange Seiten
+      MuiCssBaseline: { styleOverrides: { html: { scrollbarGutter: 'stable' }, body: { backgroundColor: c.background } } },
       MuiButton: {
         defaultProps: { disableElevation: true },
         styleOverrides: { root: { borderRadius: 20, paddingInline: 18, minHeight: 38 }, sizeSmall: { minHeight: 32, paddingInline: 12 } },

@@ -1534,8 +1534,17 @@ pub.get('/setup/:token', (r) => {
 
 // -- DECT-Basen holen ihre Einrichtung (Gigaset N610/N670/N870 IP PRO) ---------------
 
-/** Letzter Abruf je Basis (nur im Speicher) */
-const dectSeen = new Map<string, { time: number; ip: string; agent: string; mac: string }>()
+/** Letzter Abruf je Basis; bleibt über Neustarts erhalten, sonst steht nach jedem Update „noch nicht abgerufen“ */
+type DectSeen = { time: number; ip: string; agent: string; mac: string }
+const dectSeen = new Map<string, DectSeen>(Object.entries(loadJson<Record<string, DectSeen>>(PATHS.dectSeen, {})))
+
+function saveDectSeen(): void {
+  try {
+    saveJson(PATHS.dectSeen, Object.fromEntries(dectSeen))
+  } catch {
+    // nur Anzeige – ein Schreibfehler darf die Einrichtung nicht stören
+  }
+}
 
 /** SIP-Server für die Basis: eingestellte Adresse, sonst die, unter der sie uns erreicht */
 function sipHostFor(base: string): string {
@@ -1559,6 +1568,7 @@ function dectFile(r: Request): void {
   const mac = requestMac(r.params.file ?? '', agent)
   if (b.mac && mac && mac !== b.mac) throw new HttpError(404, 'Diese Einrichtung gehört zu einer anderen Basis.')
   dectSeen.set(b.id, { time: Date.now(), ip: r.ip, agent: describeAgent(agent), mac })
+  saveDectSeen()
   const base = requestBase(r)
   const xml = gigasetFile(store.config, b, { server: dectServer(base, b), sipHost: sipHostFor(base), now: Math.floor(Date.now() / 1000) })
   sendText(r.res, 200, xml, 'application/xml; charset=utf-8')
@@ -2020,6 +2030,7 @@ api.post('/api/dect/:id/renew', (r) => {
     b.pin = newPin(4)
   })
   dectSeen.delete(r.params.id)
+  saveDectSeen()
   return store.config.dect.find((x) => x.id === r.params.id)
 })
 

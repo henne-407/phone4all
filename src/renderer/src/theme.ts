@@ -94,6 +94,10 @@ function buildClassic(primary: string, dark: boolean): Theme {
       MuiButtonBase: pressFeedback(base.palette.text.primary, primary),
       MuiPaper: { styleOverrides: { root: { backgroundImage: 'none' } } },
       MuiCard: { styleOverrides: { root: { borderRadius: 8 } } },
+      // Navigation links und Reiter wie die untere Leiste ohne Großbuchstaben
+      MuiTab: { styleOverrides: { root: { textTransform: 'none' } } },
+      // Aktiver Eintrag nicht größer setzen, sonst stößt „Messenger“ im schmalen Fenster an den Rand
+      MuiBottomNavigationAction: { styleOverrides: { label: { '&.Mui-selected': { fontSize: '0.75rem' } } } },
       MuiTextField: { defaultProps: { fullWidth: true } },
       MuiSwitch: m3Switch({
         on: main.main,
