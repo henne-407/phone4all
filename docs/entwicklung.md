@@ -50,8 +50,9 @@ cd pbx
 npm install
 npm run dev:server     # braucht ein lokales Asterisk
 npm run dev:web        # Weboberfläche auf http://localhost:5173
+npm run dev:client     # Web-Client (Oberfläche der App im Browser) gegen die Anlage auf :8080
 npm run typecheck && npm test
-docker build -t phone4all-pbx .
+docker build -f Dockerfile -t phone4all-pbx ..   # Bau-Kontext ist der Hauptordner (Web-Client braucht src/)
 
 # Mobil-App
 cd mobile

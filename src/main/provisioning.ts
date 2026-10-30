@@ -60,6 +60,8 @@ export interface PbxProfile {
   permissions: PbxPermission[]
   messenger: boolean
   video: VideoAccount | null
+  /** Zugang für Apps (SIP über WebSocket, WebRTC); null = Fernzugang der Anlage aus */
+  remote: VideoAccount | null
   parking: { number: string; slots: string[] } | null
   crm: { url: string; auto: boolean } | null
   voicemail: boolean
@@ -264,6 +266,7 @@ export function parseProfile(data: unknown): PbxProfile {
     permissions: parsePermissions(p.permissions),
     messenger: p.messenger === true,
     video: p.messenger === true ? parseVideo(p.video) : null,
+    remote: parseVideo(p.remote),
     parking: parseParking(p.parking),
     crm: parseCrm(p.crm),
     voicemail: p.voicemail === true,
@@ -616,7 +619,7 @@ export class Provisioning {
       r = await fetch(`${url}/fax?box=${encodeURIComponent(box)}&number=${encodeURIComponent(number)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/pdf' },
-        body: Buffer.from(pdf),
+        body: new Uint8Array(pdf),
         signal: AbortSignal.timeout(120000),
       })
     } catch {
@@ -789,6 +792,7 @@ export class Provisioning {
       permissions: [],
       messenger: false,
       video: null,
+      remote: null,
       parking: null,
       crm: null,
       voicemail: false,
@@ -837,6 +841,7 @@ export class Provisioning {
       permissions: p.permissions,
       messenger: p.messenger,
       video: p.video,
+      remote: p.remote,
       parking: p.parking,
       crm: p.crm,
       voicemail: p.voicemail,

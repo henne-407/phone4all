@@ -10,6 +10,9 @@ Die SIP- und Audio-Arbeit macht [baresip](https://github.com/baresip/baresip), d
 Hintergrundprozess gestartet und über sein `ctrl_tcp`-Modul gesteuert wird. Die App
 selbst ist mit Electron, React und [Material UI](https://mui.com/) gebaut.
 
+Mit der Phone4all-Anlage gibt es dieselbe Oberfläche auch ohne Installation im Browser:
+[Web-Client](web-client.md).
+
 <p align="center">
   <img src="bilder/app-hell.png" width="49%" alt="Startseite im hellen Design">
   <img src="bilder/app-dunkel.png" width="49%" alt="Startseite im dunklen Design">

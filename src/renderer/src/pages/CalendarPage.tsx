@@ -27,7 +27,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { addDays, covers, fmtDay, fmtEventTime, fmtMonth, sameDay, startOfDay } from '../../../shared/format'
 import { findNumbers } from '../../../shared/numbers'
 import type { CalEvent } from '../../../shared/types'
-import { api } from '../api'
+import { api, web } from '../api'
 import { emit } from '../bus'
 import { EmptyState } from '../components/common'
 import { useApp } from '../state'
@@ -230,8 +230,9 @@ export function CalendarPage({ wide }: { wide: boolean }) {
         icon={<CalendarIcon />}
         title="Kein Kalender verbunden"
         description={
-          'Verbinde einen CalDAV-Kalender (z. B. Nextcloud, iCloud, mailbox.org)' +
-          (state.platform.eds ? ' oder nutze Kalender aus GNOME Online-Konten.' : '.')
+          web
+            ? 'Die Telefonanlage hat dir noch keinen Kalender freigegeben. Eigene CalDAV-Kalender gibt es in der Desktop-App.'
+            : 'Verbinde einen CalDAV-Kalender (z. B. Nextcloud, iCloud, mailbox.org)' + (state.platform.eds ? ' oder nutze Kalender aus GNOME Online-Konten.' : '.')
         }
       >
         <Button variant="contained" onClick={() => emit('open-preferences', 'calendar')}>

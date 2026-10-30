@@ -8,9 +8,11 @@
   "scripts": {
     "dev:server": "tsx watch server/index.ts",
     "dev:web": "vite",
-    "build": "npm run build:server && npm run build:web",
+    "dev:client": "vite --config vite.client.config.ts",
+    "build": "npm run build:server && npm run build:web && npm run build:client",
     "build:server": "esbuild server/index.ts --bundle --platform=node --target=node24 --format=esm --outfile=dist/server.mjs --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
     "build:web": "vite build",
+    "build:client": "vite build --config vite.client.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run"
   },
@@ -29,6 +31,7 @@
     "esbuild": "^0.28.2",
     "fast-xml-parser": "^5.11.2",
     "ical.js": "^2.2.1",
+    "jssip": "^3.13.9",
     "mssql": "^12.7.11",
     "qrcode": "^1.5.4",
     "react": "^19.3.1",

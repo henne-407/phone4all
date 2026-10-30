@@ -23,7 +23,7 @@ import {
 } from '@mui/material'
 import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import type { CalEvent, Contact, PageName } from '../../shared/types'
-import { api, onMain, platform } from './api'
+import { api, onMain, platform, web } from './api'
 import { useUiEvent } from './bus'
 import { CallPanel } from './components/CallPanel'
 import { ContactDialog } from './components/ContactDialog'
@@ -106,9 +106,11 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
           <Box component="img" src="./icon.png" sx={{ width: 96, height: 96 }} />
           <Typography variant="h5">Phone4All</Typography>
           <Typography sx={{ color: 'text.secondary' }}>Version {state.platform.version}</Typography>
-          <Typography sx={{ mt: 1 }}>Einfacher SIP-Softphone-Client für Linux, macOS und Windows.</Typography>
+          <Typography sx={{ mt: 1 }}>
+            {web ? 'Web-Client der Phone4all-Telefonanlage – telefonieren direkt im Browser.' : 'Einfacher SIP-Softphone-Client für Linux, macOS und Windows.'}
+          </Typography>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            SIP und Audio: baresip · Oberfläche: Material UI · Lizenz: MIT
+            {web ? 'SIP: JsSIP · Audio: WebRTC' : 'SIP und Audio: baresip'} · Oberfläche: Material UI · Lizenz: MIT
           </Typography>
         </Stack>
       </DialogContent>
@@ -182,6 +184,8 @@ export function MainWindow() {
       if (e.key === ',') {
         e.preventDefault()
         setPrefs('account')
+      } else if (web) {
+        // Im Browser gehören Strg+Q und Strg+W dem Browser
       } else if (e.key === 'q' && platform !== 'darwin') {
         e.preventDefault()
         void api.quit()
@@ -233,7 +237,7 @@ export function MainWindow() {
             <Button
               color="inherit"
               size="small"
-              onClick={() => (banner.action === 'reconnect' ? void api.restartEngine() : setPrefs('account'))}
+              onClick={() => (banner.url ? window.location.assign(banner.url) : banner.action === 'reconnect' ? void api.restartEngine() : setPrefs('account'))}
             >
               {banner.button}
             </Button>

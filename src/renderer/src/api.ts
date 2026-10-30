@@ -31,3 +31,6 @@ export function onMain<K extends keyof RendererEvents>(
 }
 
 export const platform = window.bridge.platform
+
+/** Läuft als Web-Client im Browser (Unterbau aus src/web statt Electron) */
+export const web = platform === 'web'

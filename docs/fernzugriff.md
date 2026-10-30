@@ -1,6 +1,6 @@
 # Zugriff von unterwegs (HTTPS)
 
-Damit Mobil-App und Home Assistant die Anlage auch außerhalb des Büros erreichen, braucht
+Damit Mobil-App, [Web-Client](web-client.md) und Home Assistant die Anlage auch außerhalb des Büros erreichen, braucht
 es **eine HTTPS-Adresse** über einen Reverse-Proxy. SIP-Ports im Router zu öffnen ist
 dafür nicht nötig und auch nicht ratsam.
 
@@ -12,7 +12,8 @@ Handy ──HTTPS / WSS──▶ Reverse-Proxy (z. B. Pangolin) ──HTTP──
 | Pfad | Wer | Geschützt durch |
 | --- | --- | --- |
 | `/provision/*`, `/setup/*` | Apps: Einrichtung, Telefonbuch, Kalender | geheimer Einrichtungslink bzw. PIN |
-| `/ws` | Mobil-App: SIP über WebSocket | SIP-Passwort, Sperre nach Fehlversuchen |
+| `/web/*` | Web-Client (nur die Seite, ohne Daten) | Anmeldung mit PIN oder Einladung |
+| `/ws` | Mobil-App und Web-Client: SIP über WebSocket | SIP-Passwort, Sperre nach Fehlversuchen |
 | `/api/integration/status` | Home Assistant | Zugriffsschlüssel |
 | alles andere | Weboberfläche | Anmeldung des Proxys **und** Passwort der Anlage |
 | Port 3478 (TCP+UDP) | Sprache der Mobil-App (TURN) | zeitlich begrenzte Zugangsdaten |
@@ -31,6 +32,7 @@ unter *System → Allgemein* eine SIP-Adresse eingetragen, ist das genau diese A
    - `/provision/*`
    - `/setup/*`
    - `/ws`
+   - `/web/*` (für den [Web-Client](web-client.md))
    - `/api/integration/status` (nur für Home Assistant)
 
    Die Weboberfläche bleibt hinter der Pangolin-Anmeldung.

@@ -16,9 +16,11 @@ const hash = new URLSearchParams(window.location.hash.slice(1))
 const callId = hash.get('call')
 
 function Themed({ state }: { state: AppState }) {
-  // Hauptprozess setzt nativeTheme.themeSource, daher folgt prefers-color-scheme der Einstellung
-  const dark = useMediaQuery('(prefers-color-scheme: dark)')
-  const { theme: key, style } = state.settings.appearance
+  // Desktop: Der Hauptprozess setzt nativeTheme.themeSource, prefers-color-scheme folgt dann
+  // der Einstellung; im Browser gilt die Einstellung nur hier
+  const systemDark = useMediaQuery('(prefers-color-scheme: dark)')
+  const { theme: key, style, scheme } = state.settings.appearance
+  const dark = scheme === 'system' ? systemDark : scheme === 'dark'
   const theme = useMemo(() => {
     return buildTheme(style, paletteFor(key, dark, state.platform.accent), dark)
   }, [style, key, dark, state.platform.accent])

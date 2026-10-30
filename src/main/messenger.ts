@@ -162,7 +162,8 @@ export class Messenger extends EventEmitter {
   private scheduleRetry(): void {
     if (this.retry || !this.wsUrl) return
     this.retry = setTimeout(() => this.connect(), this.delay)
-    this.retry.unref()
+    // Im Browser (Web-Client) gibt es kein unref
+    this.retry.unref?.()
     this.delay = Math.min(this.delay * 2, 60000)
   }
 

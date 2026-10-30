@@ -226,13 +226,20 @@ export const WEB_CSP = [
   "frame-ancestors 'none'",
 ].join('; ')
 
+/**
+ * Web-Client: wie die Weboberfläche, dazu SIP und Messenger über WebSocket. Mikrofon und
+ * Kamera nur für die eigene Seite.
+ */
+export const CLIENT_CSP = WEB_CSP.replace("connect-src 'self'", "connect-src 'self' ws: wss:")
+export const CLIENT_PERMISSIONS = 'microphone=(self), camera=(self), display-capture=(self), geolocation=(), payment=(), usb=()'
+
 /** Dateien der Weboberfläche; unbekannte Pfade liefern index.html (Single-Page-App). */
-export function serveStatic(root: string, pathname: string, res: http.ServerResponse): void {
+export function serveStatic(root: string, pathname: string, res: http.ServerResponse, extra: { csp?: string; permissions?: string } = {}): void {
   const rel = path.normalize(decode(pathname)).replace(/^(\.\.[/\\])+/, '')
   let file = path.join(root, rel)
   if (!file.startsWith(root) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(root, 'index.html')
   if (!fs.existsSync(file)) {
-    sendText(res, 404, 'Weboberfläche nicht gebaut (npm run build:web).')
+    sendText(res, 404, root.endsWith('client') ? 'Web-Client nicht gebaut (npm run build:client).' : 'Weboberfläche nicht gebaut (npm run build:web).')
     return
   }
   const immutable = file.includes(`${path.sep}assets${path.sep}`)
@@ -242,7 +249,8 @@ export function serveStatic(root: string, pathname: string, res: http.ServerResp
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'same-origin',
-    'Content-Security-Policy': WEB_CSP,
+    'Content-Security-Policy': extra.csp ?? WEB_CSP,
+    ...(extra.permissions ? { 'Permissions-Policy': extra.permissions } : {}),
   })
   fs.createReadStream(file)
     .on('error', () => res.destroy())
