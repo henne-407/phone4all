@@ -123,6 +123,11 @@ export class Presence extends EventEmitter {
     this.changed()
   }
 
+  /** Zustand einer Nebenstelle (Telefone und App zusammen) */
+  stateOf(num: string): LineState {
+    return lineState(this.states.get(num) ?? -1)
+  }
+
   /** Stand für die Apps; Nicht stören und Umleitungen kommen aus der Anlage */
   view(cfg: PbxConfig, state: RuntimeState, now = new Date()): PresenceView {
     const extensions = cfg.extensions

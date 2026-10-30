@@ -6,7 +6,7 @@
 
 import { type DirectoryEntry, external } from './directory'
 import { closedReason, localTime } from './holidays'
-import type { AppPermission, BlockedNumber, Extension, ForwardRule, PbxConfig, Trunk } from './model'
+import type { AppPermission, BlockedNumber, BossPair, Extension, ForwardRule, PbxConfig, Trunk } from './model'
 import { SPECIAL_NUMBER, cleanNumber, formatFor, prefixToE164, toE164 } from './numbers'
 import { HANGUP_TARGET, destTarget } from './targets'
 
@@ -17,9 +17,11 @@ export interface RuntimeState {
   cfu: Record<string, string>
   /** Aus Gruppen abgemeldet: Nebenstelle → IDs der Gruppen */
   away: Record<string, string[]>
+  /** Chef und Sekretariat eingeschaltet: ID des Paars → true */
+  boss: Record<string, boolean>
 }
 
-export const EMPTY_STATE: RuntimeState = { dnd: {}, cfu: {}, away: {} }
+export const EMPTY_STATE: RuntimeState = { dnd: {}, cfu: {}, away: {}, boss: {} }
 
 /** Termin, der gerade in einem zentralen Kalender läuft */
 export interface CalendarHit {
@@ -191,10 +193,10 @@ export function routeInbound(cfg: PbxConfig, req: InboundRequest): string {
 
 /** Nummer innerhalb der Anlage (Nebenstelle, Gruppe, Konferenz, Sprachmenü)? */
 export function isLocalNumber(cfg: PbxConfig, n: string): boolean {
-  return [cfg.extensions, cfg.groups, cfg.conferences, cfg.ivrs].some((list) => list.some((x) => x.number === n))
+  return [cfg.extensions, cfg.groups, cfg.conferences, cfg.ivrs, cfg.aiagents].some((list) => list.some((x) => x.number === n))
 }
 
-function targetForNumber(cfg: PbxConfig, raw: string): string {
+export function targetForNumber(cfg: PbxConfig, raw: string): string {
   const n = cleanNumber(raw)
   if (!n) return ''
   return isLocalNumber(cfg, n) ? `p4a-local^${n}` : `p4a-fwd^${n}`
@@ -279,7 +281,35 @@ export function appPermissions(cfg: PbxConfig, num: string): AppPermission[] {
   return [...set]
 }
 
-export function extensionPlan(cfg: PbxConfig, state: RuntimeState, num: string, now = new Date()): string {
+/** Wer ruft an: Nummer des Anrufers und – bei Weiterleitung per Telefon – der weiterleitende Kanal */
+export interface CallerInfo {
+  from: string
+  /** BLINDTRANSFER des Kanals, z. B. „PJSIP/20-00000012“ */
+  transfer: string
+  /** Hinweisansage vor aufgezeichneten Gesprächen (Pfad ohne Endung, leer = keine) */
+  notice?: string
+}
+
+/** Chef und Sekretariat, die gerade für den Chef gelten (eingeschaltet, Sekretariat gibt es) */
+export function bossPair(cfg: PbxConfig, state: RuntimeState, boss: string): BossPair | undefined {
+  return cfg.bosses.find((b) => b.boss === boss && state.boss[b.id] && b.secretary !== boss && cfg.extensions.some((e) => e.number === b.secretary))
+}
+
+/** Darf der Anrufer direkt zum Chef? (Sekretariat selbst, von dort weitergeleitet, Kollegen, VIP) */
+export function bossDirect(cfg: PbxConfig, pair: BossPair, caller: CallerInfo): boolean {
+  const from = cleanNumber(caller.from)
+  if (from === pair.secretary) return true
+  if (new RegExp(`^PJSIP/${pair.secretary}(-app)?-[0-9a-f]+$`).test(caller.transfer)) return true
+  if (pair.internal_direct && cfg.extensions.some((e) => e.number === from)) return true
+  return pair.vip.some((v) => {
+    const raw = v.trim()
+    if (!raw) return false
+    if (raw.endsWith('*')) return cleanNumber(from).startsWith(cleanNumber(raw.slice(0, -1))) || toE164(from, cfg.system.country_code).startsWith(prefixToE164(raw.slice(0, -1), cfg.system.country_code))
+    return sameNumber(raw, from, cfg)
+  })
+}
+
+export function extensionPlan(cfg: PbxConfig, state: RuntimeState, num: string, now = new Date(), caller: CallerInfo = { from: '', transfer: '' }): string {
   const ext = cfg.extensions.find((e) => e.number === num)
   if (!ext) return reply('goto', HANGUP_TARGET)
   const vm = ext.voicemail.enabled
@@ -288,8 +318,53 @@ export function extensionPlan(cfg: PbxConfig, state: RuntimeState, num: string, 
   const forward = activeForward(cfg, state, num, now)
   if (forward) return reply('goto', targetForNumber(cfg, forward))
   if (dndActive(cfg, state, num, now)) return reply('goto', busy)
+  // Chef und Sekretariat: erst das Sekretariat (oder beide zugleich)
+  const pair = bossPair(cfg, state, num)
+  let also = ''
+  if (pair && !bossDirect(cfg, pair, caller)) {
+    if (pair.mode === 'secretary') return reply('goto', `p4a-boss^${pair.id}`)
+    also = pair.secretary
+  }
   const mobile = ext.mobile.enabled && cleanNumber(ext.mobile.number) ? '1' : '0'
-  return reply('ring', String(ext.ring_seconds || 25), ext.record ? '1' : '0', busy, noanswer, mobile)
+  const fields = ['ring', String(ext.ring_seconds || 25), ext.record ? '1' : '0', busy, noanswer, mobile, also, ext.record ? (caller.notice ?? '') : '']
+  // Leere Felder am Ende weglassen (CUT liefert dann ohnehin '')
+  while (fields.length > 6 && !fields.at(-1)) fields.pop()
+  return reply(...fields)
+}
+
+/** Chef und Sekretariat ein- oder ausschalten (*83 von Chef oder Sekretariat); null = kein Paar */
+export function toggleBoss(cfg: PbxConfig, state: RuntimeState, ext: string, id = '', on?: boolean): boolean | null {
+  const pairs = cfg.bosses.filter((b) => (b.boss === ext || b.secretary === ext) && (!id || b.id === id))
+  if (!pairs.length) return null
+  const next = on ?? !pairs.some((b) => state.boss[b.id])
+  for (const b of pairs) {
+    if (next) state.boss[b.id] = true
+    else delete state.boss[b.id]
+  }
+  return next
+}
+
+/** Paare, an denen die Nebenstelle beteiligt ist (für die Apps) */
+export function bossView(cfg: PbxConfig, state: RuntimeState, ext: string): { id: string; name: string; role: 'boss' | 'secretary'; partner: string; active: boolean }[] {
+  const name = (n: string): string => cfg.extensions.find((e) => e.number === n)?.name || n
+  return cfg.bosses
+    .filter((b) => b.boss === ext || b.secretary === ext)
+    .map((b) => ({
+      id: b.id,
+      name: b.name || `${name(b.boss)} / ${name(b.secretary)}`,
+      role: b.boss === ext ? 'boss' : 'secretary',
+      partner: b.boss === ext ? b.secretary : b.boss,
+      active: Boolean(state.boss[b.id]),
+    }))
+}
+
+/** Mithören (listen), Einflüstern (whisper), Aufschalten (barge): Optionen für ChanSpy, '' = nicht erlaubt */
+export function spyPlan(cfg: PbxConfig, ext: string, target: string, mode: string): string {
+  if (!cfg.spy.enabled || !appPermissions(cfg, ext).includes('spy')) return ''
+  if (target === ext || !cfg.extensions.some((e) => e.number === target)) return ''
+  // q: ohne Ansage, E: Ende mit dem Gespräch, S: Ende, wenn niemand spricht, d: mit 4/5/6 umschalten
+  const opts: Record<string, string> = { listen: 'qESd', whisper: 'qESdw', barge: 'qESdB' }
+  return opts[mode] ?? ''
 }
 
 /** Handy der Nebenstelle klingeln lassen: Verzögerung und Nummer, ob mit Bestätigung */
@@ -540,6 +615,11 @@ export function feature(cfg: PbxConfig, state: RuntimeState, ext: string, code: 
     }
     case 'vmother':
       return { reply: appPermissions(cfg, ext).includes('voicemail_other') ? 'on' : 'error' }
+    case 'boss': {
+      const on = toggleBoss(cfg, state, ext)
+      if (on === null) return { reply: 'error' }
+      return { reply: on ? 'on' : 'off', stateChanged: true }
+    }
     case 'tc': {
       const tc = cfg.timeconditions[Number(arg) - 1]
       if (!tc) return { reply: 'error' }

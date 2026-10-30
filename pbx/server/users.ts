@@ -51,12 +51,12 @@ export const PASSWORD_MIN = 10
 
 /** Pfade, die „Personen und Anrufe“ ändern darf */
 const OPERATOR_WRITE = [
-  /^\/api\/(extensions|groups|dect|deskphones|phonebook|blocklist|conferences|faxes|missed)(\/|$)/,
+  /^\/api\/(extensions|groups|dect|deskphones|phonebook|blocklist|conferences|faxes|missed|bosses|reminders)(\/|$)/,
   /^\/api\/(logout|password)$/,
 ]
 
 /** Nur für Verwaltung, auch lesend (Passwörter, Protokolle, Sicherungen, Zugänge) */
-const ADMIN_READ = [/^\/api\/(export|backups|log|audit|users|offsite|integration\/token)(\/|$)/]
+const ADMIN_READ = [/^\/api\/(export|backups|log|audit|users|offsite|integration\/token|(monitoring|wallboard|sms)\/token)(\/|$)/]
 
 /** Darf diese Rolle die Anfrage stellen? Sonst Fehlertext. */
 /** Enthält SIP-Passwörter oder Einrichtungslinks: nicht für „Nur ansehen“ */

@@ -16,6 +16,7 @@ export interface GenContext {
     db: string
     modules: string
     asteriskData: string // mitgelieferte Klänge (/usr/share/asterisk)
+    prompts: string // von der Anlage erzeugte Ansagen (Rückruf, Hinweise)
   }
   ami: { port: number; secret: string }
   /** Port des HTTP-Servers von Asterisk (WebSocket für die Mobil-App) */
@@ -24,6 +25,8 @@ export interface GenContext {
   banned: string[]
   /** Benutzer, unter dem Asterisk läuft (leer = aktueller Benutzer) */
   runUser: string
+  /** Port des AudioSocket-Servers für den KI-Telefonassistenten (Standard 9093) */
+  audioSocket?: number
   /** Pfad zu msmtp für Voicemail-E-Mails (leer = keine E-Mails) */
   mailer: string
 }

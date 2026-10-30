@@ -458,9 +458,14 @@ interface Client {
   conn: WebSocketConnection
 }
 
+/** Absender von Hinweisen der Anlage (Zusammenfassungen, Rückrufnotizen) */
+export const SYSTEM_SENDER = 'Telefonanlage'
+
 export class MessengerHub {
   private clients = new Set<Client>()
   private calls = new Map<string, Call>()
+  /** Nachricht in einer SMS-Unterhaltung geschrieben: als SMS versenden */
+  onSms?: (room: ChatRoom, msg: ChatMessage, ext: string) => void
 
   constructor(
     readonly store: MessengerStore,
@@ -559,7 +564,9 @@ export class MessengerHub {
       }
       case 'send': {
         const r = s.room(String(msg.room), c.ext)
-        this.publishMessage(r, s.post(r, c.ext, String(msg.text ?? '')), msg.ref)
+        const m = s.post(r, c.ext, String(msg.text ?? ''))
+        this.publishMessage(r, m, msg.ref)
+        if (r.sms) this.onSms?.(r, m, c.ext)
         break
       }
       case 'direct': {
@@ -736,6 +743,58 @@ export class MessengerHub {
     if (to === about || !users.some((e) => e.number === to) || !users.some((e) => e.number === about)) return
     const r = this.store.direct(to, about)
     this.publishMessage(r, this.store.post(r, '', text))
+  }
+
+  /** Nachricht der Anlage an eine Nebenstelle (eigene Unterhaltung „Telefonanlage“, zählt als ungelesen) */
+  inbox(to: string, text: string): boolean {
+    if (!messengerUsers(this.config()).some((e) => e.number === to)) return false
+    const id = `g-p4a-${to}`.replace(/[^\w-]/g, '_')
+    let r = this.store.rooms.get(id)
+    if (!r || !r.members.includes(to)) {
+      if (r) this.store.removeRoom(id)
+      r = { id, kind: 'group', name: SYSTEM_SENDER, members: [to], created: Date.now(), created_by: '', seq: 0, read: {} }
+      this.store.rooms.set(id, r)
+      this.store.flush()
+    }
+    this.publishMessage(r, this.store.post(r, SYSTEM_SENDER, text))
+    return true
+  }
+
+  /** SMS-Unterhaltung mit einer Rufnummer; Mitglieder sind alle Nebenstellen mit SMS-Recht */
+  smsRoom(number: string, name: string, members: string[]): ChatRoom {
+    const users = new Set(messengerUsers(this.config()).map((e) => e.number))
+    const list = members.filter((m) => users.has(m))
+    if (!list.length) throw new ChatError('Niemand mit SMS-Recht nutzt den Messenger.')
+    let r = [...this.store.rooms.values()].find((x) => x.sms === number)
+    if (!r) {
+      r = { id: `g-${newId()}`, kind: 'group', name: `SMS ${name || number}`.slice(0, 80), members: list, created: Date.now(), created_by: '', seq: 0, read: {}, sms: number }
+      this.store.rooms.set(r.id, r)
+      this.store.flush()
+      this.publishRoom(r)
+    } else if (list.some((m) => !r!.members.includes(m))) {
+      r.members = [...new Set([...r.members, ...list])]
+      this.store.flush()
+      this.publishRoom(r)
+    }
+    return r
+  }
+
+  /** SMS empfangen: in der Unterhaltung mit dem Absender zeigen */
+  smsReceived(number: string, name: string, text: string, members: string[]): ChatMessage {
+    const r = this.smsRoom(number, name, members)
+    const msg = this.store.post(r, number, text)
+    this.publishMessage(r, msg)
+    return msg
+  }
+
+  /** Nachricht im Namen einer Nebenstelle (z. B. aus der App gesendete SMS) */
+  postAs(room: ChatRoom, ext: string, text: string): void {
+    this.publishMessage(room, this.store.post(room, ext, text))
+  }
+
+  /** Hinweis der Anlage in eine Unterhaltung (ohne Absender) */
+  note(room: ChatRoom, text: string): void {
+    this.publishMessage(room, this.store.post(room, '', text))
   }
 
   /** Unterhaltung wurde in der Verwaltung gelöscht */

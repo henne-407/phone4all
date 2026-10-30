@@ -25,6 +25,7 @@ export const PATHS = {
   fax: path.join(DATA, 'fax'),
   users: path.join(DATA, 'users.json'),
   sounds: path.join(DATA, 'sounds', 'custom'),
+  prompts: path.join(DATA, 'sounds', 'prompts'),
   moh: path.join(DATA, 'sounds', 'moh'),
   recordings: path.join(DATA, 'recordings'),
   spool: path.join(DATA, 'spool'),
@@ -53,6 +54,8 @@ export const SETTINGS = {
   amiPort: Number(env.PBX_AMI_PORT) || 5038,
   /** HTTP-Server von Asterisk (nur 127.0.0.1) für SIP über WebSocket */
   asteriskHttpPort: Number(env.PBX_ASTERISK_HTTP_PORT) || 8088,
+  /** AudioSocket für den KI-Telefonassistenten (nur 127.0.0.1) */
+  audioSocketPort: Number(env.PBX_AUDIOSOCKET_PORT) || 9093,
   turnserver: env.PBX_TURNSERVER || '/usr/bin/turnserver',
   asterisk: env.PBX_ASTERISK_BIN || 'asterisk',
   /** Benutzer für Asterisk (im Container „asterisk“, lokal leer) */
