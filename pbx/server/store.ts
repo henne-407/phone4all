@@ -12,6 +12,7 @@ import {
   DECT_MAX_HANDSETS,
   DEFAULT_CONFIG,
   type DectBase,
+  type DeskPhone,
   type Extension,
   type ForwardRule,
   type PbxConfig,
@@ -130,6 +131,12 @@ export function fillDectSecrets(base: DectBase): void {
   base.mac = normalizeMac(base.mac)
 }
 
+/** Fehlendes Token eines Tischtelefons ergänzen; MAC einheitlich schreiben. */
+export function fillDeskSecrets(phone: DeskPhone): void {
+  if (!phone.token) phone.token = newSecret(32)
+  phone.mac = normalizeMac(phone.mac)
+}
+
 /** „7C:2F:80-E0.D6 05“ → „7c2f80e0d605“ */
 export function normalizeMac(mac: string): string {
   return mac.replace(/[\s:.-]/g, '').toLowerCase()
@@ -147,6 +154,7 @@ function usedNumbers(cfg: PbxConfig): Map<string, string> {
   for (const g of cfg.groups) add(g.number, `Gruppe ${g.name || g.number}`)
   for (const c of cfg.conferences) add(c.number, `Konferenz ${c.name || c.number}`)
   for (const i of cfg.ivrs) add(i.number, `Sprachmenü ${i.name || i.number}`)
+  for (const f of cfg.faxes) add(f.number, `Fax ${f.name || f.number}`)
   for (const n of parkingNumbers(cfg)) add(n, n === cfg.parking.number ? 'Parken' : `Parkplatz ${n}`)
   return used
 }
@@ -170,10 +178,21 @@ export function emailList(raw: string, what: string): string[] {
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 
-function validateRule(num: string, r: ForwardRule): void {
+function validateRule(cfg: PbxConfig, num: string, r: ForwardRule): void {
   if (!r.id) r.id = newId()
-  if (!['schedule', 'timecondition', 'dnd'].includes(r.when)) throw new ValidationError(`Nebenstelle ${num}: unbekannte Umleitungsregel.`)
-  if (!cleanNumber(r.target)) throw new ValidationError(`Nebenstelle ${num}: Bei einer Umleitungsregel fehlt das Ziel.`)
+  if (!['schedule', 'timecondition', 'dnd', 'calendar'].includes(r.when)) throw new ValidationError(`Nebenstelle ${num}: unbekannte Umleitungsregel.`)
+  r.action = r.action === 'dnd' ? 'dnd' : 'forward'
+  if (r.action === 'dnd') {
+    if (r.when === 'dnd') throw new ValidationError(`Nebenstelle ${num}: „Nicht stören“ kann sich nicht selbst einschalten.`)
+    r.target = ''
+  } else if (!cleanNumber(r.target)) throw new ValidationError(`Nebenstelle ${num}: Bei einer Umleitungsregel fehlt das Ziel.`)
+  if (r.when === 'calendar') {
+    r.keyword = String(r.keyword ?? '').trim().slice(0, 100)
+    if (!cfg.calendars.some((c) => c.id === r.calendar)) throw new ValidationError(`Nebenstelle ${num}: Für die Regel nach Kalender einen Kalender wählen.`)
+  } else {
+    delete r.calendar
+    delete r.keyword
+  }
   if (r.when === 'schedule') {
     if (!TIME.test(r.from) || !TIME.test(r.to)) throw new ValidationError(`Nebenstelle ${num}: Uhrzeit der Umleitungsregel im Format 18:00 angeben.`)
     if (!r.days.length || r.days.some((d) => d < 1 || d > 7)) throw new ValidationError(`Nebenstelle ${num}: Wochentage der Umleitungsregel fehlen.`)
@@ -221,7 +240,13 @@ export function validate(cfg: PbxConfig): void {
     if (!e.name.trim()) throw new ValidationError(`Nebenstelle ${e.number}: Name fehlt.`)
     if (e.secret && e.secret.length < 8) throw new ValidationError(`Nebenstelle ${e.number}: Das SIP-Passwort braucht mindestens 8 Zeichen.`)
     if (/[;\s]/.test(e.secret)) throw new ValidationError(`Nebenstelle ${e.number}: Das SIP-Passwort darf keine Leerzeichen oder „;“ enthalten.`)
-    for (const r of e.forward.rules) validateRule(e.number, r)
+    for (const r of e.forward.rules) validateRule(cfg, e.number, r)
+    const mob = e.mobile
+    mob.number = cleanNumber(mob.number)
+    if (mob.enabled && !/^\+?\d{6,}$/.test(mob.number)) throw new ValidationError(`Nebenstelle ${e.number}: Handynummer fehlt oder ist ungültig.`)
+    if (!(Number.isInteger(mob.delay) && mob.delay >= 0 && mob.delay <= 60)) throw new ValidationError(`Nebenstelle ${e.number}: Verzögerung fürs Handy 0 bis 60 Sekunden.`)
+    e.door.dtmf = e.door.dtmf.trim()
+    if (e.door.enabled && !/^[0-9*#]{1,8}$/.test(e.door.dtmf)) throw new ValidationError(`Nebenstelle ${e.number}: Tasten zum Türöffnen wie *9 oder # angeben.`)
   }
   for (const g of cfg.groups) {
     if (g.number && !isInternalNumber(g.number)) throw new ValidationError(`Gruppe ${g.name}: ungültige Nummer „${g.number}“.`)
@@ -280,6 +305,39 @@ export function validate(cfg: PbxConfig): void {
       if (handsets.has(n)) throw new ValidationError(`Nebenstelle ${n} ist schon einem Mobilteil zugeordnet (${handsets.get(n)}).`)
       handsets.set(n, b.name)
     }
+  }
+  for (const f of cfg.faxes) {
+    if (!f.name.trim()) throw new ValidationError('Fax ohne Namen.')
+    if (f.number && !isInternalNumber(f.number)) throw new ValidationError(`Fax ${f.name}: ungültige Nummer „${f.number}“.`)
+    if (!emailList(f.email, `Fax ${f.name}`).length) throw new ValidationError(`Fax ${f.name}: E-Mail-Adresse für empfangene Faxe fehlt.`)
+    f.station = f.station.trim().slice(0, 20)
+    if (/[^\d +]/.test(f.station)) throw new ValidationError(`Fax ${f.name}: Die Kennung darf nur Ziffern, + und Leerzeichen enthalten.`)
+    f.header = f.header.replace(/[\r\n";\\]/g, ' ').trim().slice(0, 50)
+    f.cid = cleanNumber(f.cid)
+  }
+  const deskMacs = new Set<string>()
+  for (const d of cfg.deskphones) {
+    if (!d.name.trim()) throw new ValidationError('Tischtelefon ohne Namen.')
+    if (!['yealink', 'snom'].includes(d.vendor)) throw new ValidationError(`Tischtelefon ${d.name}: Hersteller wird nicht unterstützt.`)
+    if (!/^[0-9a-f]{12}$/.test(d.mac)) throw new ValidationError(`Tischtelefon ${d.name}: Die MAC-Adresse hat 12 Zeichen (0–9, A–F), z. B. 80:5E:C0:12:34:56.`)
+    if (deskMacs.has(d.mac)) throw new ValidationError(`Tischtelefon ${d.name}: Die MAC-Adresse ist schon eingetragen.`)
+    deskMacs.add(d.mac)
+    if (!cfg.extensions.some((e) => e.number === d.extension)) throw new ValidationError(`Tischtelefon ${d.name}: Nebenstelle wählen.`)
+    if (/[\s"<>&]/.test(d.admin_password)) throw new ValidationError(`Tischtelefon ${d.name}: Das Passwort darf keine Leerzeichen oder " < > & enthalten.`)
+    if (d.keys.length > 60) throw new ValidationError(`Tischtelefon ${d.name}: höchstens 60 Funktionstasten.`)
+    for (const k of d.keys) {
+      if (!['blf', 'speed', 'park', 'dnd', 'none'].includes(k.type)) throw new ValidationError(`Tischtelefon ${d.name}: unbekannte Tastenart.`)
+      k.value = cleanNumber(k.value)
+      k.label = k.label.replace(/[\r\n"<>&]/g, ' ').trim().slice(0, 20)
+      if ((k.type === 'blf' || k.type === 'speed' || k.type === 'park') && !k.value) throw new ValidationError(`Tischtelefon ${d.name}: Bei einer Taste fehlt die Nummer.`)
+    }
+  }
+  const tr = cfg.transcription
+  if (tr.enabled) {
+    if (!['local', 'api'].includes(tr.engine)) throw new ValidationError('Voicemail als Text: unbekannte Art.')
+    if (!/^[a-z0-9._-]{1,40}$/.test(tr.model)) throw new ValidationError('Voicemail als Text: ungültiges Modell.')
+    tr.api_url = tr.api_url.trim().replace(/\/+$/, '')
+    if (tr.engine === 'api' && !/^https?:\/\/\S+$/i.test(tr.api_url)) throw new ValidationError('Voicemail als Text: Adresse mit http:// oder https:// angeben, z. B. http://speaches:8000/v1.')
   }
   const pk = cfg.parking
   if (pk.enabled) {
@@ -370,6 +428,7 @@ function cleanState(raw: unknown): RuntimeState {
   return {
     dnd: pick(r.dnd, (x): x is boolean => x === true),
     cfu: pick(r.cfu, (x): x is string => typeof x === 'string' && x.trim() !== ''),
+    away: pick(r.away, (x): x is string[] => Array.isArray(x) && x.length > 0 && x.every((g) => typeof g === 'string')),
   }
 }
 
@@ -436,6 +495,11 @@ export function stripSecrets(cfg: PbxConfig): PbxConfig {
     b.token = ''
     b.admin_password = ''
   }
+  for (const d of c.deskphones) {
+    d.token = ''
+    d.admin_password = ''
+  }
+  c.transcription.api_key = ''
   c.mail.password = ''
   c.integration.token = ''
   c.ldap.password = ''
@@ -470,6 +534,7 @@ export class ConfigStore {
     migrateDevices(raw.extensions, this.config.extensions)
     for (const e of this.config.extensions) fillSecrets(e)
     for (const b of this.config.dect) fillDectSecrets(b)
+    for (const d of this.config.deskphones) fillDeskSecrets(d)
     this.state = cleanState(loadJson<unknown>(PATHS.state, {}))
     // Neu vergebene Geheimnisse sofort speichern, sonst ändern sie sich beim nächsten Start
     if (fresh || this.recovered || JSON.stringify(this.config) !== before) this.save()
@@ -516,6 +581,7 @@ export class ConfigStore {
     change(draft)
     for (const e of draft.extensions) fillSecrets(e)
     for (const b of draft.dect) fillDectSecrets(b)
+    for (const d of draft.deskphones) fillDeskSecrets(d)
     if (draft.integration.enabled && !draft.integration.token) draft.integration.token = newSecret(40)
     validate(draft)
     this.config = draft
@@ -572,9 +638,11 @@ export class ConfigStore {
 
   /** Nicht stören und Umleitungen auf die neue Nummer übertragen */
   private renumberState(from: string, to: string): void {
-    const { dnd, cfu } = this.state
+    const { dnd, cfu, away } = this.state
     if (dnd[from]) dnd[to] = true
     delete dnd[from]
+    if (away[from]) away[to] = away[from]
+    delete away[from]
     if (cfu[from]) cfu[to] = cfu[from]
     delete cfu[from]
     for (const [n, target] of Object.entries(cfu)) if (target === from) cfu[n] = to
@@ -603,7 +671,10 @@ export class ConfigStore {
         for (const r of draft.inbound) if (r.trunk === id) r.trunk = ''
       }
       if (kind === 'appprofiles') for (const e of draft.extensions) if (e.app_profile === id) e.app_profile = ''
-      if (kind === 'calendars') for (const p of draft.appprofiles) p.calendars = p.calendars.filter((c) => c !== id)
+      if (kind === 'calendars') {
+        for (const p of draft.appprofiles) p.calendars = p.calendars.filter((c) => c !== id)
+        for (const e of draft.extensions) e.forward.rules = e.forward.rules.filter((r) => r.when !== 'calendar' || r.calendar !== id)
+      }
       if (kind === 'extensions') {
         const ext = this.config.extensions.find((e) => e.id === id)
         if (ext) draft.emergency.notify_exts = draft.emergency.notify_exts.filter((n) => n !== ext.number)
@@ -612,6 +683,7 @@ export class ConfigStore {
     if (removed) {
       delete this.state.dnd[removed]
       delete this.state.cfu[removed]
+      delete this.state.away[removed]
       for (const [n, target] of Object.entries(this.state.cfu)) if (target === removed) delete this.state.cfu[n]
       this.saveState()
       this.hooks.removed(removed)
@@ -704,6 +776,14 @@ export class ConfigStore {
         b.admin_password ||= old.admin_password
       }
     }
+    for (const d of incoming.deskphones) {
+      const old = this.config.deskphones.find((x) => x.id === d.id)
+      if (old) {
+        d.token ||= old.token
+        d.admin_password ||= old.admin_password
+      }
+    }
+    incoming.transcription.api_key ||= this.config.transcription.api_key
     incoming.mail.password ||= this.config.mail.password
     incoming.integration.token ||= this.config.integration.token
     incoming.ldap.password ||= this.config.ldap.password
@@ -720,6 +800,7 @@ export class ConfigStore {
       const state = cleanState(data.state)
       this.state.dnd = Object.fromEntries(Object.entries(state.dnd).filter(([n]) => known.has(n)))
       this.state.cfu = Object.fromEntries(Object.entries(state.cfu).filter(([n]) => known.has(n)))
+      this.state.away = Object.fromEntries(Object.entries(state.away).filter(([n]) => known.has(n)))
       this.saveState()
     }
     for (const [id, events] of Object.entries(data.calendars ?? {})) {

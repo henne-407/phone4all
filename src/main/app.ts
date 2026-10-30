@@ -383,6 +383,8 @@ export class App {
       },
       team: this.provisioning.active ? this.provisioning.team : null,
       voicemail: this.provisioning.active ? this.provisioning.voicemail : null,
+      groups: this.provisioning.active ? this.provisioning.groups : null,
+      groupMissed: this.provisioning.active ? this.provisioning.groupMissed : null,
     }
   }
 
@@ -716,6 +718,19 @@ export class App {
       properties: ['openFile', 'multiSelections'],
     })
     if (!r.canceled) this.importFiles(r.filePaths)
+  }
+
+  /** PDF zum Faxen auswählen (höchstens 20 MB) */
+  async pickPdf(): Promise<{ name: string; data: Uint8Array } | null> {
+    const r = await dialog.showOpenDialog(this.main!, {
+      title: 'PDF zum Faxen auswählen',
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      properties: ['openFile'],
+    })
+    if (r.canceled || !r.filePaths[0]) return null
+    const file = r.filePaths[0]
+    if (fs.statSync(file).size > 20 * 1024 * 1024) throw new Error('Die Datei ist größer als 20 MB.')
+    return { name: path.basename(file), data: new Uint8Array(fs.readFileSync(file)) }
   }
 
   importFiles(paths: string[]): void {

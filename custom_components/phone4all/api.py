@@ -8,7 +8,7 @@ from typing import Any
 
 import aiohttp
 
-from .const import STATUS_PATH
+from .const import ACTION_PATHS, STATUS_PATH
 
 
 class Phone4allError(Exception):
@@ -25,6 +25,10 @@ class Phone4allProxyError(Phone4allError):
 
 class Phone4allUnsupported(Phone4allError):
     """Die Anlage ist zu alt und kennt die Schnittstelle nicht."""
+
+
+class Phone4allActionError(Phone4allError):
+    """Die Anlage hat eine Aktion abgelehnt (Text kommt von der Anlage)."""
 
 
 # IP-Adresse (auch [IPv6]) mit optionalem Port, oder ein Name mit dem Port der Anlage im LAN
@@ -75,3 +79,25 @@ class Phone4allApi:
         if not isinstance(data, dict) or "trunks" not in data:
             raise Phone4allError("Unerwartete Antwort")
         return data
+
+    async def action(self, name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Schalten oder anrufen; Fehlertext der Anlage als Phone4allActionError."""
+        try:
+            async with asyncio.timeout(30):
+                resp = await self._session.post(
+                    f"{self.url}{ACTION_PATHS[name]}",
+                    json=payload,
+                    headers={"Authorization": f"Bearer {self._token}", "Accept": "application/json"},
+                    allow_redirects=False,
+                )
+                # Ältere Anlagen kennen die Aktion nicht und antworten wie für die Verwaltung (401 ohne Bearer-Hinweis)
+                if resp.status == 401 and "Bearer" not in resp.headers.get("WWW-Authenticate", ""):
+                    raise Phone4allUnsupported("Die Anlage kennt diese Aktion nicht (bitte aktualisieren)")
+                if resp.status == 401:
+                    raise Phone4allAuthError("Zugriffsschlüssel abgelehnt")
+                data = await resp.json(content_type=None) if "json" in resp.headers.get("Content-Type", "") else {}
+                if resp.status != 200:
+                    raise Phone4allActionError(str(data.get("error") or f"Antwort {resp.status}"))
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise Phone4allError(str(err) or type(err).__name__) from err
+        return data if isinstance(data, dict) else {}

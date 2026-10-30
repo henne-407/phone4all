@@ -50,12 +50,18 @@ Minuten nach Änderungen, solange sie geöffnet ist.
 - Startseite mit Status, *Nicht stören* (\*76), Voicemail (\*97), Favoriten, letzten
   Anrufen und nächsten Terminen
 - Wähltastatur, Rufnummern werden mit Namen aus dem Telefonbuch angezeigt
-- Karte *Kollegen*: wer frei ist, telefoniert oder umgeleitet ist, geparkte Gespräche mit
-  *Übernehmen*
-- Im Gespräch: Stumm, Lautsprecher, Halten, Tastentöne, Weiterleiten, Parken und – wenn
-  das App-Profil eine CRM-Adresse hat – *CRM*
-- Voicemail im Verlauf: wer eine Nachricht hinterlassen hat, abhaken, löschen, zurückrufen;
-  abgehört wird per Anruf (\*97)
+- Karte *Kollegen*: wer frei ist, telefoniert oder umgeleitet ist, Status aus dem Kalender,
+  geparkte Gespräche mit *Übernehmen*
+- Karte *Erreichbarkeit*: je Gruppe an- und abmelden, *Handy klingelt mit* schalten,
+  verpasste Gruppenanrufe gemeinsam abarbeiten (übernehmen, zurückrufen, erledigt)
+- Im Gespräch: Stumm, Lautsprecher, Halten, Tastentöne, Weiterleiten, Parken,
+  **Rückfrage** (halten und jemand anderen anrufen, dann makeln, verbinden oder
+  Dreierkonferenz), bei einer Türsprechstelle *Tür öffnen* und – wenn das App-Profil eine
+  CRM-Adresse hat – *CRM*
+- Durchsagen und Gegensprechen nimmt die App ohne Klingeln auf dem Lautsprecher an
+  (abschaltbar in den Einstellungen)
+- Voicemail im Verlauf: wer eine Nachricht hinterlassen hat, mit Text (falls *Voicemail als
+  Text* an ist), abhaken, löschen, zurückrufen; abgehört wird per Anruf (\*97)
 - Lange auf einen Anruf im Verlauf tippen sperrt die Nummer (mit dem Recht *Rufnummern sperren*)
 - Kontakte der Anlage und auf Wunsch die des Handys, Suche, Favoriten
 - Kalender der Anlage; in beschreibbaren Kalendern eigene Termine anlegen und löschen

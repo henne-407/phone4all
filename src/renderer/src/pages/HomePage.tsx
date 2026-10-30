@@ -12,6 +12,7 @@ import EditIcon from '@mui/icons-material/Edit'
 import GroupsIcon from '@mui/icons-material/Groups'
 import LocalParkingIcon from '@mui/icons-material/LocalParking'
 import HistoryIcon from '@mui/icons-material/History'
+import PhoneMissedIcon from '@mui/icons-material/PhoneMissed'
 import InsightsIcon from '@mui/icons-material/Insights'
 import StarIcon from '@mui/icons-material/Star'
 import WifiIcon from '@mui/icons-material/WifiCalling3'
@@ -45,6 +46,7 @@ import type { CalEvent, HomeCard, PageName, TeamMember } from '../../../shared/t
 import { api } from '../api'
 import { emit } from '../bus'
 import { ContactAvatar, StatusDot } from '../components/common'
+import { GroupMissedDialog } from '../components/GroupMissed'
 import { useApp } from '../state'
 import { EventRow } from './CalendarPage'
 import { HistoryItem, StatTile } from './HistoryPage'
@@ -120,6 +122,8 @@ function CardList({ fill, children }: { fill: boolean; children: ReactNode }) {
 function StatusCard({ grow }: { grow: boolean }) {
   const { state, toast } = useApp()
   const [text, setText] = useState('')
+  const setGroup = (id: string, active: boolean): void =>
+    void api.pbxSetGroup(id, active).then((r) => toast(r.ok ? (active ? 'In der Gruppe angemeldet' : 'Aus der Gruppe abgemeldet') : r.error))
   const dial = async (): Promise<void> => {
     let target = text.trim()
     if (!hasDigit(target)) {
@@ -161,6 +165,22 @@ function StatusCard({ grow }: { grow: boolean }) {
           </Box>
         }
       />
+      {state.groups?.map((g) => (
+        <FormControlLabel
+          key={g.id}
+          labelPlacement="start"
+          sx={{ mx: 0, justifyContent: 'space-between' }}
+          control={<Switch checked={g.active} onChange={(e) => setGroup(g.id, e.target.checked)} />}
+          label={
+            <Box>
+              <Typography>{g.name || g.number}</Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                Gruppe {g.number} · {g.active ? 'klingelt hier mit' : 'abgemeldet'}
+              </Typography>
+            </Box>
+          }
+        />
+      ))}
       <Stack direction="row" sx={{ gap: 1, alignItems: 'center' }}>
         <TextField
           size="small"
@@ -321,6 +341,8 @@ function TeamCard({ grow, fill }: { grow: boolean; fill: boolean }) {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [parked.length])
+  const [missedOpen, setMissedOpen] = useState(false)
+  const missed = state.groupMissed
   const name = (n: string): string => team?.extensions.find((e) => e.number === n)?.name || n
   const others = (team?.extensions ?? []).filter((e) => e.number !== me)
   return (
@@ -329,6 +351,18 @@ function TeamCard({ grow, fill }: { grow: boolean; fill: boolean }) {
         <Typography sx={{ color: 'text.secondary' }}>Die Telefonanlage ist gerade nicht erreichbar.</Typography>
       ) : (
         <>
+          {missed && (
+            <Button
+              variant={missed.open ? 'contained' : 'text'}
+              color={missed.open ? 'warning' : 'primary'}
+              startIcon={<PhoneMissedIcon />}
+              onClick={() => setMissedOpen(true)}
+              sx={{ alignSelf: 'flex-start' }}
+            >
+              {missed.open ? `${missed.open} verpasste Gruppenanrufe offen` : 'Verpasste Gruppenanrufe'}
+            </Button>
+          )}
+          <GroupMissedDialog open={missedOpen} onClose={() => setMissedOpen(false)} />
           {parked.length > 0 && (
             <Stack sx={{ gap: 0.5 }}>
               {parked.map((c) => (
@@ -353,7 +387,9 @@ function TeamCard({ grow, fill }: { grow: boolean; fill: boolean }) {
             <CardList fill={fill}>
               {others.map((e) => {
                 const [label, color] = LINE[e.state]
-                const detail = e.dnd ? 'Nicht stören' : e.forward ? `Umgeleitet${e.forward === 'extern' ? '' : ` an ${name(e.forward)}`}` : label
+                let detail = e.dnd ? 'Nicht stören' : e.forward ? `Umgeleitet${e.forward === 'extern' ? '' : ` an ${name(e.forward)}`}` : label
+                // Status aus dem Kalender („Urlaub bis Fr“)
+                if (e.note) detail += ` · ${e.note}`
                 return (
                   <ListItem key={e.number} disablePadding>
                     <CardActionArea sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 1, py: 0.75, borderRadius: 2 }} onClick={() => void api.dial(e.number)}>

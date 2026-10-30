@@ -1,6 +1,8 @@
 # Phone4all Telefonanlage: Asterisk 20 (LTS) aus Ubuntu 24.04 plus Verwaltungsdienst (Node.js)
 
-FROM node:24-slim AS build
+# Bauen und Testen einmal auf der Bau-Plattform: das Ergebnis ist reines JavaScript, unter
+# Emulation (arm64) wären die Tests langsam und liefen in Zeitlimits
+FROM --platform=$BUILDPLATFORM node:24-slim AS build
 WORKDIR /src
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -9,15 +11,53 @@ RUN npm run typecheck && npm test && npm run build
 
 FROM node:24-slim AS node
 
+# Spracherkennung für „Voicemail als Text“ (whisper.cpp). Läuft auf der Bau-Plattform und
+# übersetzt für arm64 mit dem Cross-Compiler – unter Emulation würde das sehr lange dauern.
+# Für amd64 zwei Fassungen: mit AVX2 und ohne (z. B. Celeron-Mini-PCs); die Anlage wählt beim Start.
+FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS whisper
+ARG TARGETARCH
+ARG BUILDARCH
+ARG WHISPER_VERSION=v1.9.5
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates git cmake make g++ \
+      $([ "$TARGETARCH" = arm64 ] && [ "$BUILDARCH" != arm64 ] && echo g++-aarch64-linux-gnu binutils-aarch64-linux-gnu) \
+ && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 -b "$WHISPER_VERSION" https://github.com/ggml-org/whisper.cpp /src
+WORKDIR /src
+RUN set -e; mkdir /out; \
+    build() { \
+      name=$1; shift; \
+      cmake -B "build-$name" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF -DGGML_CCACHE=OFF \
+        -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF "-DCMAKE_EXE_LINKER_FLAGS=-static-libstdc++ -static-libgcc" "$@"; \
+      cmake --build "build-$name" -j"$(nproc)" --target whisper-cli; \
+      cp "build-$name/bin/whisper-cli" "/out/$name"; \
+    }; \
+    if [ "$TARGETARCH" = arm64 ] && [ "$BUILDARCH" != arm64 ]; then \
+      build whisper-cli -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+        -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++; \
+      aarch64-linux-gnu-strip /out/*; \
+    elif [ "$TARGETARCH" = amd64 ] && [ "$BUILDARCH" = amd64 ]; then \
+      build whisper-cli -DGGML_AVX=OFF -DGGML_AVX2=OFF -DGGML_BMI2=OFF -DGGML_FMA=OFF -DGGML_F16C=OFF; \
+      build whisper-cli-avx2; \
+      strip /out/*; \
+    elif [ "$TARGETARCH" = "$BUILDARCH" ]; then \
+      build whisper-cli; \
+      strip /out/*; \
+    else \
+      echo "whisper.cpp für $TARGETARCH auf $BUILDARCH wird nicht übersetzt (Voicemail als Text dann nur über eine Schnittstelle)"; \
+    fi
+
 FROM ubuntu:24.04
 ARG PBX_VERSION=dev
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       asterisk asterisk-modules asterisk-prompt-de asterisk-core-sounds-en-wav asterisk-moh-opsound-wav \
-      coturn msmtp ca-certificates openssl tzdata tini \
+      coturn msmtp ca-certificates openssl tzdata tini libtiff-tools ghostscript \
  && rm -rf /var/lib/apt/lists/* /etc/asterisk/* /usr/share/doc/*
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=whisper /out/ /opt/whisper/
 WORKDIR /opt/phone4all
 COPY --from=build /src/dist ./
 ENV PBX_DATA=/data \

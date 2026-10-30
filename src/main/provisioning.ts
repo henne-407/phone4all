@@ -12,13 +12,17 @@ import type {
   AccountSettings,
   AppPolicy,
   Contact,
+  GroupMissed,
   HomeCard,
   PageName,
   ParkedCall,
   PbxCalendar,
   PbxForward,
   PbxForwardChange,
+  PbxFax,
   PbxFound,
+  PbxDoor,
+  PbxGroup,
   PbxPermission,
   PbxPreview,
   TeamMember,
@@ -57,6 +61,7 @@ export interface PbxProfile {
   parking: { number: string; slots: string[] } | null
   crm: { url: string; auto: boolean } | null
   voicemail: boolean
+  doors: PbxDoor[]
   revision: string
 }
 
@@ -77,12 +82,19 @@ function parseVideo(data: unknown): VideoAccount | null {
   }
 }
 
-const PERMISSIONS: PbxPermission[] = ['forward', 'forward_external', 'forward_rules', 'calendar_edit', 'phonebook_edit', 'block_numbers']
+const PERMISSIONS: PbxPermission[] = ['forward', 'forward_external', 'forward_rules', 'calendar_edit', 'phonebook_edit', 'block_numbers', 'intercom', 'fax_send']
 
 function parseParking(data: unknown): PbxProfile['parking'] {
   const p = data as { number?: unknown; slots?: unknown } | null
   if (!p || typeof p.number !== 'string' || !/^\d+$/.test(p.number) || !Array.isArray(p.slots)) return null
   return { number: p.number, slots: p.slots.map(String).filter((x) => /^\d+$/.test(x)) }
+}
+
+function parseDoors(data: unknown): PbxDoor[] {
+  if (!Array.isArray(data)) return []
+  return data
+    .filter((d): d is PbxDoor => Boolean(d) && typeof d.number === 'string' && typeof d.dtmf === 'string' && /^[0-9*#]{1,8}$/.test(d.dtmf))
+    .map((d) => ({ number: d.number, name: String(d.name ?? ''), dtmf: d.dtmf }))
 }
 
 function parseCrm(data: unknown): PbxProfile['crm'] {
@@ -92,8 +104,22 @@ function parseCrm(data: unknown): PbxProfile['crm'] {
 }
 
 /** Antwort von …/presence prüfen */
-export function parsePresence(data: unknown): { extensions: TeamMember[]; parked: ParkedCall[]; revision: string; voicemail: { unread: number; revision: string } | null } | null {
-  const p = data as { extensions?: unknown; parked?: unknown; revision?: unknown; voicemail?: { unread?: unknown; revision?: unknown } | null } | null
+export function parsePresence(data: unknown): {
+  extensions: TeamMember[]
+  parked: ParkedCall[]
+  revision: string
+  voicemail: { unread: number; revision: string } | null
+  groups: PbxGroup[] | null
+  missed: { open: number; revision: string } | null
+} | null {
+  const p = data as {
+    extensions?: unknown
+    parked?: unknown
+    revision?: unknown
+    voicemail?: { unread?: unknown; revision?: unknown } | null
+    groups?: unknown
+    missed?: { open?: unknown; revision?: unknown } | null
+  } | null
   if (!p || !Array.isArray(p.extensions) || !Array.isArray(p.parked)) return null
   const states = ['idle', 'ringing', 'busy', 'offline']
   return {
@@ -106,6 +132,7 @@ export function parsePresence(data: unknown): { extensions: TeamMember[]; parked
         state: states.includes(e.state) ? e.state : 'offline',
         dnd: e.dnd === true,
         forward: String(e.forward ?? ''),
+        ...(typeof e.note === 'string' && e.note ? { note: e.note } : {}),
       })),
     parked: p.parked
       .filter((c) => c && typeof c.slot === 'string')
@@ -118,7 +145,16 @@ export function parsePresence(data: unknown): { extensions: TeamMember[]; parked
         until: Number(c.until) || 0,
       })),
     voicemail: p.voicemail ? { unread: Number(p.voicemail.unread) || 0, revision: String(p.voicemail.revision ?? '') } : null,
+    // Ältere Anlagen kennen beides nicht
+    groups: Array.isArray(p.groups) ? parseGroups(p.groups) : null,
+    missed: p.missed ? { open: Number(p.missed.open) || 0, revision: String(p.missed.revision ?? '') } : null,
   }
+}
+
+export function parseGroups(data: unknown[]): PbxGroup[] {
+  return data
+    .filter((g): g is PbxGroup => Boolean(g) && typeof (g as PbxGroup).id === 'string')
+    .map((g) => ({ id: g.id, number: String(g.number ?? ''), name: String(g.name ?? ''), active: g.active !== false }))
 }
 
 /** Platzhalter der CRM-Adresse füllen: {nummer}, {e164}, {name} */
@@ -150,6 +186,8 @@ export function parseForward(data: unknown): PbxForward | null {
     rules: f.rules,
     targets: f.targets.filter((t) => t && typeof t.number === 'string'),
     timeconditions: Array.isArray(f.timeconditions) ? f.timeconditions : [],
+    calendars: Array.isArray(f.calendars) ? f.calendars : [],
+    mobile: f.mobile && typeof f.mobile.number === 'string' ? { enabled: f.mobile.enabled === true, number: f.mobile.number } : null,
   }
 }
 
@@ -205,6 +243,7 @@ export function parseProfile(data: unknown): PbxProfile {
     parking: parseParking(p.parking),
     crm: parseCrm(p.crm),
     voicemail: p.voicemail === true,
+    doors: parseDoors(p.doors),
     revision: String(p.revision ?? ''),
   }
 }
@@ -377,6 +416,8 @@ export class Provisioning {
   team: { extensions: TeamMember[]; parked: ParkedCall[] } | null = null
   /** Neue Voicemails und Änderungsstand (null = keine Voicemail) */
   voicemail: { unread: number; version: string } | null = null
+  groups: PbxGroup[] | null = null
+  groupMissed: { open: number; version: string } | null = null
   phonebook: Omit<Contact, 'id'>[]
   /** Umleitungen der Nebenstelle (null = Anlage kennt sie nicht oder nicht erreichbar) */
   forward: PbxForward | null = null
@@ -423,11 +464,14 @@ export class Provisioning {
 
   private setPresence(p: ReturnType<typeof parsePresence>): void {
     const vm = p?.voicemail && this.host.store.settings.provisioning.voicemail ? { unread: p.voicemail.unread, version: p.voicemail.revision } : null
-    const revision = p ? `${p.revision}|${JSON.stringify(vm)}` : ''
+    const missed = p?.missed ? { open: p.missed.open, version: p.missed.revision } : null
+    const revision = p ? `${p.revision}|${JSON.stringify(vm)}|${JSON.stringify(p.groups)}|${JSON.stringify(missed)}` : ''
     if (revision === this.presenceRevision) return
     this.presenceRevision = revision
     this.team = p ? { extensions: p.extensions, parked: p.parked } : null
     this.voicemail = vm
+    this.groups = p?.groups ?? null
+    this.groupMissed = missed
     this.host.stateChanged()
   }
 
@@ -475,6 +519,57 @@ export class Provisioning {
     const list = (await (await this.call(`/voicemail/${encodeURIComponent(id)}`, 'DELETE')).json()) as VoicemailMessage[]
     void this.pollPresence()
     return list
+  }
+
+  // -- Gruppen, verpasste Gruppenanrufe, Rückfrage, Fax ------------------------------
+
+  /** In einer Gruppe an- oder abmelden (wie *45 am Telefon) */
+  async setGroup(id: string, active: boolean): Promise<void> {
+    const groups = parseGroups((await (await this.call(`/groups/${encodeURIComponent(id)}`, 'PUT', { active })).json()) as unknown[])
+    this.groups = groups
+    this.host.stateChanged()
+    void this.pollPresence()
+  }
+
+  async groupMissedList(): Promise<GroupMissed[]> {
+    const data = (await (await this.call('/missed')).json()) as GroupMissed[]
+    return Array.isArray(data) ? data : []
+  }
+
+  /** claim: „Ich kümmere mich“, release, done: erledigt, reopen */
+  async groupMissedAct(group: string, id: string, action: 'claim' | 'release' | 'done' | 'reopen'): Promise<GroupMissed[]> {
+    const list = (await (await this.call(`/missed/${encodeURIComponent(group)}/${encodeURIComponent(id)}`, 'PUT', { action })).json()) as GroupMissed[]
+    void this.pollPresence()
+    return list
+  }
+
+  /** Rückfrage abschließen: Gegenüber verbinden oder Dreierkonferenz */
+  async joinCalls(mode: 'transfer' | 'conference'): Promise<void> {
+    await this.call('/calls/join', 'POST', { mode })
+  }
+
+  async faxInfo(): Promise<{ boxes: { id: string; name: string }[]; sent: PbxFax[] }> {
+    return (await (await this.call('/fax')).json()) as { boxes: { id: string; name: string }[]; sent: PbxFax[] }
+  }
+
+  /** PDF als Fax senden (Recht fax_send) */
+  async sendFax(box: string, number: string, pdf: Uint8Array): Promise<PbxFax> {
+    const url = this.url
+    if (!url) throw new Error('Keine Telefonanlage verbunden.')
+    let r: Response
+    try {
+      r = await fetch(`${url}/fax?box=${encodeURIComponent(box)}&number=${encodeURIComponent(number)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/pdf' },
+        body: Buffer.from(pdf),
+        signal: AbortSignal.timeout(120000),
+      })
+    } catch {
+      throw new Error('Die Telefonanlage ist nicht erreichbar.')
+    }
+    const data = (await r.json().catch(() => null)) as (PbxFax & { error?: string }) | null
+    if (!r.ok) throw new Error(data?.error || `Die Telefonanlage antwortet mit Fehler ${r.status}.`)
+    return data as PbxFax
   }
 
   /** Anrufer für die ganze Anlage sperren (Recht block_numbers) */
@@ -690,6 +785,7 @@ export class Provisioning {
       parking: p.parking,
       crm: p.crm,
       voicemail: p.voicemail,
+      doors: p.doors,
     }
     this.revision.profile = p.revision
     // Nur bei der Einrichtung anmelden – wer sich bewusst abgemeldet hat, bleibt es

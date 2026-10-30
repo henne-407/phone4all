@@ -38,7 +38,7 @@ const MODULES = [
   'app_dial', 'app_playback', 'app_stack', 'app_voicemail', 'app_queue', 'app_confbridge',
   'app_directed_pickup', 'app_echo', 'app_mixmonitor', 'app_read', 'app_exec', 'app_verbose',
   'app_senddtmf', 'app_playtones', 'app_transfer', 'app_blind_transfer', 'app_sayunixtime',
-  'app_softhangup', 'app_chanspy', 'res_parking',
+  'app_softhangup', 'app_chanspy', 'res_parking', 'res_fax', 'res_fax_spandsp', 'res_pjsip_t38',
   // Funktionen
   'func_curl', 'func_cut', 'func_strings', 'func_logic', 'func_uri', 'func_callerid', 'func_cdr',
   'func_timeout', 'func_channel', 'func_global', 'func_db', 'func_devstate', 'func_hangupcause',
@@ -154,7 +154,9 @@ function voicemailConf(cfg: PbxConfig, gen: GenContext): string {
   for (const ext of cfg.extensions.filter((e) => e.voicemail.enabled)) {
     // Ohne gültige PIN nie die Nebenstellennummer: dann ist die Mailbox per PIN nicht erreichbar
     const pin = ext.voicemail.pin.replace(/\D/g, '') || String(randomInt(1e8, 1e9))
-    const email = canMail ? val(ext.email).replace(/,/g, '') : ''
+    // Voicemail als Text: die E-Mail (mit Text) verschickt dann die Anlage selbst
+    const own = cfg.transcription.enabled && cfg.transcription.email
+    const email = canMail && !own ? val(ext.email).replace(/,/g, '') : ''
     const opts = [`attach=${ext.voicemail.attach ? 'yes' : 'no'}`, 'saycid=yes', 'envelope=no', 'tz=de']
     lines.push(`${ext.number} => ${pin},${val(ext.name).replace(/,/g, ' ')},${email},,${opts.join('|')}`)
   }

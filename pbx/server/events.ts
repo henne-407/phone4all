@@ -16,6 +16,8 @@ export interface CallEventData {
   /** Anrufer: Rufnummer (extern) oder Nebenstelle */
   from: string
   from_name: string
+  /** Gewählte Rufnummer (nur nach außen) */
+  to?: string
   /** Nebenstelle, bei der es klingelt bzw. die angenommen hat */
   extension?: string
   /** Bei beendeten Anrufen: angenommen, von wem, Dauer in Sekunden */
@@ -39,6 +41,18 @@ interface Call {
   answered: string
   answeredAt: number
   ringing: Set<string>
+  /** Nach außen gewählte Nummer */
+  to: string
+  /** Gruppen, die der Anruf durchlaufen hat (UserEvent P4AGroup aus dem Wählplan) */
+  groups: Set<string>
+}
+
+/** Verpasster Anruf, der über Gruppen lief (für die gemeinsame Liste) */
+export interface GroupMissedCall {
+  call: string
+  groups: string[]
+  from: string
+  from_name: string
 }
 
 function clean(v: string | undefined): string {
@@ -53,7 +67,7 @@ export function extOfChannel(channel: string): string {
 
 const isTrunkChannel = (channel: string): boolean => /^PJSIP\/trunk-/.test(channel ?? '')
 
-/** Ereignisse: 'event' (PbxEvent) */
+/** Ereignisse: 'event' (PbxEvent), 'group-missed' (GroupMissedCall) */
 export class CallTracker extends EventEmitter {
   private calls = new Map<string, Call>()
   private mailboxes = new Map<string, number>()
@@ -67,7 +81,7 @@ export class CallTracker extends EventEmitter {
   }
 
   private callData(c: Call): CallEventData {
-    return { call: c.id, direction: c.direction, from: c.from, from_name: c.fromName }
+    return { call: c.id, direction: c.direction, from: c.from, from_name: c.fromName, ...(c.to ? { to: c.to } : {}) }
   }
 
   onAmi(e: AmiMessage): void {
@@ -86,6 +100,8 @@ export class CallTracker extends EventEmitter {
           answered: '',
           answeredAt: 0,
           ringing: new Set(),
+          to: '',
+          groups: new Set(),
         })
         return
       }
@@ -99,6 +115,8 @@ export class CallTracker extends EventEmitter {
         }
         if (isTrunkChannel(e.DestChannel)) {
           if (c.direction === 'internal') c.direction = 'out'
+          // DialString „030123456@trunk-x“
+          if (c.direction === 'out' && !c.to) c.to = /^([^@]+)@/.exec(e.DialString ?? '')?.[1] ?? ''
           return
         }
         const ext = extOfChannel(e.DestChannel)
@@ -122,7 +140,16 @@ export class CallTracker extends EventEmitter {
         this.calls.delete(c.id)
         const duration = c.answeredAt ? Math.round((this.now() - c.answeredAt) / 1000) : 0
         this.publish('call.ended', { ...this.callData(c), answered: Boolean(c.answered), answered_by: c.answered, duration })
-        if (c.direction === 'in' && !c.answered) this.publish('call.missed', { ...this.callData(c), extensions: [...c.ringing] })
+        if (c.direction === 'in' && !c.answered) {
+          this.publish('call.missed', { ...this.callData(c), extensions: [...c.ringing] })
+          if (c.groups.size) this.emit('group-missed', { call: c.id, groups: [...c.groups], from: c.from, from_name: c.fromName } satisfies GroupMissedCall)
+        }
+        return
+      }
+      case 'UserEvent': {
+        if (e.UserEvent !== 'P4AGroup') return
+        const c = this.calls.get(e.Linkedid ?? '')
+        if (c && e.Group) c.groups.add(e.Group)
         return
       }
       case 'MessageWaiting': {

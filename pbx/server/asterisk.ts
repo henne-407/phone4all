@@ -210,7 +210,7 @@ export class Asterisk extends EventEmitter {
 
   /** Verzeichnisse anlegen und Asterisk gehören lassen. */
   prepareDirs(): void {
-    const dirs = [PATHS.spool, PATHS.log, PATHS.db, PATHS.recordings, PATHS.sounds, PATHS.moh, PATHS.run, PATHS.lib, path.join(PATHS.lib, 'keys'), path.join(PATHS.log, 'cdr-custom'), PATHS.etc]
+    const dirs = [PATHS.spool, path.join(PATHS.spool, 'fax'), PATHS.log, PATHS.db, PATHS.recordings, PATHS.sounds, PATHS.moh, PATHS.run, PATHS.lib, path.join(PATHS.lib, 'keys'), path.join(PATHS.log, 'cdr-custom'), PATHS.etc]
     for (const d of dirs) {
       fs.mkdirSync(d, { recursive: true })
       if (this.owner && d !== PATHS.etc) fs.chownSync(d, this.owner.uid, this.owner.gid)

@@ -86,6 +86,12 @@ nach Änderungen (siehe [App-Profile](telefonanlage.md#app-profile)).
   annehmen/ablehnen, „Stumm klingeln“, stummschalten, halten, Tastentöne, weiterleiten,
   auflegen (abschaltbar unter Einstellungen → Allgemein)
 - Weiterleiten (Blind Transfer) auch direkt beim Klingeln, mit Kontaktvorschlägen
+- **Rückfrage** (mit Phone4All-Telefonanlage): das Gespräch halten und jemand anderen
+  anrufen; dann zwischen beiden **makeln**, die beiden Gegenüber **verbinden** (die eigene
+  Leitung ist danach frei) oder alle drei in eine **Konferenz** holen
+- **Durchsagen und Gegensprechen** der Anlage nimmt die App ohne Klingeln an, solange kein
+  anderes Gespräch läuft (abschaltbar unter Einstellungen → Allgemein); bei Anrufen einer
+  Türsprechstelle zeigt sie *Tür öffnen*
 - Material-Design mit Farbthemen (Violett, Blau, Türkis, Grün, Senf, Orange, Koralle,
   Pink, Graphit oder die Akzentfarbe des Systems) und Hell/Dunkel/System,
   Kontrast nach WCAG AA geprüft
@@ -98,17 +104,22 @@ nach Änderungen (siehe [App-Profile](telefonanlage.md#app-profile)).
   Umschalten wirkt sofort, auch im laufenden Gespräch
 - Rufumleitung (mit Phone4All-Telefonanlage): in der Titelleiste auf eine Nebenstelle,
   Gruppe oder Nummer umleiten; unter *Regeln und Weiterleitungen* Ziele bei besetzt / ohne
-  Antwort und Regeln nach Zeitplan, Zeitsteuerung oder „Nicht stören“. Was erlaubt ist,
-  legt die Anlage fest (Rechte unter *System → Zugang* und je Gruppe)
+  Antwort und Regeln nach Zeitplan, Zeitsteuerung, Termin im Kalender oder „Nicht
+  stören“; *Handy klingelt mit* ein- und ausschalten. Was erlaubt ist, legt die Anlage fest
+  (Rechte unter *System → Zugang* und je Gruppe)
 - Mit dem Recht *Telefonbuch bearbeiten* ändert und löscht die App Einträge im Telefonbuch
   der Anlage und legt neue an (*Im Telefonbuch von „…“ speichern*)
 - Anpassbare Startseite (Karten in bis zu drei Spalten): Status mit „Nicht stören“ und
   Schnellwahl, Favoriten, letzte Anrufe, nächste Termine und – mit Phone4All-Telefonanlage –
   *Kollegen*: wer frei ist, telefoniert, klingelt, „Nicht stören“ hat oder umgeleitet ist
-  (Klick ruft an), dazu geparkte Gespräche mit *Übernehmen* – ein-/ausblenden, sortieren,
-  Startansicht wählbar
-- Mit Phone4All-Telefonanlage: **Voicemail** im Verlauf anhören, zurückrufen und löschen
-  (gehörte Nachrichten löschen auch die Anzeige an den Telefonen), Gespräche **parken**,
+  (Klick ruft an), mit Status aus dem Kalender („Urlaub bis 7.11.“), dazu geparkte Gespräche
+  mit *Übernehmen* und die **verpassten Gruppenanrufe** zum gemeinsamen Abarbeiten
+  („Ich kümmere mich“, zurückrufen, erledigt); auf der Status-Karte je Gruppe ein Schalter
+  zum An- und Abmelden – ein-/ausblenden, sortieren, Startansicht wählbar
+- Mit Phone4All-Telefonanlage: **Voicemail** im Verlauf anhören oder als Text lesen,
+  zurückrufen und löschen (gehörte Nachrichten löschen auch die Anzeige an den Telefonen),
+  **Fax senden** aus dem Hauptmenü (PDF wählen oder hineinziehen, Recht *Faxe senden*),
+  Gespräche **parken**,
   Anrufer im **CRM** öffnen (Adresse aus dem App-Profil) und mit dem Recht *Rufnummern
   sperren* lästige Anrufer aus dem Verlauf heraus für die ganze Anlage sperren
 - Telefonnummern aus anderen Programmen wählen (Einstellungen → Allgemein → *Nummern aus

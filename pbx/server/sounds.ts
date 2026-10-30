@@ -82,3 +82,50 @@ export function soundFile(kind: string, name: string): string {
   if (!fs.existsSync(file)) throw new HttpError(404, 'Datei nicht gefunden.')
   return file
 }
+
+/** WAV (PCM 16 Bit, mono, beliebige Abtastrate) → 8 kHz für Asterisk (Mittelwert je Ausgabeprobe, wirkt als Tiefpass) */
+export function toTelephoneWav(data: Buffer): Buffer {
+  if (data.length < 44 || data.toString('ascii', 0, 4) !== 'RIFF' || data.toString('ascii', 8, 12) !== 'WAVE') throw new HttpError(400, 'Keine WAV-Datei.')
+  let pos = 12
+  let rate = 0
+  let pcm: Buffer | null = null
+  while (pos + 8 <= data.length) {
+    const id = data.toString('ascii', pos, pos + 4)
+    const size = data.readUInt32LE(pos + 4)
+    if (id === 'fmt ') {
+      if (data.readUInt16LE(pos + 8) !== 1 || data.readUInt16LE(pos + 10) !== 1 || data.readUInt16LE(pos + 22) !== 16) {
+        throw new HttpError(400, 'Erwartet wird WAV mit 16 Bit, mono.')
+      }
+      rate = data.readUInt32LE(pos + 12)
+    } else if (id === 'data') {
+      pcm = data.subarray(pos + 8, Math.min(data.length, pos + 8 + size))
+      break
+    }
+    pos += 8 + size + (size % 2)
+  }
+  if (!pcm || !rate) throw new HttpError(400, 'Unvollständige WAV-Datei.')
+  const inCount = Math.floor(pcm.length / 2)
+  const ratio = rate / 8000
+  const outCount = Math.floor(inCount / ratio)
+  const out = Buffer.alloc(44 + outCount * 2)
+  for (let i = 0; i < outCount; i++) {
+    const start = Math.floor(i * ratio)
+    const end = Math.max(start + 1, Math.min(inCount, Math.floor((i + 1) * ratio)))
+    let sum = 0
+    for (let j = start; j < end; j++) sum += pcm.readInt16LE(j * 2)
+    out.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(sum / (end - start)))), 44 + i * 2)
+  }
+  out.write('RIFF', 0, 'ascii')
+  out.writeUInt32LE(36 + outCount * 2, 4)
+  out.write('WAVEfmt ', 8, 'ascii')
+  out.writeUInt32LE(16, 16)
+  out.writeUInt16LE(1, 20)
+  out.writeUInt16LE(1, 22)
+  out.writeUInt32LE(8000, 24)
+  out.writeUInt32LE(16000, 28)
+  out.writeUInt16LE(2, 32)
+  out.writeUInt16LE(16, 34)
+  out.write('data', 36, 'ascii')
+  out.writeUInt32LE(outCount * 2, 40)
+  return out
+}

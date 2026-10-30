@@ -1,0 +1,56 @@
+call:
+  fields:
+    extension:
+      required: true
+      example: "10"
+      selector:
+        text:
+    number:
+      required: true
+      example: "030123456"
+      selector:
+        text:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: phone4all
+announce:
+  fields:
+    target:
+      required: true
+      example: "20"
+      selector:
+        text:
+    message:
+      required: true
+      example: "Der Wassermelder im Keller hat ausgelöst."
+      selector:
+        text:
+          multiline: true
+    voice:
+      example: "thorsten"
+      selector:
+        select:
+          options:
+            - thorsten
+            - kerstin
+            - eva
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: phone4all
+set_forward:
+  fields:
+    extension:
+      required: true
+      example: "10"
+      selector:
+        text:
+    target:
+      example: "11"
+      selector:
+        text:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: phone4all

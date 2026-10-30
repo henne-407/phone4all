@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Phone4all-Telefonanlage",
-        "description": "In der Weboberfläche der Anlage unter System → Home Assistant die Schnittstelle einschalten und Adresse und Zugriffsschlüssel kopieren.",
+        "description": "In der Weboberfläche der Anlage unter System → Schnittstellen die Schnittstelle einschalten und Adresse und Zugriffsschlüssel kopieren.",
         "data": {
           "url": "Adresse der Anlage",
           "token": "Zugriffsschlüssel",
@@ -16,7 +16,7 @@
       },
       "reauth_confirm": {
         "title": "Neuer Zugriffsschlüssel",
-        "description": "Die Anlage unter {url} hat den Zugriffsschlüssel abgelehnt. Den aktuellen Schlüssel unter System → Home Assistant eintragen.",
+        "description": "Die Anlage unter {url} hat den Zugriffsschlüssel abgelehnt. Den aktuellen Schlüssel unter System → Schnittstellen eintragen.",
         "data": {
           "token": "Zugriffsschlüssel"
         }
@@ -36,33 +36,145 @@
   },
   "entity": {
     "binary_sensor": {
-      "problem": { "name": "Problem" },
-      "asterisk": { "name": "Asterisk" },
-      "update": { "name": "Update" },
-      "trunk": { "name": "SIP-Konto {trunk}" }
+      "problem": {
+        "name": "Problem"
+      },
+      "asterisk": {
+        "name": "Asterisk"
+      },
+      "update": {
+        "name": "Update"
+      },
+      "trunk": {
+        "name": "SIP-Konto {trunk}"
+      }
     },
     "sensor": {
-      "missed_today": { "name": "Verpasste Anrufe heute" },
-      "last_missed": { "name": "Letzter verpasster Anruf" },
-      "active_calls": { "name": "Laufende Gespräche" }
+      "missed_today": {
+        "name": "Verpasste Anrufe heute"
+      },
+      "last_missed": {
+        "name": "Letzter verpasster Anruf"
+      },
+      "active_calls": {
+        "name": "Laufende Gespräche"
+      }
     },
     "event": {
       "emergency_event": {
         "name": "Notruf",
         "state_attributes": {
-          "event_type": { "state": { "emergency_call": "Notruf gewählt" } }
+          "event_type": {
+            "state": {
+              "emergency_call": "Notruf gewählt"
+            }
+          }
         }
       },
       "missed_call_event": {
         "name": "Verpasster Anruf",
         "state_attributes": {
-          "event_type": { "state": { "missed_call": "Verpasster Anruf" } }
+          "event_type": {
+            "state": {
+              "missed_call": "Verpasster Anruf"
+            }
+          }
         }
       },
       "problem_event": {
         "name": "Störungsmeldung",
         "state_attributes": {
-          "event_type": { "state": { "problem": "Problem", "resolved": "Behoben" } }
+          "event_type": {
+            "state": {
+              "problem": "Problem",
+              "resolved": "Behoben"
+            }
+          }
+        }
+      },
+      "door_event": {
+        "name": "Türklingel",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "door_ring": "Es klingelt"
+            }
+          }
+        }
+      }
+    },
+    "switch": {
+      "dnd": {
+        "name": "Nicht stören {extension}"
+      }
+    },
+    "select": {
+      "timecondition": {
+        "name": "Zeitsteuerung {name}",
+        "state": {
+          "auto": "Automatisch",
+          "open": "Immer geöffnet",
+          "closed": "Immer geschlossen"
+        }
+      }
+    }
+  },
+  "services": {
+    "call": {
+      "name": "Anruf auslösen",
+      "description": "Erst klingelt die Nebenstelle, nach dem Abheben wählt die Anlage die Nummer.",
+      "fields": {
+        "extension": {
+          "name": "Nebenstelle",
+          "description": "Nebenstelle, die zuerst klingelt"
+        },
+        "number": {
+          "name": "Rufnummer",
+          "description": "Nummer, die danach gewählt wird"
+        },
+        "config_entry_id": {
+          "name": "Anlage",
+          "description": "Nur nötig, wenn mehrere Anlagen eingerichtet sind."
+        }
+      }
+    },
+    "announce": {
+      "name": "Ansage aus Text",
+      "description": "Telefone einer Nebenstelle oder Gruppe klingeln; nach dem Abheben spricht die Anlage den Text. Braucht die Sprachausgabe der Anlage.",
+      "fields": {
+        "target": {
+          "name": "Nebenstelle oder Gruppe",
+          "description": "Interne Nummer"
+        },
+        "message": {
+          "name": "Text",
+          "description": "Was die Anlage sagt"
+        },
+        "voice": {
+          "name": "Stimme",
+          "description": "Leer = erste geladene Stimme"
+        },
+        "config_entry_id": {
+          "name": "Anlage",
+          "description": "Nur nötig, wenn mehrere Anlagen eingerichtet sind."
+        }
+      }
+    },
+    "set_forward": {
+      "name": "Umleitung setzen",
+      "description": "Sofort-Umleitung einer Nebenstelle setzen oder (ohne Ziel) ausschalten.",
+      "fields": {
+        "extension": {
+          "name": "Nebenstelle",
+          "description": "Nebenstelle, die umgeleitet wird"
+        },
+        "target": {
+          "name": "Ziel",
+          "description": "Nebenstelle oder Rufnummer, leer = aus"
+        },
+        "config_entry_id": {
+          "name": "Anlage",
+          "description": "Nur nötig, wenn mehrere Anlagen eingerichtet sind."
         }
       }
     }

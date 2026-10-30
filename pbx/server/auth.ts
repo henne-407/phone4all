@@ -1,4 +1,4 @@
-/** Anmeldung an der Weboberfläche: ein Administrator-Passwort, Sitzungen im Speicher. */
+/** Anmeldung an der Weboberfläche: Passwort von „admin“, Sitzungen im Speicher (weitere Zugänge: users.ts). */
 
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
 import net from 'node:net'
@@ -33,7 +33,7 @@ function hash(password: string, salt: string): string {
 
 export class Auth {
   private admin: AdminFile | null = loadJson<AdminFile | null>(PATHS.admin, null)
-  private sessions = new Map<string, number>()
+  private sessions = new Map<string, { until: number; user: string }>()
   private failures = new Map<string, { time: number; key: string }[]>()
   private counter = 0
   /** Wird aufgerufen, wenn eine Adresse die Grenze erreicht (für die gemeinsame Sperrliste) */
@@ -58,7 +58,7 @@ export class Auth {
     const salt = randomBytes(16).toString('hex')
     this.admin = { salt, hash: hash(password, salt) }
     saveJson(PATHS.admin, this.admin)
-    this.sessions.clear()
+    this.logoutUser('admin')
   }
 
   check(password: string): boolean {
@@ -94,10 +94,15 @@ export class Auth {
     if (!was && this.blocked(ip)) this.onBlock(ip, reason)
   }
 
-  login(): string {
+  login(user = 'admin'): string {
     const token = randomBytes(32).toString('hex')
-    this.sessions.set(token, Date.now() + SESSION_HOURS * 3600000)
+    this.sessions.set(token, { until: Date.now() + SESSION_HOURS * 3600000, user })
     return token
+  }
+
+  /** Alle Sitzungen eines Zugangs beenden (Passwort geändert, Zugang gelöscht) */
+  logoutUser(user: string): void {
+    for (const [token, s] of this.sessions) if (s.user === user) this.sessions.delete(token)
   }
 
   logout(token: string): void {
@@ -105,19 +110,24 @@ export class Auth {
   }
 
   valid(token: string | undefined): boolean {
-    if (!token) return false
-    const until = this.sessions.get(token)
-    if (!until || until < Date.now()) {
+    return this.user(token) !== null
+  }
+
+  /** Angemeldeter Zugang zur Sitzung (verlängert sie) oder null */
+  user(token: string | undefined): string | null {
+    if (!token) return null
+    const s = this.sessions.get(token)
+    if (!s || s.until < Date.now()) {
       this.sessions.delete(token)
-      return false
+      return null
     }
-    this.sessions.set(token, Date.now() + SESSION_HOURS * 3600000)
-    return true
+    s.until = Date.now() + SESSION_HOURS * 3600000
+    return s.user
   }
 
   /** Abgelaufene Sitzungen und alte Fehlversuche vergessen (sonst wächst beides ewig) */
   prune(now = Date.now()): void {
-    for (const [token, until] of this.sessions) if (until < now) this.sessions.delete(token)
+    for (const [token, s] of this.sessions) if (s.until < now) this.sessions.delete(token)
     for (const [ip, list] of this.failures) if (!list.some((f) => f.time > now - FAILURE_WINDOW)) this.failures.delete(ip)
   }
 }

@@ -130,6 +130,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     phone.lookup = (n) => findName(n, named)
   }, [named])
+  useEffect(() => {
+    phone.autoAnswerPages = settings.autoAnswerPages
+  }, [settings.autoAnswerPages])
 
   useEffect(() => {
     phone.onIncoming = (call) => void notifyIncoming(call).catch(() => undefined)

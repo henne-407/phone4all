@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Phone4all PBX",
-        "description": "Enable the Home Assistant interface in the PBX web interface under System → Home Assistant and copy the address and access key.",
+        "description": "Enable the Home Assistant interface in the PBX web interface under System → Interfaces and copy the address and access key.",
         "data": {
           "url": "Address of the PBX",
           "token": "Access key",
@@ -16,7 +16,7 @@
       },
       "reauth_confirm": {
         "title": "New access key",
-        "description": "The PBX at {url} rejected the access key. Enter the current key from System → Home Assistant.",
+        "description": "The PBX at {url} rejected the access key. Enter the current key from System → Interfaces.",
         "data": {
           "token": "Access key"
         }
@@ -36,33 +36,145 @@
   },
   "entity": {
     "binary_sensor": {
-      "problem": { "name": "Problem" },
-      "asterisk": { "name": "Asterisk" },
-      "update": { "name": "Update" },
-      "trunk": { "name": "SIP account {trunk}" }
+      "problem": {
+        "name": "Problem"
+      },
+      "asterisk": {
+        "name": "Asterisk"
+      },
+      "update": {
+        "name": "Update"
+      },
+      "trunk": {
+        "name": "SIP account {trunk}"
+      }
     },
     "sensor": {
-      "missed_today": { "name": "Missed calls today" },
-      "last_missed": { "name": "Last missed call" },
-      "active_calls": { "name": "Active calls" }
+      "missed_today": {
+        "name": "Missed calls today"
+      },
+      "last_missed": {
+        "name": "Last missed call"
+      },
+      "active_calls": {
+        "name": "Active calls"
+      }
     },
     "event": {
       "emergency_event": {
         "name": "Emergency call",
         "state_attributes": {
-          "event_type": { "state": { "emergency_call": "Emergency call" } }
+          "event_type": {
+            "state": {
+              "emergency_call": "Emergency call"
+            }
+          }
         }
       },
       "missed_call_event": {
         "name": "Missed call",
         "state_attributes": {
-          "event_type": { "state": { "missed_call": "Missed call" } }
+          "event_type": {
+            "state": {
+              "missed_call": "Missed call"
+            }
+          }
         }
       },
       "problem_event": {
         "name": "Problem report",
         "state_attributes": {
-          "event_type": { "state": { "problem": "Problem", "resolved": "Resolved" } }
+          "event_type": {
+            "state": {
+              "problem": "Problem",
+              "resolved": "Resolved"
+            }
+          }
+        }
+      },
+      "door_event": {
+        "name": "Door bell",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "door_ring": "Ringing"
+            }
+          }
+        }
+      }
+    },
+    "switch": {
+      "dnd": {
+        "name": "Do not disturb {extension}"
+      }
+    },
+    "select": {
+      "timecondition": {
+        "name": "Time condition {name}",
+        "state": {
+          "auto": "Automatic",
+          "open": "Always open",
+          "closed": "Always closed"
+        }
+      }
+    }
+  },
+  "services": {
+    "call": {
+      "name": "Place call",
+      "description": "The extension rings first; once answered, the PBX dials the number.",
+      "fields": {
+        "extension": {
+          "name": "Extension",
+          "description": "Extension that rings first"
+        },
+        "number": {
+          "name": "Number",
+          "description": "Number dialed afterwards"
+        },
+        "config_entry_id": {
+          "name": "PBX",
+          "description": "Only needed when several PBXs are set up."
+        }
+      }
+    },
+    "announce": {
+      "name": "Announce text",
+      "description": "Rings an extension or group and speaks the text once answered. Needs the PBX text-to-speech.",
+      "fields": {
+        "target": {
+          "name": "Extension or group",
+          "description": "Internal number"
+        },
+        "message": {
+          "name": "Message",
+          "description": "What the PBX says"
+        },
+        "voice": {
+          "name": "Voice",
+          "description": "Empty = first installed voice"
+        },
+        "config_entry_id": {
+          "name": "PBX",
+          "description": "Only needed when several PBXs are set up."
+        }
+      }
+    },
+    "set_forward": {
+      "name": "Set call forwarding",
+      "description": "Set or (without target) clear the call forwarding of an extension.",
+      "fields": {
+        "extension": {
+          "name": "Extension",
+          "description": "Extension to forward"
+        },
+        "target": {
+          "name": "Target",
+          "description": "Extension or number, empty = off"
+        },
+        "config_entry_id": {
+          "name": "PBX",
+          "description": "Only needed when several PBXs are set up."
         }
       }
     }

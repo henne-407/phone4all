@@ -10,6 +10,8 @@ export interface AuditEntry {
   time: number
   ip: string
   action: string
+  /** Zugang der Weboberfläche (ältere Einträge ohne) */
+  user?: string
 }
 
 const MAX_BYTES = 1024 * 1024
@@ -30,13 +32,13 @@ export function auditText(method: string, urlPath: string, result: unknown): str
 export class AuditLog {
   constructor(private file: string) {}
 
-  add(ip: string, action: string, now = Date.now()): void {
+  add(ip: string, action: string, now = Date.now(), user?: string): void {
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true })
       if (fs.existsSync(this.file) && fs.statSync(this.file).size > MAX_BYTES) {
         fs.renameSync(this.file, this.file.replace(/\.jsonl$/, '.1.jsonl'))
       }
-      fs.appendFileSync(this.file, JSON.stringify({ time: now, ip, action } satisfies AuditEntry) + '\n', { mode: 0o600 })
+      fs.appendFileSync(this.file, JSON.stringify({ time: now, ip, action, ...(user ? { user } : {}) } satisfies AuditEntry) + '\n', { mode: 0o600 })
     } catch (e) {
       console.error('Änderungsprotokoll nicht schreibbar:', (e as Error).message)
     }

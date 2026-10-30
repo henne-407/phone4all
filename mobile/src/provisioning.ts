@@ -57,6 +57,8 @@ export interface Profile {
   crm?: { url: string; auto: boolean } | null
   /** Voicemail der Nebenstelle in der App */
   voicemail?: boolean
+  /** Türsprechstellen: im Gespräch öffnet dtmf die Tür */
+  doors?: { number: string; name: string; dtmf: string }[]
 }
 
 export interface TeamMember {
@@ -66,6 +68,35 @@ export interface TeamMember {
   dnd: boolean
   /** Umleitung: interne Nummer oder „extern“ */
   forward: string
+  /** Status aus dem Kalender („Urlaub bis Fr“) */
+  note?: string
+}
+
+export interface PbxGroup {
+  id: string
+  number: string
+  name: string
+  /** angemeldet (klingelt mit) */
+  active: boolean
+}
+
+export interface GroupMissed {
+  id: string
+  group: string
+  group_name: string
+  time: number
+  number: string
+  name: string
+  claimed_by: string
+  done_by: string
+  done_how: '' | 'callback' | 'answered' | 'manual'
+}
+
+export interface ForwardInfo {
+  cfu: string
+  active: string
+  permissions: string[]
+  mobile?: { enabled: boolean; number: string } | null
 }
 
 export interface ParkedCall {
@@ -82,6 +113,10 @@ export interface Presence {
   extensions: TeamMember[]
   parked: ParkedCall[]
   voicemail: { revision: string; unread: number } | null
+  /** Eigene Gruppen (ältere Anlagen: fehlt) */
+  groups?: PbxGroup[]
+  /** Verpasste Gruppenanrufe (null = keine Gruppe mit gemeinsamer Liste) */
+  missed?: { open: number; revision: string } | null
 }
 
 export interface VoicemailMessage {
@@ -92,6 +127,9 @@ export interface VoicemailMessage {
   number: string
   name: string
   duration: number
+  /** Voicemail als Text */
+  text?: string
+  transcribing?: boolean
 }
 
 export interface CalendarEvent {
@@ -237,6 +275,37 @@ export async function deleteVoicemail(p: Profile, id: string): Promise<Voicemail
 /** Anrufer für die ganze Anlage sperren (Recht „Rufnummern sperren“) */
 export async function blockNumber(p: Profile, number: string, note: string): Promise<void> {
   await getJson(`${p.url}/blocklist`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ number, note }) })
+}
+
+/** In einer Gruppe an- oder abmelden */
+export async function setGroup(p: Profile, id: string, active: boolean): Promise<PbxGroup[]> {
+  return getJson<PbxGroup[]>(`${p.url}/groups/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active }) })
+}
+
+export async function fetchGroupMissed(p: Profile): Promise<GroupMissed[]> {
+  return getJson<GroupMissed[]>(`${p.url}/missed`)
+}
+
+export async function actGroupMissed(p: Profile, e: GroupMissed, action: 'claim' | 'release' | 'done' | 'reopen'): Promise<GroupMissed[]> {
+  return getJson<GroupMissed[]>(`${p.url}/missed/${encodeURIComponent(e.group)}/${encodeURIComponent(e.id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }),
+  })
+}
+
+/** Rückfrage abschließen: verbinden oder Dreierkonferenz */
+export async function joinCalls(p: Profile, mode: 'transfer' | 'conference'): Promise<void> {
+  await getJson(`${p.url}/calls/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) })
+}
+
+export async function fetchForward(p: Profile): Promise<ForwardInfo> {
+  return getJson<ForwardInfo>(`${p.url}/forward`)
+}
+
+/** Handy klingelt mit (Recht „forward“) */
+export async function setMobileRing(p: Profile, enabled: boolean): Promise<ForwardInfo> {
+  return getJson<ForwardInfo>(`${p.url}/forward`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mobile: enabled }) })
 }
 
 /** Platzhalter der CRM-Adresse füllen: {nummer}, {e164}, {name} */

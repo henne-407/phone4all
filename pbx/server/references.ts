@@ -12,6 +12,7 @@ const TYPES: Partial<Record<CollectionName, DestinationType[]>> = {
   timeconditions: ['timecondition'],
   conferences: ['conference'],
   announcements: ['announcement'],
+  faxes: ['fax'],
 }
 
 /** Alle Ziele der Konfiguration mit einer Beschreibung, wo sie stehen */
@@ -48,6 +49,7 @@ export function usages(cfg: PbxConfig, kind: CollectionName, id: string): string
     if (ext) {
       for (const g of cfg.groups) if (g.members.includes(ext.number)) found.push(`Mitglied der Gruppe „${g.name}“`)
       for (const b of cfg.dect) if (b.handsets.includes(ext.number)) found.push(`Mobilteil an der DECT-Basis „${b.name}“`)
+      for (const d of cfg.deskphones) if (d.extension === ext.number) found.push(`Tischtelefon „${d.name}“`)
       for (const r of cfg.outbound) if (r.extensions.includes(ext.number)) found.push(`Ausgehende Regel „${r.name}“`)
       for (const e of cfg.extensions) {
         if (e.id !== id && forwardTargets(e).includes(ext.number)) found.push(`Weiterleitung von Nebenstelle ${e.number} (${e.name})`)
@@ -70,6 +72,10 @@ export function renumber(cfg: PbxConfig, from: string, to: string): void {
   for (const g of cfg.groups) g.members = g.members.map(map)
   for (const b of cfg.dect) b.handsets = b.handsets.map(map)
   for (const r of cfg.outbound) r.extensions = r.extensions.map(map)
+  for (const d of cfg.deskphones) {
+    d.extension = map(d.extension)
+    for (const k of d.keys) if (k.type === 'blf') k.value = map(k.value)
+  }
   for (const e of cfg.extensions) {
     e.forward.busy = map(e.forward.busy)
     e.forward.noanswer = map(e.forward.noanswer)
@@ -80,6 +86,8 @@ export function renumber(cfg: PbxConfig, from: string, to: string): void {
 /** Gelöschte Nebenstelle aus Regeln und Weiterleitungen nehmen (Gruppen/DECT macht der Store) */
 export function forget(cfg: PbxConfig, number: string): void {
   for (const r of cfg.outbound) r.extensions = r.extensions.filter((n) => n !== number)
+  cfg.deskphones = cfg.deskphones.filter((d) => d.extension !== number)
+  for (const d of cfg.deskphones) d.keys = d.keys.filter((k) => k.type !== 'blf' || k.value !== number)
   for (const e of cfg.extensions) {
     if (e.forward.busy === number) e.forward.busy = ''
     if (e.forward.noanswer === number) e.forward.noanswer = ''

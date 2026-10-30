@@ -305,6 +305,7 @@ export function DestinationPicker({ label, value, onChange, exclude }: { label: 
     conference: config.conferences.map((c) => [c.id, `${c.number} – ${c.name}`]),
     announcement: config.announcements.map((a) => [a.id, a.name]),
     external: [],
+    fax: config.faxes.map((f) => [f.id, f.name]),
     hangup: [],
   }
   const types = (Object.keys(DESTINATION_LABELS) as DestinationType[]).filter((t) => !exclude?.includes(t))
@@ -370,6 +371,8 @@ export function describeDestination(d: Destination, config: ReturnType<typeof us
       return `${label} ${find(config.conferences)?.number ?? '?'}`
     case 'announcement':
       return `${label} ${find(config.announcements)?.name ?? '?'}`
+    case 'fax':
+      return `${label} ${find(config.faxes)?.name ?? '?'}`
     case 'external':
       return `→ ${d.target}`
     default:

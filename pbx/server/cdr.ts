@@ -114,24 +114,36 @@ function stamp(file: string): string {
   }
 }
 
+function parseCalls(bytes: number): CallRecord[] {
+  const text = readTail(path.join(PATHS.log, 'cdr-custom', 'cdr.csv'), bytes)
+  const rows = text
+    .split('\n')
+    .filter((l) => l.trim())
+    .map((l) => Object.fromEntries(parseCsvLine(l).map((v, i) => [FIELDS[i], v])) as Row)
+  let recordings: string[] = []
+  try {
+    recordings = fs.readdirSync(PATHS.recordings)
+  } catch {
+    // noch keine Aufnahmen
+  }
+  return groupCalls(rows, recordings)
+}
+
 export function readCalls(limit = 200): CallRecord[] {
   const file = path.join(PATHS.log, 'cdr-custom', 'cdr.csv')
   const key = `${stamp(file)}|${stamp(PATHS.recordings)}`
-  if (cached?.key !== key) {
-    const text = readTail(file, 4 * 1024 * 1024)
-    const rows = text
-      .split('\n')
-      .filter((l) => l.trim())
-      .map((l) => Object.fromEntries(parseCsvLine(l).map((v, i) => [FIELDS[i], v])) as Row)
-    let recordings: string[] = []
-    try {
-      recordings = fs.readdirSync(PATHS.recordings)
-    } catch {
-      // noch keine Aufnahmen
-    }
-    cached = { key, calls: groupCalls(rows, recordings) }
-  }
+  if (cached?.key !== key) cached = { key, calls: parseCalls(4 * 1024 * 1024) }
   return cached.calls.slice(0, limit)
+}
+
+/** Für Auswertungen: viel weiter zurück (bis 64 MB der Anrufliste, etwa ein halbe Million Abschnitte) */
+export function readAllCalls(): CallRecord[] {
+  return parseCalls(64 * 1024 * 1024)
+}
+
+/** Protokoll der Warteschlangen (Asterisk schreibt es nach log/queue_log) */
+export function readQueueLog(): string {
+  return readTail(path.join(PATHS.log, 'queue_log'), 16 * 1024 * 1024)
 }
 
 export function tailLog(lines = 300): string {

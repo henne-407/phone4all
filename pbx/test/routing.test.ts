@@ -47,7 +47,7 @@ describe('Nebenstellen und Gruppen', () => {
   it('klingelt, leitet bei Nicht stören und Weiterleitung um', () => {
     const cfg = sampleConfig()
     const s = state()
-    expect(extensionPlan(cfg, s, '10')).toBe('ring|25|0|p4a-vmb^10|p4a-vmu^10')
+    expect(extensionPlan(cfg, s, '10')).toBe('ring|25|0|p4a-vmb^10|p4a-vmu^10|0')
     expect(feature(cfg, s, '10', 'dnd', '').reply).toBe('on')
     expect(extensionPlan(cfg, s, '10')).toBe('goto|p4a-vmb^10')
     feature(cfg, s, '10', 'dnd', '')

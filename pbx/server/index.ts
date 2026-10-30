@@ -2,6 +2,7 @@
 
 import { timingSafeEqual } from 'node:crypto'
 import fs from 'node:fs'
+import os from 'node:os'
 import http from 'node:http'
 import https from 'node:https'
 import type { Duplex } from 'node:stream'
@@ -11,19 +12,25 @@ import { CalendarStore } from './calendars'
 import { external } from './directory'
 import { AuditLog, auditText } from './audit'
 import { Auth, SESSION_COOKIE, SESSION_MAX_AGE } from './auth'
-import { readCalls, tailLog } from './cdr'
+import { PASSWORD_MIN, ROLES, type Role, UserError, UserStore, forbidden } from './users'
+import { readAllCalls, readCalls, readQueueLog, tailLog } from './cdr'
 import { describeAgent, gigasetFile, requestMac } from './dect'
-import { EmergencyLog, emergencyCall, emergencyText, isEmergency } from './emergency'
-import { CallTracker, type PbxEvent, Webhooks } from './events'
+import { agentMac, describeDesk, deskRequestMac, isYealinkCommon, snomFile, yealinkFile } from './deskphone'
+import { type DoorRing, EmergencyLog, emergencyCall, emergencyText, isEmergency } from './emergency'
+import { CallTracker, type GroupMissedCall, type PbxEvent, Webhooks } from './events'
+import { JoinError, callLegs, joinActions, joinRoom } from './join'
+import { type FaxRecord, FaxStore, MAX_ATTEMPTS, RETRY_MS, faxErrorText, faxRoute, pdfToTiff, tiffPages, tiffToPdf } from './fax'
 import { loadJson, saveJson } from './files'
-import { type ForwardChange, ForwardError, applyCfu, applyRules, check as checkForward, forwardInfo } from './forwarding'
+import { type ForwardChange, ForwardError, applyCfu, applyMobile, applyRules, check as checkForward, forwardInfo } from './forwarding'
 import { localTime } from './holidays'
+import { type MissedAction, MissedList } from './missed'
 import { integrationReport, validToken } from './integration'
 import { LdapServer } from './ldap'
 import { HttpError, type Request, Router, clientIp, makeRequest, proxyHints, sendFile, sendJson, sendText, serveStatic, setTrustedProxies, socketIp } from './http'
-import { sendMail } from './mail'
+import { type MailAttachment, sendMail } from './mail'
+import { PORTAL_COOKIE, PORTAL_JS, PORTAL_MAX_AGE, PortalSessions, portalPage } from './portal'
 import { ChatError, MessengerHub, MessengerStore, messengerUsers } from './messenger'
-import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, type PhonebookEntry, SECTIONS, type SectionName, WEBHOOK_EVENTS } from './model'
+import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, type PhonebookEntry, SECTIONS, type SectionName, type TranscriptionSettings, WEBHOOK_EVENTS } from './model'
 import { cleanNumber } from './numbers'
 import { type OffsiteStatus, OffsiteError, download as offsiteDownload, target as offsiteTarget, upload as offsiteUpload } from './offsite'
 import { PATHS, SETTINGS } from './paths'
@@ -34,19 +41,26 @@ import { Turn, WsProxy, appEndpoint, webrtcEnabled } from './remote'
 import {
   BLOCKED_TARGET,
   appPermissions,
+  calendarStatus,
   extensionPlan,
   feature,
   groupPlan,
+  inboundName,
   isAvailable,
   isInternational,
   isLocalNumber,
+  memberGroups,
+  mobilePlan,
+  pagePlan,
+  ringPlan,
   routeInbound,
   routeOutbound,
+  setAway,
   timeConditionTarget,
 } from './routing'
 import { Guard, inList } from './security'
 import { SourceSync } from './sources/sync'
-import { listSounds, saveSound, soundDir, soundFile, type SoundKind } from './sounds'
+import { listSounds, saveSound, soundDir, soundFile, type SoundKind, toTelephoneWav } from './sounds'
 import { expire, moveMailbox, recordingFile, removeMailbox, report as storageReport } from './storage'
 import {
   ConfigStore,
@@ -63,20 +77,24 @@ import {
   linkValid,
   newPin,
   newSecret,
+  stripSecrets,
   pinValid,
   renewLink,
   renewPin,
 } from './store'
 import { Tts, TtsError, VOICES } from './tts'
-import type { DectBase, PbxConfig } from './model'
+import { TranscribeError, type Transcript, Transcriber, WHISPER_MODELS } from './transcribe'
+import { callsCsv, computeStats, parseQueueLog } from './stats'
+import type { DectBase, DeskPhone, PbxConfig } from './model'
 import { Updater } from './updates'
-import { VoicemailBox } from './voicemail'
+import { VoicemailBox, type VoicemailMessage } from './voicemail'
 import { type WatchEvent, Watchdog } from './watchdog'
 import { reject, upgrade } from './websocket'
 
 const store = new ConfigStore()
 setTrustedProxies(() => store.config.security.trusted_proxies)
 const auth = new Auth()
+const users = new UserStore(PATHS.users)
 const asterisk = new Asterisk()
 const turn = new Turn()
 const ws = new WsProxy(() => webrtcEnabled(store.config), (ip) => guard.isBanned(ip))
@@ -84,6 +102,7 @@ const ws = new WsProxy(() => webrtcEnabled(store.config), (ip) => guard.isBanned
 const guard = new Guard(() => store.config.security, (port) => ws.clientOf(port))
 const updater = new Updater()
 const calendars = new CalendarStore(() => store.config)
+calendarStatus.find = (id, keyword, now) => calendars.current(id, keyword, now)
 const sources = new SourceSync(
   () => store.config,
   (id, events) => calendars.replace(id, events),
@@ -100,21 +119,228 @@ const tracker = new CallTracker()
 const webhooks = new Webhooks(() => store.config)
 const voicemail = new VoicemailBox(PATHS.spool)
 const emergencies = new EmergencyLog()
+const doorRings = new EmergencyLog<DoorRing>()
 const tts = new Tts(PATHS.tts)
+const missed = new MissedList(PATHS.missed)
+const faxes = new FaxStore(PATHS.fax)
+const transcriber = new Transcriber(PATHS.whisper, PATHS.transcripts, SETTINGS.whisper)
 let offsiteStatus: OffsiteStatus = { time: 0, ok: true, file: '', error: '' }
 auth.init()
 store.hooks = {
   renumbered: (from, to) => {
     messenger.store.renumber(from, to)
     moveMailbox(from, to)
+    missed.renumber(from, to)
+    moveTranscripts(from, to)
+    portal.logoutExt(from)
   },
   removed: (number) => {
     messenger.forgotten(number)
     removeMailbox(number)
+    fs.rmSync(path.join(PATHS.transcripts, number), { recursive: true, force: true })
+    portal.logoutExt(number)
   },
 }
 
-tracker.on('event', (e: PbxEvent) => void Promise.all(webhooks.dispatch(e)))
+tracker.on('event', (e: PbxEvent) => {
+  void Promise.all(webhooks.dispatch(e))
+  if (e.event === 'voicemail.new') setTimeout(() => scanVoicemail(String((e.data as { extension: string }).extension)), 1000).unref()
+  // Türsprechstelle ruft an: für Home Assistant und als eigenes Ereignis
+  if (e.event === 'call.ringing') {
+    const d = e.data as { call: string; from: string }
+    const door = store.config.extensions.find((x) => x.door.enabled && x.number === d.from)
+    if (door && !doorRings.calls.some((r) => r.id === d.call)) {
+      doorRings.add({ id: d.call, time: e.time, extension: door.number, name: door.name })
+      tracker.report('door.ring', { extension: door.number, name: door.name })
+    }
+  }
+  // Rückruf oder neuer angenommener Anruf: verpasste Gruppenanrufe dieser Nummer abhaken
+  if (e.event !== 'call.answered') return
+  const d = e.data as { direction: string; from: string; to?: string; extension?: string }
+  if (d.direction === 'out' && d.to) missed.resolve(store.config, d.to, d.from, 'callback')
+  if (d.direction === 'in') missed.resolve(store.config, d.from, d.extension ?? '', 'answered')
+})
+tracker.on('group-missed', (m: GroupMissedCall) => missed.add(store.config, m.call, m.groups, m.from, m.from_name))
+
+// -- Fax per E-Mail ----------------------------------------------------------------------
+
+const FAX_SPOOL = path.join(PATHS.spool, 'fax')
+
+function faxMail(rec: FaxRecord, subject: string, text: string, pdf: boolean): void {
+  const cfg = store.config
+  const box = cfg.faxes.find((f) => f.id === rec.box)
+  if (!box || !cfg.mail.host) return
+  const file = faxes.pdf(rec.id)
+  const attachments: MailAttachment[] = pdf && fs.existsSync(file) ? [{ name: `Fax-${rec.number || 'unbekannt'}-${new Date(rec.time).toISOString().slice(0, 10)}.pdf`, type: 'application/pdf', data: fs.readFileSync(file) }] : []
+  for (const to of emailList(box.email, `Fax ${box.name}`)) {
+    sendMail(cfg.mail, to, subject, `${text}\n\n${box.name} – ${cfg.system.name}`, attachments).catch((e: Error) => console.error('Fax-E-Mail:', e.message))
+  }
+}
+
+/** Fax empfangen: TIFF aus dem Spool → PDF → E-Mail */
+async function faxReceived(q: URLSearchParams): Promise<void> {
+  const box = store.config.faxes.find((f) => f.id === q.get('box'))
+  const tif = q.get('file') ?? ''
+  const ok = q.get('status') === 'SUCCESS'
+  const pages = Number(q.get('pages')) || 0
+  const from = q.get('from') ?? ''
+  // Nur Dateien, die der Wählplan selbst anlegt
+  const valid = path.dirname(tif) === FAX_SPOOL && /^in-[\d.]+\.tif$/.test(path.basename(tif)) && fs.existsSync(tif)
+  if (!box) return
+  const rec = faxes.add({ box: box.id, direction: 'in', time: Date.now(), number: from, station: q.get('remote') ?? '', pages, status: ok ? 'ok' : 'failed', error: ok ? '' : faxErrorText(q.get('status') ?? '', q.get('error') ?? ''), by: '', attempts: 1 })
+  try {
+    if (valid && pages > 0) await tiffToPdf(tif, faxes.pdf(rec.id))
+  } catch (e) {
+    faxes.update(rec.id, { status: 'failed', error: (e as Error).message })
+  } finally {
+    if (valid) fs.rmSync(tif, { force: true })
+  }
+  const who = [from, rec.station].filter(Boolean).join(' / ') || 'unbekannt'
+  if (pages > 0) faxMail(rec, `Fax von ${who} (${pages} ${pages === 1 ? 'Seite' : 'Seiten'})`, `Ein Fax von ${who} ist angekommen${ok ? '' : ' – unvollständig: ' + rec.error}.`, true)
+  else if (!ok) watchdog.log('warning', 'asterisk', `Fax an ${box.name} von ${who} nicht empfangen: ${rec.error}`)
+}
+
+async function sendFax(boxId: string, number: string, pdf: Buffer, by: string): Promise<FaxRecord> {
+  const box = store.config.faxes.find((f) => f.id === boxId)
+  if (!box) throw new HttpError(404, 'Unbekanntes Fax.')
+  const num = cleanNumber(number)
+  if (!/^\+?\d{3,20}$/.test(num)) throw new HttpError(400, 'Ungültige Faxnummer.')
+  if (pdf.subarray(0, 5).toString('latin1') !== '%PDF-') throw new HttpError(400, 'Bitte eine PDF-Datei senden.')
+  if (!faxRoute(store.config, box, num).length) throw new HttpError(400, 'Diese Nummer ist über keine Leitung erreichbar (Wahlregeln prüfen).')
+  const rec = faxes.add({ box: box.id, direction: 'out', time: Date.now(), number: num, station: '', pages: 0, status: 'queued', error: '', by, attempts: 0 })
+  fs.mkdirSync(FAX_SPOOL, { recursive: true })
+  fs.writeFileSync(faxes.pdf(rec.id), pdf)
+  const tif = path.join(FAX_SPOOL, `out-${rec.id}.tif`)
+  try {
+    await pdfToTiff(faxes.pdf(rec.id), tif)
+  } catch (e) {
+    faxes.remove(rec.id)
+    throw new HttpError(400, `Das PDF lässt sich nicht umwandeln: ${(e as Error).message}`)
+  }
+  faxes.update(rec.id, { pages: tiffPages(tif) })
+  void faxAttempt(rec.id)
+  return faxes.get(rec.id)!
+}
+
+/** Ein Sendeversuch: über die erste Leitung wählen, nach dem Abheben sendet der Wählplan */
+async function faxAttempt(id: string): Promise<void> {
+  const rec = faxes.get(id)
+  const box = store.config.faxes.find((f) => f.id === rec?.box)
+  if (!rec || !box) return
+  const leg = faxRoute(store.config, box, rec.number)[0]
+  if (!leg) return faxFinished(rec, 'failed', 'Keine Leitung nach außen (Wahlregeln prüfen)')
+  faxes.update(id, { status: 'sending', attempts: rec.attempts + 1 })
+  let answered = false
+  try {
+    const [res] = await asterisk.ami.action(
+      {
+        Action: 'Originate',
+        Channel: `PJSIP/${leg.number}@${leg.endpoint}`,
+        Context: 'p4a-fax-send',
+        Exten: 's',
+        Priority: '1',
+        CallerID: `"${box.name.replace(/["<>]/g, '')}" <${leg.cid}>`,
+        // Bei ausgehenden Kanälen zeigt der Anbieter die „verbundene“ Nummer als Absender
+        Variable: `P4A_FAXJOB=${id},CONNECTEDLINE(num)=${leg.cid},CONNECTEDLINE(name)=${box.name.replace(/[",<>|]/g, ' ')}`,
+        Timeout: '60000',
+      },
+      75000,
+    )
+    answered = res?.Response === 'Success'
+  } catch {
+    answered = false
+  }
+  if (answered) {
+    // Ergebnis meldet der Wählplan (/internal/fax-sent); kommt nichts, gilt es nach 30 Minuten als fehlgeschlagen
+    setTimeout(() => {
+      const r = faxes.get(id)
+      if (r?.status === 'sending') faxFinished(r, 'failed', 'Keine Rückmeldung vom Sendevorgang')
+    }, 30 * 60000).unref()
+    return
+  }
+  faxRetry(id, 'Keine Antwort oder besetzt')
+}
+
+function faxRetry(id: string, error: string): void {
+  const rec = faxes.get(id)
+  if (!rec) return
+  if (rec.attempts >= MAX_ATTEMPTS) return faxFinished(rec, 'failed', error)
+  faxes.update(id, { status: 'queued', error })
+  setTimeout(() => void faxAttempt(id), RETRY_MS).unref()
+}
+
+function faxFinished(rec: FaxRecord, status: 'ok' | 'failed', error: string): void {
+  faxes.update(rec.id, { status, error })
+  fs.rmSync(path.join(FAX_SPOOL, `out-${rec.id}.tif`), { force: true })
+  const done = faxes.get(rec.id)!
+  const pages = `${done.pages} ${done.pages === 1 ? 'Seite' : 'Seiten'}`
+  if (status === 'ok') faxMail(done, `Sendebericht: Fax an ${done.number} gesendet`, `Das Fax an ${done.number}${done.station ? ` (${done.station})` : ''} wurde vollständig übertragen (${pages}).`, true)
+  else faxMail(done, `Sendebericht: Fax an ${done.number} fehlgeschlagen`, `Das Fax an ${done.number} (${pages}) konnte nach ${done.attempts} Versuchen nicht gesendet werden: ${error}.`, true)
+}
+
+// -- Voicemail als Text -------------------------------------------------------------------
+
+/** Ab hier verschickt die Anlage die Voicemail-E-Mails selbst (vorher kamen sie von Asterisk) */
+let transcriptMailSince = Date.now()
+let transcriptMailOn = false
+
+function moveTranscripts(from: string, to: string): void {
+  const src = path.join(PATHS.transcripts, from)
+  if (!fs.existsSync(src)) return
+  fs.rmSync(path.join(PATHS.transcripts, to), { recursive: true, force: true })
+  fs.renameSync(src, path.join(PATHS.transcripts, to))
+}
+
+/** Neue Nachrichten einreihen (nur die der letzten 3 Tage), Texte gelöschter Nachrichten entfernen */
+function scanVoicemail(only?: string): void {
+  const cfg = store.config
+  if (!cfg.transcription.enabled) return
+  const since = Date.now() - 3 * 86400000
+  for (const ext of cfg.extensions.filter((e) => e.voicemail.enabled && (!only || e.number === only))) {
+    const list = voicemail.list(ext.number)
+    transcriber.prune(ext.number, new Set(list.map((m) => m.id)))
+    for (const m of list) {
+      if (m.time < since || transcriber.get(ext.number, m.id) || transcriber.pending(ext.number, m.id)) continue
+      const file = voicemail.file(ext.number, m.id)
+      if (!file) continue
+      const mail = m.time >= transcriptMailSince
+      transcriber.enqueue(() => store.config.transcription, ext.number, m.id, file, (t) => {
+        tracker.report('voicemail.transcribed', { extension: ext.number, from: m.number, from_name: m.name, text: t.text, error: t.error })
+        if (mail) transcriptMail(ext.number, m.id, t)
+      })
+    }
+  }
+}
+
+function transcriptMail(mailbox: string, id: string, t: Transcript): void {
+  const cfg = store.config
+  const ext = cfg.extensions.find((e) => e.number === mailbox)
+  const m = voicemail.find(mailbox, id)
+  if (!ext?.email || !m || !cfg.transcription.email || !cfg.mail.host) return
+  const caller = m.name && m.number ? `${m.name} (${m.number})` : m.name || m.number || 'Unbekannt'
+  const when = new Date(m.time).toLocaleString('de-DE', { timeZone: cfg.system.timezone, dateStyle: 'medium', timeStyle: 'short' })
+  const length = `${Math.floor(m.duration / 60)}:${String(m.duration % 60).padStart(2, '0')}`
+  const text = t.error ? `(Die Nachricht konnte nicht in Text umgewandelt werden: ${t.error})` : t.text ? `„${t.text}“` : '(Kein gesprochener Text erkannt.)'
+  const attachments: MailAttachment[] = []
+  const wav = voicemail.file(mailbox, id)
+  if (ext.voicemail.attach && wav) attachments.push({ name: `Nachricht-${m.number || 'unbekannt'}.wav`, type: 'audio/wav', data: fs.readFileSync(wav) })
+  const body = `Hallo ${ext.name},\n\n${caller} hat am ${when} eine Nachricht hinterlassen (Länge ${length}):\n\n${text}\n\nAbhören: *97 am Telefon oder in der App.\n\n${mailbox} – ${cfg.system.name}`
+  for (const to of emailList(ext.email, 'Voicemail'))
+    sendMail(cfg.mail, to, `Neue Sprachnachricht von ${caller}`, body, attachments).catch((e: Error) => console.error('Voicemail-E-Mail:', e.message))
+}
+
+/** Einstellungen geändert: E-Mail-Versand übernimmt ab jetzt die Anlage bzw. wieder Asterisk */
+function transcriptionChanged(): void {
+  const on = store.config.transcription.enabled && store.config.transcription.email
+  if (on && !transcriptMailOn) transcriptMailSince = Date.now()
+  transcriptMailOn = on
+  const tr = store.config.transcription
+  if (tr.enabled && tr.engine === 'local' && !transcriber.status().models.includes(tr.model) && !transcriber.downloading) {
+    transcriber.install(tr.model).catch((e: Error) => console.error('Spracherkennung laden:', e.message))
+  }
+  // Gerade eingeschaltet: Nachrichten der letzten Tage gleich umwandeln
+  if (tr.enabled) scanVoicemail()
+}
 
 function freeBytes(): number | null {
   try {
@@ -184,6 +410,7 @@ function applySoon(): void {
     applyTimer = null
     ldap.apply()
     messenger.refresh()
+    transcriptionChanged()
     asterisk
       .apply(store.config, guard.banned())
       .then(() => setTimeout(() => void loadPresence(), 2000))
@@ -294,7 +521,7 @@ internal.get('/internal/in', (r) => {
     did: r.query.get('did') ?? '',
     to: r.query.get('to') ?? '',
     cid: r.query.get('cid') ?? '',
-    name: r.query.get('name') ?? '',
+    name: inboundName(r.query.get('name') ?? ''),
   })
   const [target, name, from, to] = result.split('|')
   if (target === BLOCKED_TARGET) tracker.report('call.blocked', { from, from_name: name, to })
@@ -341,7 +568,29 @@ internal.get('/internal/group', (r) =>
 )
 internal.get('/internal/video', (r) => (messenger.mayJoin(r.query.get('ext') ?? '', r.query.get('room') ?? '') ? '1' : '0'))
 internal.get('/internal/tc', (r) => timeConditionTarget(store.config, r.query.get('id') ?? ''))
-internal.get('/internal/available', (r) => (isAvailable(store.state, r.query.get('num') ?? '', store.config) ? '1' : '0'))
+internal.get('/internal/available', (r) => (isAvailable(store.state, r.query.get('num') ?? '', store.config, r.query.get('gid') ?? '') ? '1' : '0'))
+internal.get('/internal/fax', (r) => {
+  void faxReceived(r.query).catch((e: Error) => console.error('Fax empfangen:', e.message))
+  return 'ok'
+})
+internal.get('/internal/fax-job', (r) => {
+  const rec = faxes.get(r.query.get('job') ?? '')
+  const box = store.config.faxes.find((f) => f.id === rec?.box)
+  if (!rec || !box || rec.direction !== 'out') return ''
+  return [path.join(FAX_SPOOL, `out-${rec.id}.tif`), box.station || 'Phone4all', box.header.replace(/\|/g, ' ')].join('|')
+})
+internal.get('/internal/fax-sent', (r) => {
+  const rec = faxes.get(r.query.get('job') ?? '')
+  if (!rec || rec.status !== 'sending') return 'ok'
+  const status = r.query.get('status') ?? ''
+  faxes.update(rec.id, { station: r.query.get('remote') ?? '' })
+  if (status === 'SUCCESS') faxFinished(rec, 'ok', '')
+  else faxRetry(rec.id, faxErrorText(status, r.query.get('error') ?? ''))
+  return 'ok'
+})
+internal.get('/internal/mobile', (r) => mobilePlan(store.config, r.query.get('num') ?? ''))
+internal.get('/internal/page', (r) => pagePlan(store.config, store.state, r.query.get('ext') ?? '', r.query.get('target') ?? '', r.query.get('mode') ?? ''))
+internal.get('/internal/ring', (r) => ringPlan(store.config, store.state, r.query.get('target') ?? ''))
 internal.get('/internal/feature', (r) => {
   const ext = r.query.get('ext') ?? ''
   const result = feature(store.config, store.state, ext, r.query.get('code') ?? '', r.query.get('arg') ?? '')
@@ -428,22 +677,34 @@ function touchDevice(token: string, ip: string): void {
   })
 }
 
+/** Zugang zur Sitzung mit Rolle; null, wenn nicht (mehr) angemeldet */
+function sessionUser(token: string | undefined): { login: string; name: string; role: Role } | null {
+  const login = auth.user(token)
+  if (!login) return null
+  if (login === 'admin') return { login, name: 'Verwaltung', role: 'admin' }
+  const u = users.find(login)
+  return u ? { login, name: u.name, role: u.role } : null
+}
+
 pub.get('/api/session', (r) => {
-  const authenticated = auth.valid(r.cookies[SESSION_COOKIE])
+  const user = sessionUser(r.cookies[SESSION_COOKIE])
   // Version nur nach Anmeldung (verrät sonst, welche Lücken offen sein könnten)
-  return { authenticated, name: store.config.system.name, ...(authenticated ? { version: SETTINGS.version } : {}) }
+  return { authenticated: Boolean(user), name: store.config.system.name, ...(user ? { version: SETTINGS.version, user } : {}), users: users.list().length > 0 }
 })
 
 pub.post('/api/login', async (r) => {
   if (isBlocked(r.ip)) throw new HttpError(429, TOO_MANY)
-  const { password } = await r.json<{ password: string }>()
-  if (!auth.check(String(password ?? ''))) {
+  const body = await r.json<{ user?: string; password: string }>()
+  const login = String(body.user ?? '').trim().toLowerCase() || 'admin'
+  const password = String(body.password ?? '')
+  const ok = login === 'admin' ? auth.check(password) : Boolean(users.check(login, password))
+  if (!ok) {
     auth.failed(r.ip, 'Falsches Passwort der Weboberfläche')
-    audit.add(r.ip, 'Anmeldung fehlgeschlagen')
-    throw new HttpError(401, 'Das Passwort ist falsch.')
+    audit.add(r.ip, `Anmeldung fehlgeschlagen (${login.slice(0, 32)})`)
+    throw new HttpError(401, login === 'admin' ? 'Das Passwort ist falsch.' : 'Anmeldename oder Passwort ist falsch.')
   }
-  const token = auth.login()
-  audit.add(r.ip, 'Angemeldet')
+  const token = auth.login(login)
+  audit.add(r.ip, `Angemeldet (${login})`)
   r.res.setHeader('Set-Cookie', sessionCookie(r, token, SESSION_MAX_AGE))
   return { ok: true }
 })
@@ -626,12 +887,18 @@ pub.get('/provision/:token/forward', (r) => forwardInfo(store.config, store.stat
 
 pub.put('/provision/:token/forward', async (r) => {
   const ext = tokenExtension(r.params.token)
-  const change = await r.json<ForwardChange>()
+  changeForward(ext, await r.json<ForwardChange>())
+  return forwardInfo(store.config, store.state, tokenExtension(r.params.token))
+})
+
+/** Umleitungen ändern (App und Selbstbedienung) */
+function changeForward(ext: Extension, change: ForwardChange): void {
   const rules = change.busy !== undefined || change.noanswer !== undefined || change.rules !== undefined
   try {
     // Erst die Sofort-Umleitung prüfen – sonst wären bei einem Fehler die Regeln schon gespeichert
     if (change.cfu !== undefined) checkForward(store.config, ext.number, String(change.cfu))
     if (rules) store.update((draft) => applyRules(draft, draft.extensions.find((e) => e.id === ext.id)!, change))
+    if (change.mobile !== undefined) store.update((draft) => applyMobile(draft, draft.extensions.find((e) => e.id === ext.id)!, Boolean(change.mobile)))
     if (change.cfu !== undefined) {
       applyCfu(store.config, store.state, ext.number, String(change.cfu))
       store.saveState()
@@ -641,8 +908,7 @@ pub.put('/provision/:token/forward', async (r) => {
     if (e instanceof ForwardError) throw new HttpError(403, e.message)
     throw e
   }
-  return forwardInfo(store.config, store.state, tokenExtension(r.params.token))
-})
+}
 
 /** Fehlversuche mit der PIN je Nebenstelle; danach ist die PIN verbraucht */
 const pinFailures = new Map<string, number>()
@@ -652,8 +918,65 @@ const PIN_MAX_FAILURES = 5
 pub.get('/provision/:token/presence', (r) => {
   const ext = tokenExtension(r.params.token)
   const view = presence.view(store.config, store.state)
-  const vm = ext.voicemail.enabled ? { revision: voicemail.revision(ext.number), unread: voicemail.unread(ext.number) } : null
-  return { ...view, voicemail: vm }
+  const vm = ext.voicemail.enabled ? { revision: `${voicemail.revision(ext.number)}-${transcriber.count(ext.number)}`, unread: voicemail.unread(ext.number) } : null
+  const groups = memberGroups(store.config, store.state, ext.number)
+  const list = store.config.groups.some((g) => g.missed_list && g.members.includes(ext.number))
+  return {
+    ...view,
+    voicemail: vm,
+    groups,
+    missed: list ? { open: missed.open(store.config, ext.number), revision: String(missed.revision) } : null,
+  }
+})
+
+/** Gruppen der Nebenstelle: an- und abmelden (wie *45 am Telefon) */
+pub.get('/provision/:token/groups', (r) => memberGroups(store.config, store.state, tokenExtension(r.params.token).number))
+
+pub.put('/provision/:token/groups/:id', async (r) => {
+  const ext = tokenExtension(r.params.token)
+  const { active } = await r.json<{ active: boolean }>()
+  if (!setAway(store.config, store.state, ext.number, r.params.id, !active)) throw new HttpError(404, 'Gruppe nicht gefunden.')
+  store.saveState()
+  return memberGroups(store.config, store.state, ext.number)
+})
+
+/** Verpasste Anrufe der eigenen Gruppen (gemeinsame Liste) */
+function missedView(ext = '') {
+  const names = new Map(store.config.groups.map((g) => [g.id, g.name]))
+  return missed.visible(store.config, ext).map((e) => ({ ...e, group_name: names.get(e.group) ?? '' }))
+}
+
+const MISSED_ACTIONS: MissedAction[] = ['claim', 'release', 'done', 'reopen']
+
+// Faxe aus den Apps senden (Recht „Faxe senden“): Faxgeräte, eigene gesendete Faxe, senden
+const FAX_UPLOAD = /^\/provision\/[^/]+\/fax$/
+
+function faxSender(token: string): Extension {
+  const ext = tokenExtension(token)
+  if (!appPermissions(store.config, ext.number).includes('fax_send')) throw new HttpError(403, 'Faxe senden ist für diese Nebenstelle nicht freigegeben.')
+  return ext
+}
+
+pub.get('/provision/:token/fax', (r) => {
+  const ext = faxSender(r.params.token)
+  return {
+    boxes: store.config.faxes.map((f) => ({ id: f.id, name: f.name })),
+    sent: faxes.list().filter((f) => f.direction === 'out' && f.by === ext.number).slice(0, 50),
+  }
+})
+pub.post('/provision/:token/fax', async (r) => {
+  const ext = faxSender(r.params.token)
+  return sendFax(r.query.get('box') ?? '', r.query.get('number') ?? '', await r.body(), ext.number)
+})
+
+pub.get('/provision/:token/missed', (r) => missedView(tokenExtension(r.params.token).number))
+
+pub.put('/provision/:token/missed/:group/:id', async (r) => {
+  const ext = tokenExtension(r.params.token)
+  const { action } = await r.json<{ action: MissedAction }>()
+  if (!MISSED_ACTIONS.includes(action)) throw new HttpError(400, 'Unbekannte Aktion.')
+  if (!missed.act(store.config, r.params.id, r.params.group, action, ext.number, ext.number)) throw new HttpError(404, 'Eintrag nicht gefunden.')
+  return missedView(ext.number)
 })
 
 function voicemailExtension(token: string): Extension {
@@ -662,7 +985,17 @@ function voicemailExtension(token: string): Extension {
   return ext
 }
 
-pub.get('/provision/:token/voicemail', (r) => voicemail.list(voicemailExtension(r.params.token).number))
+/** Nachrichten mit Text (falls Voicemail als Text eingeschaltet ist) */
+function voicemailList(mailbox: string): (VoicemailMessage & { text?: string; transcribing?: boolean })[] {
+  const on = store.config.transcription.enabled
+  return voicemail.list(mailbox).map((m) => {
+    if (!on) return m
+    const t = transcriber.get(mailbox, m.id)
+    return t ? { ...m, text: t.text } : { ...m, transcribing: transcriber.pending(mailbox, m.id) }
+  })
+}
+
+pub.get('/provision/:token/voicemail', (r) => voicemailList(voicemailExtension(r.params.token).number))
 
 pub.get('/provision/:token/voicemail/:id', (r) => {
   const ext = voicemailExtension(r.params.token)
@@ -679,7 +1012,7 @@ pub.put('/provision/:token/voicemail/:id', async (r) => {
   if (msg.folder === 'INBOX') {
     await voicemailAction({ Action: 'VoicemailMove', Context: 'default', Mailbox: ext.number, Folder: 'INBOX', ID: msg.id, ToFolder: 'Old' })
   }
-  return voicemail.list(ext.number)
+  return voicemailList(ext.number)
 })
 
 pub.delete('/provision/:token/voicemail/:id', async (r) => {
@@ -687,7 +1020,7 @@ pub.delete('/provision/:token/voicemail/:id', async (r) => {
   const msg = voicemail.find(ext.number, r.params.id)
   if (!msg) throw new HttpError(404, 'Nachricht nicht gefunden.')
   await voicemailAction({ Action: 'VoicemailRemove', Context: 'default', Mailbox: ext.number, Folder: msg.folder, ID: msg.id })
-  return voicemail.list(ext.number)
+  return voicemailList(ext.number)
 })
 
 async function voicemailAction(fields: Record<string, string>): Promise<void> {
@@ -696,6 +1029,164 @@ async function voicemailAction(fields: Record<string, string>): Promise<void> {
   })
   if (res?.Response !== 'Success') throw new HttpError(500, res?.Message || 'Asterisk hat die Nachricht nicht geändert.')
 }
+
+/** Rückfrage abschließen: verbinden (Gegenüber miteinander) oder Dreierkonferenz */
+pub.post('/provision/:token/calls/join', async (r) => {
+  const ext = tokenExtension(r.params.token)
+  const { mode } = await r.json<{ mode: 'transfer' | 'conference' }>()
+  if (mode !== 'transfer' && mode !== 'conference') throw new HttpError(400, 'Unbekannte Art.')
+  const channels = await asterisk.ami.list({ Action: 'CoreShowChannels' }).catch((e: Error) => {
+    throw new HttpError(503, `Asterisk antwortet nicht: ${e.message}`)
+  })
+  let actions: Record<string, string>[]
+  try {
+    actions = joinActions(mode, callLegs(channels, ext.number), joinRoom(ext.number))
+  } catch (e) {
+    if (e instanceof JoinError) throw new HttpError(409, e.message)
+    throw e
+  }
+  for (const a of actions) {
+    const [res] = await asterisk.ami.action(a)
+    if (res?.Response !== 'Success' && a.Action !== 'Hangup') throw new HttpError(500, res?.Message || 'Das Zusammenführen hat nicht geklappt.')
+  }
+  return { ok: true }
+})
+
+// -- Selbstbedienung unter /me (Nebenstelle und Voicemail-PIN) ----------------------------
+
+const portal = new PortalSessions()
+
+function portalGate(r: Request): void {
+  const p = store.config.portal
+  if (!p.enabled) throw new HttpError(404, 'Die Selbstbedienung ist ausgeschaltet.')
+  if (!p.remote && !isLocal(r.ip)) throw new HttpError(403, 'Die Selbstbedienung ist nur im Netz der Anlage erreichbar.')
+  // Schutz vor fremden Formularen wie bei der Verwaltung
+  if (r.method !== 'GET' && r.raw.headers['x-phone4all'] !== '1') throw new HttpError(403, 'Anfrage abgelehnt.')
+}
+
+function portalExt(r: Request): Extension {
+  portalGate(r)
+  const num = portal.ext(r.cookies[PORTAL_COOKIE])
+  const ext = store.config.extensions.find((e) => e.number === num)
+  if (!ext) throw new HttpError(401, 'Bitte anmelden.')
+  return ext
+}
+
+function portalCookie(r: Request, token: string, maxAge: number): string {
+  const https = r.raw.headers['x-forwarded-proto'] === 'https' || 'encrypted' in r.raw.socket
+  return `${PORTAL_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/me; Max-Age=${maxAge}${https ? '; Secure' : ''}`
+}
+
+function samePin(a: string, b: string): boolean {
+  const x = Buffer.from(a)
+  const y = Buffer.from(b)
+  return x.length === y.length && timingSafeEqual(x, y)
+}
+
+pub.get('/me', (r) => {
+  portalGate(r)
+  r.res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'")
+  r.res.setHeader('Referrer-Policy', 'no-referrer')
+  sendText(r.res, 200, portalPage(store.config), 'text/html; charset=utf-8')
+})
+pub.get('/me/app.js', (r) => {
+  portalGate(r)
+  sendText(r.res, 200, PORTAL_JS, 'text/javascript; charset=utf-8')
+})
+
+pub.post('/me/api/login', async (r) => {
+  portalGate(r)
+  if (isBlocked(r.ip)) throw new HttpError(429, TOO_MANY)
+  const { number, pin } = await r.json<{ number: string; pin: string }>()
+  const ext = store.config.extensions.find((e) => e.number === String(number ?? '').trim())
+  if (ext && portal.locked(ext.number)) throw new HttpError(429, 'Zu viele falsche PINs – bitte in 15 Minuten noch einmal versuchen.')
+  const stored = ext?.voicemail.pin.replace(/\D/g, '') ?? ''
+  if (!ext || stored.length < 4 || !samePin(String(pin ?? ''), stored)) {
+    auth.failed(r.ip, 'Falsche PIN der Selbstbedienung')
+    if (ext) portal.failed(ext.number)
+    throw new HttpError(401, 'Nebenstelle oder PIN ist falsch.')
+  }
+  portal.succeeded(ext.number)
+  r.res.setHeader('Set-Cookie', portalCookie(r, portal.login(ext.number), PORTAL_MAX_AGE))
+  audit.add(r.ip, `Selbstbedienung: ${ext.number} angemeldet`)
+  return { ok: true }
+})
+pub.post('/me/api/logout', (r) => {
+  portal.logout(r.cookies[PORTAL_COOKIE] ?? '')
+  r.res.setHeader('Set-Cookie', portalCookie(r, '', 0))
+  return { ok: true }
+})
+pub.get('/me/api/state', (r) => {
+  const ext = portalExt(r)
+  return {
+    ext: { number: ext.number, name: ext.name },
+    dnd: Boolean(store.state.dnd[ext.number]),
+    forward: forwardInfo(store.config, store.state, ext),
+    groups: memberGroups(store.config, store.state, ext.number),
+    voicemail: ext.voicemail.enabled ? voicemailList(ext.number) : null,
+  }
+})
+pub.put('/me/api/dnd', async (r) => {
+  const ext = portalExt(r)
+  const { enabled } = await r.json<{ enabled: boolean }>()
+  if (enabled) store.state.dnd[ext.number] = true
+  else delete store.state.dnd[ext.number]
+  store.saveState()
+  return { ok: true }
+})
+pub.put('/me/api/forward', async (r) => {
+  const ext = portalExt(r)
+  changeForward(ext, await r.json<ForwardChange>())
+  return forwardInfo(store.config, store.state, store.config.extensions.find((e) => e.id === ext.id)!)
+})
+pub.put('/me/api/groups/:id', async (r) => {
+  const ext = portalExt(r)
+  const { active } = await r.json<{ active: boolean }>()
+  if (!setAway(store.config, store.state, ext.number, r.params.id, !active)) throw new HttpError(404, 'Gruppe nicht gefunden.')
+  store.saveState()
+  return memberGroups(store.config, store.state, ext.number)
+})
+function portalMailbox(r: Request): Extension {
+  const ext = portalExt(r)
+  if (!ext.voicemail.enabled) throw new HttpError(403, 'Für diese Nebenstelle ist keine Voicemail eingerichtet.')
+  return ext
+}
+pub.get('/me/api/voicemail/:id', (r) => {
+  const ext = portalMailbox(r)
+  const file = voicemail.file(ext.number, r.params.id)
+  if (!file) throw new HttpError(404, 'Nachricht nicht gefunden.')
+  sendFile(r.res, file)
+})
+pub.put('/me/api/voicemail/:id', async (r) => {
+  const ext = portalMailbox(r)
+  const msg = voicemail.find(ext.number, r.params.id)
+  if (!msg) throw new HttpError(404, 'Nachricht nicht gefunden.')
+  if (msg.folder === 'INBOX') await voicemailAction({ Action: 'VoicemailMove', Context: 'default', Mailbox: ext.number, Folder: 'INBOX', ID: msg.id, ToFolder: 'Old' })
+  return voicemailList(ext.number)
+})
+pub.delete('/me/api/voicemail/:id', async (r) => {
+  const ext = portalMailbox(r)
+  const msg = voicemail.find(ext.number, r.params.id)
+  if (!msg) throw new HttpError(404, 'Nachricht nicht gefunden.')
+  await voicemailAction({ Action: 'VoicemailRemove', Context: 'default', Mailbox: ext.number, Folder: msg.folder, ID: msg.id })
+  return voicemailList(ext.number)
+})
+pub.put('/me/api/pin', async (r) => {
+  const ext = portalExt(r)
+  const { old, pin } = await r.json<{ old: string; pin: string }>()
+  if (!samePin(String(old ?? ''), ext.voicemail.pin.replace(/\D/g, ''))) {
+    portal.failed(ext.number)
+    throw new HttpError(403, 'Die bisherige PIN stimmt nicht.')
+  }
+  const next = String(pin ?? '')
+  if (!/^\d{4,8}$/.test(next)) throw new HttpError(400, 'Die PIN hat 4 bis 8 Ziffern.')
+  if (/^(\d)\1+$/.test(next) || '0123456789'.includes(next) || next === ext.number) throw new HttpError(400, 'Diese PIN ist zu leicht zu erraten.')
+  store.update((draft) => void (draft.extensions.find((e) => e.id === ext.id)!.voicemail.pin = next))
+  applySoon()
+  portal.logoutExt(ext.number, r.cookies[PORTAL_COOKIE] ?? '')
+  audit.add(r.ip, `Selbstbedienung: ${ext.number} hat die Voicemail-PIN geändert`)
+  return { ok: true }
+})
 
 /** Anrufer aus der App heraus sperren (Recht „Rufnummern sperren“) */
 pub.post('/provision/:token/blocklist', async (r) => {
@@ -792,28 +1283,72 @@ function dectFile(r: Request): void {
 pub.get('/dect/:token', dectFile)
 pub.get('/dect/:token/:file', dectFile)
 
-/** Zustandsbericht für Home Assistant u. a. (Bearer-Token statt Anmeldung) */
-pub.get('/api/integration/status', async (r) => {
+// -- Tischtelefone (Yealink, Snom) holen ihre Einrichtung -----------------------------
+
+const deskSeen = new Map<string, { time: number; ip: string; agent: string; mac: string }>()
+
+function deskServer(base: string, d: DeskPhone): string {
+  return `${base}/desk/${d.token}/`
+}
+
+/** Datei für das Telefon (oder null, wenn es sie nicht gibt) */
+function deskContent(d: DeskPhone, base: string): string {
+  const sipHost = sipHostFor(base)
+  const opts = { sipHost, ldapHost: sipHost }
+  return d.vendor === 'snom' ? snomFile(store.config, d, opts) : yealinkFile(store.config, d, opts)
+}
+
+function deskFile(r: Request): void {
+  const d = store.config.deskphones.find((x) => x.token && x.token === r.params.token)
+  if (!d) throw new HttpError(404, 'Unbekanntes Telefon.')
+  const file = r.params.file ?? ''
+  // Yealink fragt zuerst eine allgemeine Datei je Modell an: leer lassen, alles steht in der eigenen
+  if (d.vendor === 'yealink' && isYealinkCommon(file)) return sendText(r.res, 200, '#!version:1.0.0.1\n', 'text/plain; charset=utf-8')
+  const agent = String(r.raw.headers['user-agent'] ?? '')
+  const mac = deskRequestMac(file) || agentMac(agent)
+  if (mac && mac !== d.mac) throw new HttpError(404, 'Diese Einrichtung gehört zu einem anderen Telefon.')
+  // Nur die eigene Datei; „<mac>-local.cfg“ (Änderungen am Telefon) und Ähnliches gibt es nicht
+  // (.boot-Dateien, ältere Namen): ohne als Fehlversuch zu zählen, der Link ist ja gültig
+  if (d.vendor === 'yealink' && file && !/^[0-9a-f]{12}\.cfg$/i.test(file)) return sendText(r.res, 404, 'Nicht gefunden.')
+  deskSeen.set(d.id, { time: Date.now(), ip: r.ip, agent: describeDesk(agent), mac })
+  const text = deskContent(d, requestBase(r))
+  sendText(r.res, 200, text, d.vendor === 'snom' ? 'application/xml; charset=utf-8' : 'text/plain; charset=utf-8')
+}
+
+pub.get('/desk/:token', deskFile)
+pub.get('/desk/:token/:file', deskFile)
+
+/** Zugriffsschlüssel der Schnittstelle prüfen (Bearer-Token statt Anmeldung) */
+function integrationAuth(r: Request, need: 'call_api' | 'control' | '' = ''): void {
   if (!validToken(store.config, r.raw.headers.authorization)) {
     r.res.setHeader('WWW-Authenticate', 'Bearer')
     throw new HttpError(401, 'Zugriffsschlüssel fehlt oder ist falsch.')
   }
+  if (need === 'call_api' && !store.config.integration.call_api) throw new HttpError(403, 'Anrufe über die Schnittstelle sind ausgeschaltet.')
+  if (need === 'control' && !store.config.integration.control) throw new HttpError(403, 'Schalten über die Schnittstelle ist ausgeschaltet.')
+}
+
+function integrationExtension(raw: unknown): Extension {
+  const ext = store.config.extensions.find((e) => e.number === String(raw ?? '').trim())
+  if (!ext) throw new HttpError(404, 'Unbekannte Nebenstelle.')
+  return ext
+}
+
+/** Zustandsbericht für Home Assistant u. a. */
+pub.get('/api/integration/status', async (r) => {
+  integrationAuth(r)
   return integrationReport(store.config, store.state, await asterisk.status(), readCalls(500), updater.info, SETTINGS.version, guard.bans.length, new Date(), {
     emergency: emergencies.calls,
+    door: doorRings.calls,
     problems: offsiteStatus.ok ? [] : [{ key: 'backup', message: `Externe Sicherung fehlgeschlagen: ${offsiteStatus.error}` }],
   })
 })
 
 /** Anruf auslösen (CRM, Hausautomation): erst klingelt die Nebenstelle, nach dem Abheben wird gewählt */
 pub.post('/api/integration/call', async (r) => {
-  if (!validToken(store.config, r.raw.headers.authorization)) {
-    r.res.setHeader('WWW-Authenticate', 'Bearer')
-    throw new HttpError(401, 'Zugriffsschlüssel fehlt oder ist falsch.')
-  }
-  if (!store.config.integration.call_api) throw new HttpError(403, 'Anrufe über die Schnittstelle sind ausgeschaltet.')
+  integrationAuth(r, 'call_api')
   const body = await r.json<{ extension: string; number: string }>()
-  const ext = store.config.extensions.find((e) => e.number === String(body.extension ?? '').trim())
-  if (!ext) throw new HttpError(404, 'Unbekannte Nebenstelle.')
+  const ext = integrationExtension(body.extension)
   const number = cleanNumber(String(body.number ?? ''))
   if (!/^\+?\d{2,20}$/.test(number)) throw new HttpError(400, 'Ungültige Rufnummer.')
   const [res] = await asterisk.ami
@@ -835,10 +1370,100 @@ pub.post('/api/integration/call', async (r) => {
   return { ok: true }
 })
 
+/** Ansage aus Text: Telefone einer Nebenstelle oder Gruppe klingeln, nach dem Abheben spricht die Anlage den Text (zweimal) */
+pub.post('/api/integration/announce', async (r) => {
+  integrationAuth(r, 'call_api')
+  const body = await r.json<{ target: string; text: string; voice?: string }>()
+  const target = cleanNumber(String(body.target ?? ''))
+  if (!ringPlan(store.config, store.state, target)) throw new HttpError(404, 'Unbekannte Nebenstelle oder Gruppe, oder niemand erreichbar.')
+  const voice = String(body.voice ?? '') || tts.status().voices[0] || ''
+  let wav: Buffer
+  try {
+    wav = toTelephoneWav(await tts.speak(String(body.text ?? ''), voice))
+  } catch (e) {
+    if (e instanceof TtsError) throw new HttpError(400, `${e.message} (Sprachausgabe unter Ansagen und Musik → Aus Text sprechen laden)`)
+    throw e
+  }
+  const dir = path.join(PATHS.tts, 'announce')
+  fs.mkdirSync(dir, { recursive: true })
+  const base = path.join(dir, `${Date.now()}-${target}`)
+  fs.writeFileSync(`${base}.wav`, wav)
+  setTimeout(() => fs.rmSync(`${base}.wav`, { force: true }), 10 * 60000).unref()
+  const [res] = await asterisk.ami
+    .action({
+      Action: 'Originate',
+      Channel: `Local/${target}@p4a-ring`,
+      Application: 'Playback',
+      Data: `silence/1&${base}&silence/1&${base}`,
+      CallerID: `"Durchsage" <${target}>`,
+      Timeout: '35000',
+      Async: 'true',
+    })
+    .catch((e: Error) => {
+      throw new HttpError(503, `Asterisk antwortet nicht: ${e.message}`)
+    })
+  if (res?.Response !== 'Success') throw new HttpError(500, res?.Message || 'Die Ansage konnte nicht gestartet werden.')
+  return { ok: true }
+})
+
+/** Nicht stören schalten */
+pub.post('/api/integration/dnd', async (r) => {
+  integrationAuth(r, 'control')
+  const body = await r.json<{ extension: string; enabled: boolean }>()
+  const ext = integrationExtension(body.extension)
+  if (body.enabled) store.state.dnd[ext.number] = true
+  else delete store.state.dnd[ext.number]
+  store.saveState()
+  return { ok: true, dnd: Boolean(store.state.dnd[ext.number]) }
+})
+
+/** Sofort-Umleitung setzen ('' = aus); nach außen wird wie in der App gemeldet */
+pub.post('/api/integration/forward', async (r) => {
+  integrationAuth(r, 'control')
+  const body = await r.json<{ extension: string; target: string }>()
+  const ext = integrationExtension(body.extension)
+  const target = cleanNumber(String(body.target ?? ''))
+  if (target === ext.number) throw new HttpError(400, 'Die Umleitung kann nicht auf die eigene Nebenstelle zeigen.')
+  if (target) store.state.cfu[ext.number] = target
+  else delete store.state.cfu[ext.number]
+  store.saveState()
+  forwardAlert(ext.number, target)
+  return { ok: true, forward: target }
+})
+
+/** Zeitsteuerung umschalten: auto, open (immer geöffnet), closed (immer geschlossen) */
+pub.post('/api/integration/timecondition', async (r) => {
+  integrationAuth(r, 'control')
+  const body = await r.json<{ id: string; mode: string }>()
+  const mode = String(body.mode ?? '')
+  if (!['auto', 'open', 'closed'].includes(mode)) throw new HttpError(400, 'Modus auto, open oder closed.')
+  if (!store.config.timeconditions.some((t) => t.id === body.id)) throw new HttpError(404, 'Unbekannte Zeitsteuerung.')
+  store.update((draft) => {
+    draft.timeconditions.find((t) => t.id === body.id)!.override = mode as 'auto' | 'open' | 'closed'
+  })
+  return { ok: true }
+})
+
 // -- Verwaltung (angemeldet) ----------------------------------------------------------
 
-api.get('/api/config', () => ({
-  config: store.config,
+/** Konfiguration für die Rolle: „Nur ansehen“ ohne Passwörter, „Personen und Anrufe“ ohne die des Systems */
+function configFor(role: Role): PbxConfig {
+  if (role === 'admin') return store.config
+  const c = role === 'viewer' ? stripSecrets(store.config) : structuredClone(store.config)
+  for (const t of c.trunks) t.password = ''
+  for (const w of c.webhooks) w.secret = ''
+  for (const s of c.contactsources) s.password = ''
+  for (const k of c.calendars) k.source.password = ''
+  Object.assign(c.mail, { password: '' })
+  Object.assign(c.integration, { token: '' })
+  Object.assign(c.offsite, { password: '', passphrase: '' })
+  Object.assign(c.transcription, { api_key: '' })
+  return c
+}
+
+api.get('/api/config', (r) => ({
+  config: configFor(r.user?.role ?? 'viewer'),
+  user: sessionUser(r.cookies[SESSION_COOKIE]),
   providers: PROVIDERS,
   states: BUNDESLAENDER,
   version: SETTINGS.version,
@@ -856,7 +1481,7 @@ api.put('/api/config/:section', async (r) => {
     ;(draft as unknown as Record<string, unknown>)[section] = merged
   })
   applySoon()
-  return store.config[section]
+  return configFor(r.user?.role ?? 'viewer')[section]
 })
 
 for (const kind of COLLECTIONS) {
@@ -996,6 +1621,36 @@ api.post('/api/dect/:id/renew', (r) => {
   return store.config.dect.find((x) => x.id === r.params.id)
 })
 
+// Tischtelefone
+
+api.get('/api/deskphones', (r) => {
+  const base = lanBase(r)
+  return {
+    host: new URL(base).hostname,
+    phones: store.config.deskphones.map((d) => ({ id: d.id, url: deskServer(base, d), seen: deskSeen.get(d.id) ?? null })),
+  }
+})
+
+api.get('/api/deskphones/:id/file', (r) => {
+  const d = store.config.deskphones.find((x) => x.id === r.params.id)
+  if (!d) throw new HttpError(404, 'Telefon nicht gefunden.')
+  r.res.writeHead(200, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Content-Disposition': `attachment; filename="${d.mac}.${d.vendor === 'snom' ? 'xml' : 'cfg'}"`,
+  })
+  r.res.end(deskContent(d, lanBase(r)))
+})
+
+api.post('/api/deskphones/:id/renew', (r) => {
+  store.update((draft) => {
+    const d = draft.deskphones.find((x) => x.id === r.params.id)
+    if (!d) throw new HttpError(404, 'Telefon nicht gefunden.')
+    d.token = newSecret(32)
+  })
+  deskSeen.delete(r.params.id)
+  return store.config.deskphones.find((x) => x.id === r.params.id)
+})
+
 // Messenger (nur Überblick; Inhalte der Chats zeigt die Verwaltung nicht)
 
 api.get('/api/messenger', () => {
@@ -1048,6 +1703,7 @@ api.get('/api/status', async () => ({
   ...(await asterisk.status()),
   dnd: store.state.dnd,
   cfu: store.state.cfu,
+  away: store.state.away,
   bans: guard.bans,
   update: updater.info,
   version: SETTINGS.version,
@@ -1105,6 +1761,62 @@ api.post('/api/unban', async (r) => {
 
 api.get('/api/calls', (r) => readCalls(Number(r.query.get('limit')) || 200))
 
+/** Zeitraum für Auswertungen: from/to als Datum (to einschließlich), höchstens ein Jahr */
+function statsRange(r: Request): [number, number] {
+  const day = (v: string | null): number => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T00:00:00`).getTime() : NaN)
+  const from = day(r.query.get('from'))
+  const to = day(r.query.get('to')) + 86400000
+  if (Number.isNaN(from) || Number.isNaN(to) || to <= from || to - from > 367 * 86400000) {
+    throw new HttpError(400, 'Zeitraum fehlt oder ist zu groß (from/to als JJJJ-MM-TT, höchstens ein Jahr).')
+  }
+  return [from, to]
+}
+
+api.get('/api/stats', (r) => {
+  const [from, to] = statsRange(r)
+  return computeStats(store.config, readAllCalls(), parseQueueLog(readQueueLog()), from, to)
+})
+
+api.get('/api/stats/csv', (r) => {
+  const [from, to] = statsRange(r)
+  r.res.writeHead(200, {
+    'Content-Type': 'text/csv; charset=utf-8',
+    'Content-Disposition': `attachment; filename="anrufe-${r.query.get('from')}-bis-${r.query.get('to')}.csv"`,
+  })
+  // BOM, damit Excel die Umlaute erkennt
+  r.res.end('\ufeff' + callsCsv(readAllCalls(), from, to))
+})
+
+api.get('/api/faxes', () => faxes.list())
+api.get('/api/faxes/:id/pdf', (r) => {
+  const rec = faxes.get(r.params.id)
+  if (!rec) throw new HttpError(404, 'Fax nicht gefunden.')
+  sendFile(r.res, faxes.pdf(rec.id), `Fax-${rec.number || 'unbekannt'}-${new Date(rec.time).toISOString().slice(0, 10)}.pdf`)
+})
+api.delete('/api/faxes/:id', (r) => {
+  const rec = faxes.get(r.params.id)
+  if (rec?.status === 'sending') throw new HttpError(409, 'Das Fax wird gerade gesendet.')
+  faxes.remove(r.params.id)
+  return faxes.list()
+})
+api.post('/api/faxes/send', async (r) => sendFax(r.query.get('box') ?? '', r.query.get('number') ?? '', await r.body(), 'Verwaltung'))
+
+api.get('/api/missed', () => missedView())
+api.put('/api/missed/:group/:id', async (r) => {
+  const { action } = await r.json<{ action: MissedAction }>()
+  if (!MISSED_ACTIONS.includes(action)) throw new HttpError(400, 'Unbekannte Aktion.')
+  if (!missed.act(store.config, r.params.id, r.params.group, action, 'Verwaltung')) throw new HttpError(404, 'Eintrag nicht gefunden.')
+  return missedView()
+})
+
+/** Mitglied einer Gruppe an- oder abmelden (Verwaltung) */
+api.put('/api/groups/:id/members/:ext', async (r) => {
+  const { active } = await r.json<{ active: boolean }>()
+  if (!setAway(store.config, store.state, r.params.ext, r.params.id, !active)) throw new HttpError(404, 'Kein Mitglied dieser Gruppe.')
+  store.saveState()
+  return { away: store.state.away }
+})
+
 function recording(name: string): string {
   const file = recordingFile(name)
   if (!file) throw new HttpError(400, 'Ungültiger Name.')
@@ -1135,10 +1847,16 @@ api.post('/api/asterisk/restart', async () => {
 
 api.post('/api/password', async (r) => {
   const { old, password } = await r.json<{ old: string; password: string }>()
-  if (!auth.check(old ?? '')) throw new HttpError(403, 'Das bisherige Passwort stimmt nicht.')
-  if (!password || password.length < 10) throw new HttpError(400, 'Das neue Passwort braucht mindestens 10 Zeichen.')
-  auth.setPassword(password)
-  const token = auth.login()
+  const login = r.user?.login ?? 'admin'
+  const okOld = login === 'admin' ? auth.check(old ?? '') : Boolean(users.check(login, old ?? ''))
+  if (!okOld) throw new HttpError(403, 'Das bisherige Passwort stimmt nicht.')
+  if (!password || password.length < PASSWORD_MIN) throw new HttpError(400, `Das neue Passwort braucht mindestens ${PASSWORD_MIN} Zeichen.`)
+  if (login === 'admin') auth.setPassword(password)
+  else {
+    users.update(users.find(login)!.id, { password })
+    auth.logoutUser(login)
+  }
+  const token = auth.login(login)
   r.res.setHeader('Set-Cookie', sessionCookie(r, token, SESSION_MAX_AGE))
   return { ok: true }
 })
@@ -1146,6 +1864,38 @@ api.post('/api/password', async (r) => {
 api.post('/api/mail/test', async (r) => {
   const { to } = await r.json<{ to: string }>()
   await sendMail(store.config.mail, to, `Test von ${store.config.system.name}`, 'Der E-Mail-Versand der Telefonanlage funktioniert.')
+  return { ok: true }
+})
+
+// Weitere Zugänge zur Weboberfläche (nur Verwaltung)
+
+api.get('/api/users', () => ({ users: users.list(), roles: ROLES }))
+api.post('/api/users', async (r) => {
+  const b = await r.json<{ login: string; name: string; role: Role; password: string }>()
+  try {
+    return users.add(String(b.login ?? ''), String(b.name ?? ''), b.role, String(b.password ?? ''))
+  } catch (e) {
+    if (e instanceof UserError) throw new HttpError(400, e.message)
+    throw e
+  }
+})
+api.put('/api/users/:id', async (r) => {
+  const b = await r.json<{ login?: string; name?: string; role?: Role; password?: string }>()
+  const before = users.get(r.params.id)
+  try {
+    const u = users.update(r.params.id, b)
+    // Neues Passwort, andere Rolle oder anderer Name: neu anmelden
+    if (before && (b.password || b.role !== before.role || u.login !== before.login)) auth.logoutUser(before.login)
+    return u
+  } catch (e) {
+    if (e instanceof UserError) throw new HttpError(400, e.message)
+    throw e
+  }
+})
+api.delete('/api/users/:id', (r) => {
+  const u = users.get(r.params.id)
+  if (u) auth.logoutUser(u.login)
+  users.remove(r.params.id)
   return { ok: true }
 })
 
@@ -1251,6 +2001,33 @@ api.post('/api/webhooks/:id/test', async (r) => {
 
 // Ansagen aus Text (Piper)
 
+api.get('/api/transcription', () => ({ ...transcriber.status(), all: WHISPER_MODELS }))
+api.post('/api/transcription/install', async (r) => {
+  const { model } = await r.json<{ model: string }>()
+  if (!WHISPER_MODELS.some((m) => m.id === model)) throw new HttpError(400, 'Unbekanntes Modell.')
+  transcriber.install(String(model)).catch((e: Error) => console.error('Spracherkennung laden:', e.message))
+  return transcriber.status()
+})
+/** Probe: kurzer Satz über die Sprachausgabe gesprochen und wieder erkannt (oder hochgeladene WAV) */
+api.post('/api/transcription/test', async (r) => {
+  // Ungespeicherte Einstellungen aus dem Formular; ohne Schlüssel gilt der gespeicherte
+  const draft = await r.json<Partial<TranscriptionSettings>>().catch(() => ({}))
+  const cfg: TranscriptionSettings = { ...store.config.transcription, ...draft }
+  cfg.api_key ||= store.config.transcription.api_key
+  cfg.api_url = cfg.api_url.trim().replace(/\/+$/, '')
+  const voice = tts.status().voices[0]
+  if (!voice) throw new HttpError(400, 'Für die Probe wird die Sprachausgabe gebraucht (Ansagen und Musik → Aus Text sprechen).')
+  const file = path.join(os.tmpdir(), `p4a-stt-${Date.now()}.wav`)
+  fs.writeFileSync(file, await tts.speak('Hallo, hier ist die Telefonanlage. Bitte rufen Sie mich morgen zurück.', voice))
+  try {
+    return { text: await transcriber.transcribe(cfg, file) }
+  } catch (e) {
+    if (e instanceof TranscribeError) throw new HttpError(400, e.message)
+    throw e
+  } finally {
+    fs.rmSync(file, { force: true })
+  }
+})
 api.get('/api/tts', () => ({ ...tts.status(), all: VOICES.map(({ id, name }) => ({ id, name })) }))
 api.post('/api/tts/install', async (r) => {
   const { voice } = await r.json<{ voice: string }>()
@@ -1307,10 +2084,10 @@ function isLoopback(ip: string): boolean {
 }
 
 /** Pfade mit geheimem Token im zweiten Teil */
-const SECRET_PATH = /^\/(?:provision|setup|dect)\/([^/]+)/
+const SECRET_PATH = /^\/(?:provision|setup|dect|desk)\/([^/]+)/
 
 async function handle(raw: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-  const isUpload = raw.url?.startsWith('/api/sounds') || raw.url?.startsWith('/api/import')
+  const isUpload = raw.url?.startsWith('/api/sounds') || raw.url?.startsWith('/api/import') || raw.url?.startsWith('/api/faxes/send') || FAX_UPLOAD.test((raw.url ?? '').split('?')[0])
   const isChatFile = CHAT_UPLOAD.test((raw.url ?? '').split('?')[0])
   const limit = isChatFile ? store.config.messenger.max_file_mb * 1024 * 1024 : isUpload ? 64 * 1024 * 1024 : 1024 * 1024
   const req = makeRequest(raw, res, limit)
@@ -1333,14 +2110,18 @@ async function handle(raw: http.IncomingMessage, res: http.ServerResponse): Prom
       return
     }
     if (req.path.startsWith('/api/')) {
-      if (!auth.valid(req.cookies[SESSION_COOKIE])) throw new HttpError(401, 'Bitte anmelden.')
+      const user = sessionUser(req.cookies[SESSION_COOKIE])
+      if (!user) throw new HttpError(401, 'Bitte anmelden.')
+      req.user = { login: user.login, role: user.role }
+      const denied = forbidden(user.role, req.method, req.path)
+      if (denied) throw new HttpError(403, denied)
       // Schutz vor fremden Formularen: Änderungen nur mit eigenem Kopfeintrag
       if (req.method !== 'GET' && raw.headers['x-phone4all'] !== '1') throw new HttpError(403, 'Anfrage abgelehnt.')
       const m = api.match(req.method, req.path)
       if (!m) throw new HttpError(404, 'Nicht gefunden.')
       req.params = m.params
       const result = await m.handler(req)
-      if (req.method !== 'GET') audit.add(req.ip, auditText(req.method, req.path, result))
+      if (req.method !== 'GET') audit.add(req.ip, auditText(req.method, req.path, result), Date.now(), user.login)
       if (!res.headersSent) {
         if (typeof result === 'string') sendText(res, 200, result)
         else sendJson(res, 200, result ?? { ok: true })
@@ -1365,6 +2146,9 @@ async function main(): Promise<void> {
   asterisk.prepareDirs()
   await asterisk.apply(store.config, guard.banned())
   ldap.apply()
+  transcriptionChanged()
+  scanVoicemail()
+  setInterval(() => scanVoicemail(), 5 * 60000).unref()
   const server = http.createServer((req, res) => void handle(req, res))
   // /ws: SIP über WebSocket (Mobil-App) · /provision/<token>/chat: Messenger der Apps
   const onUpgrade = (req: http.IncomingMessage, socket: Duplex, head: Buffer): void => {
@@ -1419,6 +2203,8 @@ async function main(): Promise<void> {
     const local = localTime(new Date(), store.config.system.timezone)
     const today = local.date
     auth.prune()
+    portal.prune()
+    faxes.prune()
     if (lastBackup !== today) {
       lastBackup = today
       store.backup('taeglich')

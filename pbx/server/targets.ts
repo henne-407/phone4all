@@ -29,6 +29,8 @@ export function destTarget(cfg: PbxConfig, dest: Destination | undefined): strin
     }
     case 'announcement':
       return cfg.announcements.some((a) => a.id === t) ? `p4a-ann-${t}^s` : HANGUP_TARGET
+    case 'fax':
+      return cfg.faxes.some((f) => f.id === t) ? `p4a-fax^${t}` : HANGUP_TARGET
     case 'external': {
       const n = cleanNumber(t)
       return n ? `p4a-fwd^${n}` : HANGUP_TARGET

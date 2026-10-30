@@ -145,6 +145,23 @@ export function ForwardPopover({ anchor, onClose, onRules }: { anchor: HTMLEleme
             {error}
           </Alert>
         )}
+        {f.mobile && may && (
+          <>
+            <Divider sx={{ my: 1 }} />
+            <Stack direction="row" sx={{ alignItems: 'center', px: 1, gap: 1 }}>
+              <ListItemText primary="Handy klingelt mit" secondary={f.mobile.number} />
+              <Switch
+                checked={f.mobile.enabled}
+                disabled={busy}
+                onChange={(e) => {
+                  const mobile = e.target.checked
+                  void save({ mobile }).then((ok) => ok && toast(mobile ? 'Das Handy klingelt mit' : 'Das Handy klingelt nicht mehr mit'))
+                }}
+                slotProps={{ input: { 'aria-label': 'Handy klingelt mit' } }}
+              />
+            </Stack>
+          </>
+        )}
         {f.permissions.includes('forward_rules') && (
           <>
             <Divider sx={{ my: 1 }} />
@@ -189,9 +206,20 @@ function RuleCard({ f, rule, index, onChange, onRemove }: { f: PbxForward; rule:
           <MenuItem value="timecondition" disabled={!f.timeconditions.length}>
             Nach Zeitsteuerung der Anlage
           </MenuItem>
+          <MenuItem value="calendar" disabled={!f.calendars?.length}>
+            Bei einem Termin im Kalender
+          </MenuItem>
           <MenuItem value="dnd">Bei „Nicht stören“ (*76)</MenuItem>
         </TextField>
-        <TargetField f={f} label="Umleiten an" value={rule.target} onChange={(target) => set({ target })} helperText="" />
+        {rule.when !== 'dnd' && (
+          <TextField select label="Dann" value={rule.action ?? 'forward'} onChange={(e) => set({ action: e.target.value as 'forward' | 'dnd' })}>
+            <MenuItem value="forward">Umleiten</MenuItem>
+            <MenuItem value="dnd">Nicht stören</MenuItem>
+          </TextField>
+        )}
+        {(rule.when === 'dnd' || rule.action !== 'dnd') && (
+          <TargetField f={f} label="Umleiten an" value={rule.target} onChange={(target) => set({ target })} helperText="" />
+        )}
         {rule.when === 'schedule' && (
           <>
             <Box sx={{ gridColumn: '1 / -1' }}>
@@ -211,6 +239,23 @@ function RuleCard({ f, rule, index, onChange, onRemove }: { f: PbxForward; rule:
               onChange={(e) => set({ to: e.target.value })}
               slotProps={{ inputLabel: { shrink: true } }}
               helperText={rule.to <= rule.from ? 'Bis zum Folgetag' : undefined}
+            />
+          </>
+        )}
+        {rule.when === 'calendar' && (
+          <>
+            <TextField select label="Kalender" value={rule.calendar ?? ''} onChange={(e) => set({ calendar: e.target.value })}>
+              {(f.calendars ?? []).map((c) => (
+                <MenuItem key={c.id} value={c.id}>
+                  {c.name}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              label="Nur Termine mit"
+              value={rule.keyword ?? ''}
+              onChange={(e) => set({ keyword: e.target.value })}
+              helperText="z. B. „Urlaub Anna“, leer = jeder Termin"
             />
           </>
         )}

@@ -81,10 +81,10 @@ Die eigene Nebenstelle auf dem Handy, im Büro und unterwegs über eine HTTPS-Ad
 </td>
 <td valign="top">
 
-### 📞 DECT-Telefone
+### 📞 DECT- und Tischtelefone
 
-Gigaset N610/N670/N870 IP PRO richten sich per Auto-Provisioning selbst ein, mit
-Telefonbuch per LDAP.
+Gigaset N610/N670/N870 IP PRO sowie Yealink- und Snom-Tischtelefone richten sich per
+Auto-Provisioning selbst ein, mit Telefonbuch per LDAP und Funktionstasten.
 
 [Anleitung](docs/dect.md)
 
@@ -95,7 +95,8 @@ Telefonbuch per LDAP.
 
 ### 🏠 Home Assistant
 
-Verpasste Anrufe, Notrufe, abgemeldete SIP-Konten und Störungen als Sensoren und Ereignisse, mit
+Verpasste Anrufe, Notrufe, Türklingel, abgemeldete SIP-Konten und Störungen als Sensoren und
+Ereignisse; *Nicht stören* und Zeitsteuerungen schalten, Ansagen und Anrufe auslösen. Mit
 fertigem Blueprint für Benachrichtigungen aufs Handy. Installation über HACS.
 
 [Anleitung](docs/home-assistant.md)
@@ -137,7 +138,10 @@ holen sich ihre Einrichtung selbst.
 - Rufabfolgen als Diagramm, per Drag & Drop bearbeitbar
 - Zeitsteuerung mit Feiertagen je Bundesland
 - Sprachmenüs, Ansagen im Browser aufnehmen oder aus Text sprechen
-- Voicemail per E-Mail und in den Apps, Konferenzräume, Aufzeichnung
+- Voicemail per E-Mail und in den Apps, auch als Text; Konferenzräume, Aufzeichnung
+- Rückfrage, Makeln und Dreierkonferenz in den Apps
+- Handy klingelt mit, Gruppen an- und abmelden, Status aus dem Kalender
+- Durchsage und Gegensprechen
 - Anrufsperren, Gespräche parken, Besetztanzeige
 
 </td>
@@ -150,6 +154,8 @@ holen sich ihre Einrichtung selbst.
 - Zentrale Kalender für alle Apps
 - Messenger: Einzel- und Gruppenchats mit Dateien und Videoanrufen
 - App-Profile: was die Apps zeigen, CRM beim Anruf öffnen
+- Verpasste Gruppenanrufe gemeinsam abarbeiten
+- Fax per E-Mail, ohne Faxgerät
 - Webhooks und Anrufe über die Schnittstelle
 
 </td>
@@ -161,6 +167,8 @@ holen sich ihre Einrichtung selbst.
 - Watchdog mit Selbstheilung und Diagnose
 - Online-Updates, stabil oder Beta
 - Tägliche Sicherung, auch verschlüsselt auf WebDAV oder S3
+- Auswertungen: wann wer anruft und wie viele niemand annimmt
+- Mehrere Zugänge mit Rollen, Selbstbedienung für alle
 - Benachrichtigung bei Notrufen
 - Sperre nach Fehlanmeldungen, TLS/SRTP
 

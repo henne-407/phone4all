@@ -1,11 +1,16 @@
 /**
  * Anrufansicht für Hauptfenster und kleines Anruffenster.
  * Beim Klingeln: Annehmen, Ablehnen, Klingelton aus, Weiterleiten.
- * Im Gespräch: Stumm, Halten, Tastatur, Weiterleiten, (Termin), Auflegen.
+ * Im Gespräch: Stumm, Halten, Tastatur, Weiterleiten, Rückfrage, (Termin), Auflegen.
+ * Bei zwei Gesprächen (Rückfrage): Makeln, Verbinden und Dreierkonferenz über die Anlage.
  */
 
 import CallIcon from '@mui/icons-material/Call'
 import CallEndIcon from '@mui/icons-material/CallEnd'
+import CallMergeIcon from '@mui/icons-material/CallMerge'
+import ConsultIcon from '@mui/icons-material/AddIcCall'
+import GroupsIcon from '@mui/icons-material/Groups'
+import DoorIcon from '@mui/icons-material/DoorFront'
 import DialpadIcon from '@mui/icons-material/Dialpad'
 import EventIcon from '@mui/icons-material/EventAvailable'
 import LocalParkingIcon from '@mui/icons-material/LocalParking'
@@ -42,15 +47,34 @@ function statusText(call: CallInfo, now: number): string {
 }
 
 export function CallPanel({ call, popup = false }: { call: CallInfo; popup?: boolean }) {
-  const { state } = useApp()
+  const { state, toast } = useApp()
   const now = useTick(call.state === 'established')
   const [keypad, setKeypad] = useState(false)
   const [digits, setDigits] = useState('')
   const [silenced, setSilenced] = useState(false)
   const [transferAnchor, setTransferAnchor] = useState<HTMLElement | null>(null)
+  const [consultAnchor, setConsultAnchor] = useState<HTMLElement | null>(null)
+  const [joining, setJoining] = useState(false)
   const ringing = call.state === 'incoming'
   const established = call.state === 'established'
   const otherCall = ringing && activeCall(state.calls, call.id) !== null
+  // Rückfrage läuft: zwei Gespräche, die die Anlage zusammenführen kann
+  const pbx = Boolean(state.settings.provisioning.pbx)
+  const canJoin = pbx && established && state.calls.length === 2 && state.calls.every((c) => c.state === 'established')
+
+  const door = state.settings.provisioning.doors?.find((d) => d.number === call.number)
+  const openDoor = (dtmf: string): void => {
+    // Tasten nacheinander senden, sonst verschluckt die Gegenstelle welche
+    ;[...dtmf].forEach((d, i) => setTimeout(() => void api.sendDtmf(d, call.id), i * 250))
+    toast('Tür wird geöffnet')
+  }
+
+  const join = async (mode: 'transfer' | 'conference'): Promise<void> => {
+    setJoining(true)
+    const r = await api.pbxJoinCalls(mode)
+    setJoining(false)
+    if (!r.ok) toast(r.error)
+  }
 
   useEffect(() => {
     setKeypad(false)
@@ -113,6 +137,16 @@ export function CallPanel({ call, popup = false }: { call: CallInfo; popup?: boo
               {c.held ? 'Wechseln zu' : 'Läuft:'} {c.name || c.number}
             </Button>
           ))}
+      {canJoin && (
+        <Stack direction="row" sx={{ gap: 1, mt: 1 }}>
+          <Button size="small" variant="contained" startIcon={<CallMergeIcon />} disabled={joining} onClick={() => void join('transfer')}>
+            Verbinden
+          </Button>
+          <Button size="small" variant="contained" startIcon={<GroupsIcon />} disabled={joining} onClick={() => void join('conference')}>
+            Konferenz
+          </Button>
+        </Stack>
+      )}
 
       {ringing ? (
         <>
@@ -193,6 +227,15 @@ export function CallPanel({ call, popup = false }: { call: CallInfo; popup?: boo
               disabled={!established}
               onClick={(e) => setTransferAnchor(e.currentTarget)}
             />
+            {door && <CallToggle icon={<DoorIcon />} label="Tür öffnen" disabled={!established} onClick={() => openDoor(door.dtmf)} />}
+            {pbx && (
+              <CallToggle
+                icon={<ConsultIcon />}
+                label="Rückfrage"
+                disabled={!established || state.calls.length > 1}
+                onClick={(e) => setConsultAnchor(e.currentTarget)}
+              />
+            )}
             {state.settings.provisioning.parking && (
               <CallToggle icon={<LocalParkingIcon />} label="Parken" disabled={!established} onClick={() => void api.park(call.id)} />
             )}
@@ -217,6 +260,13 @@ export function CallPanel({ call, popup = false }: { call: CallInfo; popup?: boo
         anchor={transferAnchor}
         onClose={() => setTransferAnchor(null)}
         onTransfer={(target) => void api.transfer(call.id, target)}
+      />
+      <TransferPopover
+        anchor={consultAnchor}
+        onClose={() => setConsultAnchor(null)}
+        onTransfer={(target) => void api.consult(call.id, target)}
+        title="Rückfrage bei"
+        icon={<ConsultIcon />}
       />
     </Stack>
   )

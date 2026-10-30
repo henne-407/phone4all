@@ -15,9 +15,37 @@ export interface RuntimeState {
   dnd: Record<string, boolean>
   /** Sofort-Weiterleitung je Nebenstelle (Ziel wie gewählt) */
   cfu: Record<string, string>
+  /** Aus Gruppen abgemeldet: Nebenstelle → IDs der Gruppen */
+  away: Record<string, string[]>
 }
 
-export const EMPTY_STATE: RuntimeState = { dnd: {}, cfu: {} }
+export const EMPTY_STATE: RuntimeState = { dnd: {}, cfu: {}, away: {} }
+
+/** Termin, der gerade in einem zentralen Kalender läuft */
+export interface CalendarHit {
+  summary: string
+  /** Ende in ms */
+  end: number
+  allDay: boolean
+}
+
+/**
+ * Laufende Termine der zentralen Kalender (setzt der Verwaltungsdienst; in Tests leer).
+ * keyword: alle Wörter müssen im Titel vorkommen, leer = jeder Termin.
+ */
+export const calendarStatus = {
+  find: (_calendar: string, _keyword: string, _now: Date): CalendarHit | null => null,
+}
+
+/** Enthält der Titel alle Wörter des Stichworts (ohne Groß-/Kleinschreibung)? */
+export function keywordMatch(summary: string, keyword: string): boolean {
+  const title = summary.toLocaleLowerCase('de')
+  return keyword
+    .toLocaleLowerCase('de')
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((w) => title.includes(w))
+}
 
 /** Felder dürfen kein Trennzeichen und keine Zeichen enthalten, die den Wählplan stören. */
 function field(s: string): string {
@@ -33,7 +61,7 @@ function significant(e164: string, country: string): string {
   return e164.startsWith('+' + country) ? e164.slice(1 + country.length) : e164.replace(/^\+/, '')
 }
 
-function sameNumber(a: string, b: string, cfg: PbxConfig): boolean {
+export function sameNumber(a: string, b: string, cfg: PbxConfig): boolean {
   const cc = cfg.system.country_code
   const ea = toE164(a, cc, cfg.system.area_code)
   const eb = toE164(b, cc, cfg.system.area_code)
@@ -185,10 +213,15 @@ export function forwardDenied(cfg: PbxConfig, num: string, raw: string, need: Ap
 
 /** Greift die Regel gerade? */
 export function ruleActive(cfg: PbxConfig, state: RuntimeState, num: string, rule: ForwardRule, now = new Date()): boolean {
-  if (!rule.enabled || !cleanNumber(rule.target) || cleanNumber(rule.target) === num) return false
+  if (!rule.enabled) return false
+  if (rule.action === 'dnd') {
+    if (rule.when === 'dnd') return false
+  } else if (!cleanNumber(rule.target) || cleanNumber(rule.target) === num) return false
   switch (rule.when) {
     case 'dnd':
       return Boolean(state.dnd[num])
+    case 'calendar':
+      return Boolean(rule.calendar && calendarStatus.find(rule.calendar, rule.keyword ?? '', now))
     case 'schedule': {
       const tc = { rules: [{ days: rule.days, from: rule.from, to: rule.to }], holidays: false, closed_dates: [], override: 'auto' as const }
       return closedReason(tc as never, now, cfg.system.state, cfg.system.timezone) === null
@@ -199,7 +232,36 @@ export function ruleActive(cfg: PbxConfig, state: RuntimeState, num: string, rul
       const closed = closedReason(tc, now, cfg.system.state, cfg.system.timezone) !== null
       return closed === (rule.tc_state === 'closed')
     }
+    default:
+      return false
   }
+}
+
+/** Nicht stören: von Hand (*76, App) oder durch eine Regel (Zeitplan, Termin) */
+export function dndActive(cfg: PbxConfig, state: RuntimeState, num: string, now = new Date()): boolean {
+  if (state.dnd[num]) return true
+  const ext = cfg.extensions.find((e) => e.number === num)
+  return Boolean(ext?.forward.rules.some((r) => r.action === 'dnd' && ruleActive(cfg, state, num, r, now)))
+}
+
+/** Laufender Termin, der eine Regel der Nebenstelle auslöst (für die Besetztanzeige) */
+export function calendarNote(cfg: PbxConfig, state: RuntimeState, num: string, now = new Date()): string {
+  const ext = cfg.extensions.find((e) => e.number === num)
+  for (const r of ext?.forward.rules ?? []) {
+    if (r.when !== 'calendar' || !r.calendar || !ruleActive(cfg, state, num, r, now)) continue
+    const hit = calendarStatus.find(r.calendar, r.keyword ?? '', now)
+    if (!hit) continue
+    const tz = cfg.system.timezone
+    const day = (ms: number): string => new Date(ms).toLocaleDateString('de-DE', { timeZone: tz })
+    // Ganztägig: Ende ist exklusiv, also der Tag davor ist der letzte
+    const last = hit.allDay ? hit.end - 86400000 : hit.end
+    const until =
+      !hit.allDay && day(last) === day(now.getTime())
+        ? new Date(last).toLocaleTimeString('de-DE', { timeZone: tz, hour: '2-digit', minute: '2-digit' })
+        : new Date(last).toLocaleDateString('de-DE', { timeZone: tz, day: 'numeric', month: 'numeric' })
+    return `${hit.summary} bis ${until}`
+  }
+  return ''
 }
 
 /** Aktuelles Umleitungsziel: Sofort-Umleitung, sonst die erste greifende Regel. */
@@ -207,7 +269,7 @@ export function activeForward(cfg: PbxConfig, state: RuntimeState, num: string, 
   const cfu = state.cfu[num]
   if (cfu && cleanNumber(cfu) !== num) return cfu
   const ext = cfg.extensions.find((e) => e.number === num)
-  return ext?.forward.rules.find((r) => ruleActive(cfg, state, num, r, now))?.target ?? ''
+  return ext?.forward.rules.find((r) => r.action !== 'dnd' && ruleActive(cfg, state, num, r, now))?.target ?? ''
 }
 
 /** Rechte in der App: für alle Nebenstellen plus die ihrer Gruppen */
@@ -225,19 +287,52 @@ export function extensionPlan(cfg: PbxConfig, state: RuntimeState, num: string, 
   const noanswer = ext.forward.noanswer ? targetForNumber(cfg, ext.forward.noanswer) : vm ? `p4a-vmu^${num}` : ''
   const forward = activeForward(cfg, state, num, now)
   if (forward) return reply('goto', targetForNumber(cfg, forward))
-  if (state.dnd[num]) return reply('goto', busy)
-  return reply('ring', String(ext.ring_seconds || 25), ext.record ? '1' : '0', busy, noanswer)
+  if (dndActive(cfg, state, num, now)) return reply('goto', busy)
+  const mobile = ext.mobile.enabled && cleanNumber(ext.mobile.number) ? '1' : '0'
+  return reply('ring', String(ext.ring_seconds || 25), ext.record ? '1' : '0', busy, noanswer, mobile)
 }
 
-export function isAvailable(state: RuntimeState, num: string, cfg?: PbxConfig): boolean {
-  return !state.dnd[num] && !(cfg ? activeForward(cfg, state, num) : state.cfu[num])
+/** Handy der Nebenstelle klingeln lassen: Verzögerung und Nummer, ob mit Bestätigung */
+export function mobilePlan(cfg: PbxConfig, num: string): string {
+  const ext = cfg.extensions.find((e) => e.number === num)
+  const n = cleanNumber(ext?.mobile.number ?? '')
+  if (!ext?.mobile.enabled || !n) return ''
+  return reply(String(Math.min(60, Math.max(0, ext.mobile.delay || 0))), n, ext.mobile.confirm ? '1' : '0')
+}
+
+/** Aus der Gruppe abgemeldet? */
+export function isAway(state: RuntimeState, num: string, gid: string): boolean {
+  return Boolean(state.away[num]?.includes(gid))
+}
+
+/** An- oder abmelden; nur Mitglieder der Gruppe */
+export function setAway(cfg: PbxConfig, state: RuntimeState, num: string, gid: string, away: boolean): boolean {
+  const g = cfg.groups.find((x) => x.id === gid)
+  if (!g?.members.includes(num)) return false
+  const list = (state.away[num] ?? []).filter((id) => id !== gid)
+  if (away) list.push(gid)
+  if (list.length) state.away[num] = list
+  else delete state.away[num]
+  return true
+}
+
+/** Gruppen, in denen die Nebenstelle Mitglied ist, mit Anmeldestand */
+export function memberGroups(cfg: PbxConfig, state: RuntimeState, num: string): { id: string; number: string; name: string; active: boolean }[] {
+  return cfg.groups
+    .filter((g) => g.members.includes(num))
+    .map((g) => ({ id: g.id, number: g.number, name: g.name, active: !isAway(state, num, g.id) }))
+}
+
+export function isAvailable(state: RuntimeState, num: string, cfg?: PbxConfig, gid = ''): boolean {
+  if (gid && isAway(state, num, gid)) return false
+  return !(cfg ? dndActive(cfg, state, num) : state.dnd[num]) && !(cfg ? activeForward(cfg, state, num) : state.cfu[num])
 }
 
 export function groupPlan(cfg: PbxConfig, state: RuntimeState, id: string, callerName: string, soundDir: string): string {
   const g = cfg.groups.find((x) => x.id === id)
   if (!g) return ''
   // Wie im Warteschlangen-Modus (p4a-qmember): Wer nicht stören will oder umgeleitet hat, klingelt nicht mit
-  const members = g.members.filter((n) => cfg.extensions.some((e) => e.number === n) && isAvailable(state, n, cfg))
+  const members = g.members.filter((n) => cfg.extensions.some((e) => e.number === n) && isAvailable(state, n, cfg, g.id))
   const ann = cfg.announcements.find((a) => a.id === g.announcement)
   return reply(
     g.mode,
@@ -248,6 +343,24 @@ export function groupPlan(cfg: PbxConfig, state: RuntimeState, id: string, calle
     ann?.file ? `${soundDir}/${ann.file}` : '',
     String(g.member_seconds || 15),
   )
+}
+
+/** Durchsage (page: Gruppe oder alle) und Gegensprechen (intercom: eine Nebenstelle): wer angesprochen wird, '' = nicht erlaubt */
+export function pagePlan(cfg: PbxConfig, state: RuntimeState, ext: string, target: string, mode: string, now = new Date()): string {
+  if (!cfg.extensions.some((e) => e.number === ext) || !appPermissions(cfg, ext).includes('intercom')) return ''
+  const reachable = (n: string): boolean => n !== ext && cfg.extensions.some((e) => e.number === n) && !dndActive(cfg, state, n, now)
+  if (mode === 'intercom') return reachable(target) ? target : ''
+  if (mode !== 'page') return ''
+  if (!target) return cfg.extensions.map((e) => e.number).filter(reachable).join('&')
+  const g = cfg.groups.find((x) => x.number && x.number === target)
+  return g ? g.members.filter((n) => reachable(n) && !isAway(state, n, g.id)).join('&') : ''
+}
+
+/** Wer bei einer Ansage über die Schnittstelle klingelt: Nebenstelle oder angemeldete Mitglieder einer Gruppe */
+export function ringPlan(cfg: PbxConfig, state: RuntimeState, target: string): string {
+  if (cfg.extensions.some((e) => e.number === target)) return target
+  const g = cfg.groups.find((x) => x.number && x.number === target)
+  return g ? g.members.filter((n) => cfg.extensions.some((e) => e.number === n) && isAvailable(state, n, cfg, g.id)).join('&') : ''
 }
 
 export function timeConditionTarget(cfg: PbxConfig, id: string, now = new Date()): string {
@@ -417,6 +530,14 @@ export function feature(cfg: PbxConfig, state: RuntimeState, ext: string, code: 
       state.cfu[ext] = target
       return { reply: 'on', stateChanged: true }
     }
+    case 'away': {
+      // *45 = alle Gruppen umschalten, *45<Gruppe> = eine; „on“ = angemeldet
+      const groups = memberGroups(cfg, state, ext).filter((g) => !arg || g.number === cleanNumber(arg))
+      if (!groups.length) return { reply: 'error' }
+      const away = groups.some((g) => g.active)
+      for (const g of groups) setAway(cfg, state, ext, g.id, away)
+      return { reply: away ? 'off' : 'on', stateChanged: true }
+    }
     case 'vmother':
       return { reply: appPermissions(cfg, ext).includes('voicemail_other') ? 'on' : 'error' }
     case 'tc': {
@@ -433,4 +554,9 @@ export function feature(cfg: PbxConfig, state: RuntimeState, ext: string, code: 
     default:
       return { reply: 'error' }
   }
+}
+
+/** Name eines Anrufers von außen: Am Namen erkennen die Apps Durchsagen und nehmen von selbst an – von außen nie */
+export function inboundName(name: string): string {
+  return name.replace(/^\W*(durchsage|gegensprechen)\b\W*/i, '')
 }

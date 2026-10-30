@@ -114,6 +114,8 @@ export interface Settings {
   home: { cards: [HomeCard, boolean][]; start_tab: PageName }
   ringtone: string
   mini_call: boolean
+  /** Durchsagen und Gegensprechen der Anlage selbst annehmen */
+  auto_answer_page: boolean
   dnd: boolean
   registered: boolean
   run_in_background: boolean
@@ -146,7 +148,16 @@ export interface Settings {
     crm?: { url: string; auto: boolean } | null
     /** Voicemail der Nebenstelle in der App */
     voicemail?: boolean
+    /** Türsprechstellen (Tür öffnen im Gespräch) */
+    doors?: PbxDoor[]
   }
+}
+
+export interface PbxDoor {
+  number: string
+  name: string
+  /** Tasten zum Öffnen */
+  dtmf: string
 }
 
 /** Zugang für Videoanrufe: SIP über WebSocket, Passwort wie das Konto */
@@ -159,13 +170,18 @@ export interface VideoAccount {
   ice_servers: { urls: string[]; username?: string; credential?: string }[]
 }
 
-export type PbxPermission = 'forward' | 'forward_external' | 'forward_rules' | 'calendar_edit' | 'phonebook_edit' | 'block_numbers'
+export type PbxPermission = 'forward' | 'forward_external' | 'forward_rules' | 'calendar_edit' | 'phonebook_edit' | 'block_numbers' | 'intercom' | 'fax_send'
 
 /** Umleitung, die die Anlage nach Zeit oder Zustand selbst schaltet */
 export interface PbxForwardRule {
   id: string
   enabled: boolean
-  when: 'schedule' | 'timecondition' | 'dnd'
+  when: 'schedule' | 'timecondition' | 'dnd' | 'calendar'
+  /** forward: umleiten an target · dnd: Nicht stören (ab Anlage 0.10) */
+  action?: 'forward' | 'dnd'
+  /** Zentraler Kalender und Stichwort im Termin (when = calendar) */
+  calendar?: string
+  keyword?: string
   days: number[] // 1 = Montag … 7 = Sonntag
   from: string
   to: string
@@ -186,9 +202,46 @@ export interface PbxForward {
   rules: PbxForwardRule[]
   targets: { number: string; name: string; kind: 'extension' | 'group' }[]
   timeconditions: { id: string; name: string }[]
+  /** Zentrale Kalender für Regeln „bei Termin“ (ab Anlage 0.10) */
+  calendars?: { id: string; name: string }[]
+  /** Handy klingelt mit (null = keine Handynummer eingetragen) */
+  mobile?: { enabled: boolean; number: string } | null
 }
 
-export type PbxForwardChange = Partial<Pick<PbxForward, 'cfu' | 'busy' | 'noanswer' | 'rules'>>
+export type PbxForwardChange = Partial<Pick<PbxForward, 'cfu' | 'busy' | 'noanswer' | 'rules'>> & { mobile?: boolean }
+
+/** Gruppe der Anlage, in der die Nebenstelle Mitglied ist */
+export interface PbxGroup {
+  id: string
+  number: string
+  name: string
+  /** angemeldet (klingelt mit) */
+  active: boolean
+}
+
+/** Verpasster Anruf an eine Gruppe (gemeinsame Liste) */
+export interface GroupMissed {
+  id: string
+  group: string
+  group_name: string
+  time: number
+  number: string
+  name: string
+  claimed_by: string
+  done_by: string
+  done_how: '' | 'callback' | 'answered' | 'manual'
+}
+
+/** Gesendetes Fax */
+export interface PbxFax {
+  id: string
+  time: number
+  number: string
+  pages: number
+  status: 'queued' | 'sending' | 'ok' | 'failed'
+  error: string
+  attempts: number
+}
 
 /** Von der Telefonanlage vorgegebene Ansichten (App-Profil) */
 export interface AppPolicy {
@@ -215,6 +268,8 @@ export interface TeamMember {
   dnd: boolean
   /** Umleitung: interne Nummer oder „extern“, leer = keine */
   forward: string
+  /** Hinweis aus dem Kalender, z. B. „Urlaub bis 30.10.“ */
+  note?: string
 }
 
 /** Geparktes Gespräch */
@@ -240,6 +295,9 @@ export interface VoicemailMessage {
   name: string
   /** Sekunden */
   duration: number
+  /** Voicemail als Text (wenn die Anlage es kann) */
+  text?: string
+  transcribing?: boolean
 }
 
 /** Gefundene oder abgefragte Telefonanlage, bevor das Konto übernommen wird. */
@@ -370,6 +428,10 @@ export interface AppState {
   team: { extensions: TeamMember[]; parked: ParkedCall[] } | null
   /** Voicemail der Anlage: neue Nachrichten, version ändert sich bei jeder Änderung (null = keine) */
   voicemail: { unread: number; version: string } | null
+  /** Eigene Gruppen zum An- und Abmelden (null = keine Anlage oder zu alt) */
+  groups: PbxGroup[] | null
+  /** Verpasste Gruppenanrufe: offene, version ändert sich bei jeder Änderung (null = keine Liste) */
+  groupMissed: { open: number; version: string } | null
 }
 
 /** Stand der App-Aktualisierung */

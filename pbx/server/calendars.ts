@@ -8,9 +8,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { loadJson, saveJson } from './files'
-import { holidays } from './holidays'
+import { holidays, localTime } from './holidays'
 import type { CentralCalendar, PbxConfig } from './model'
 import { PATHS } from './paths'
+import { type CalendarHit, keywordMatch } from './routing'
 import { ValidationError } from './store'
 
 /**
@@ -65,7 +66,33 @@ export class CalendarStore {
   /** Ändert sich bei jedem geänderten Termin; die Apps fragen danach. */
   revision = Date.now()
 
+  /** Termine um heute je Kalender, für Regeln nach Kalender (bei jeder Änderung neu) */
+  private recent = new Map<string, { revision: number; day: string; events: CalendarEvent[] }>()
+
   constructor(private cfg: () => PbxConfig) {}
+
+  /** Laufender Termin mit dem Stichwort im Titel (Regeln „bei Termin im Kalender“) */
+  current(id: string, keyword: string, now: Date): CalendarHit | null {
+    const t = now.getTime()
+    const tz = this.cfg().system.timezone
+    const today = localTime(now, tz).date
+    let cached = this.recent.get(id)
+    if (cached?.revision !== this.revision || cached.day !== today) {
+      try {
+        cached = { revision: this.revision, day: today, events: this.events(id, t - 2 * 86400000, t + 2 * 86400000) }
+      } catch {
+        return null
+      }
+      this.recent.set(id, cached)
+    }
+    for (const e of cached.events) {
+      if (!keywordMatch(e.summary, keyword)) continue
+      // Ganztägige Termine nach dem Datum in der Zeitzone der Anlage
+      const running = e.allDay ? e.start <= today && today < e.end : ms(e.start) <= t && t < ms(e.end)
+      if (running) return { summary: e.summary, end: ms(e.end), allDay: e.allDay }
+    }
+    return null
+  }
 
   private calendar(id: string): CentralCalendar {
     const cal = this.cfg().calendars.find((c) => c.id === id)

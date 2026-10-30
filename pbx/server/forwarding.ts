@@ -25,6 +25,10 @@ export interface ForwardInfo {
   /** Interne Ziele zur Auswahl */
   targets: ForwardTarget[]
   timeconditions: { id: string; name: string }[]
+  /** Zentrale Kalender für Regeln „bei Termin“ */
+  calendars: { id: string; name: string }[]
+  /** Handy klingelt mit (null = keine Handynummer eingetragen) */
+  mobile: { enabled: boolean; number: string } | null
 }
 
 export interface ForwardChange {
@@ -32,6 +36,8 @@ export interface ForwardChange {
   busy?: string
   noanswer?: string
   rules?: ForwardRule[]
+  /** Handy klingelt mit: ein/aus (Nummer trägt die Verwaltung ein) */
+  mobile?: boolean
 }
 
 export class ForwardError extends Error {}
@@ -50,6 +56,8 @@ export function forwardInfo(cfg: PbxConfig, state: RuntimeState, ext: Extension,
     rules: ext.forward.rules,
     targets,
     timeconditions: cfg.timeconditions.map((t) => ({ id: t.id, name: t.name })),
+    calendars: cfg.calendars.map((c) => ({ id: c.id, name: c.name })),
+    mobile: ext.mobile.number ? { enabled: ext.mobile.enabled, number: ext.mobile.number } : null,
   }
 }
 
@@ -83,7 +91,16 @@ export function applyRules(cfg: PbxConfig, ext: Extension, change: ForwardChange
       timecondition: String(r.timecondition ?? ''),
       tc_state: r.tc_state === 'open' ? 'open' : 'closed',
       target: cleanNumber(String(r.target ?? '')),
+      action: r.action === 'dnd' ? 'dnd' : 'forward',
+      ...(r.when === 'calendar' ? { calendar: String(r.calendar ?? ''), keyword: String(r.keyword ?? '') } : {}),
     }))
   }
   for (const t of [ext.forward.busy, ext.forward.noanswer, ...ext.forward.rules.map((r) => r.target)]) check(cfg, ext.number, t, 'forward_rules')
+}
+
+/** Handy mitklingeln lassen oder nicht (Recht „Umleitung schalten“) */
+export function applyMobile(cfg: PbxConfig, ext: Extension, enabled: boolean): void {
+  check(cfg, ext.number, '')
+  if (!ext.mobile.number) throw new ForwardError('Für diese Nebenstelle ist keine Handynummer eingetragen.')
+  ext.mobile.enabled = enabled
 }

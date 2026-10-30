@@ -143,6 +143,13 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
       exten('*21', ['Gosub(p4a-feature,s,1(cfu,))', 'Hangup()']),
       exten('_*21X.', ['Gosub(p4a-feature,s,1(cfu,${EXTEN:3}))', 'Hangup()']),
       exten('_*28X', ['Gosub(p4a-feature,s,1(tc,${EXTEN:3}))', 'Hangup()']),
+      // Aus Gruppen ab- und wieder anmelden: *45 alle, *45<Gruppe> eine
+      exten('*45', ['Gosub(p4a-feature,s,1(away,))', 'Hangup()']),
+      exten('_*45X.', ['Gosub(p4a-feature,s,1(away,${EXTEN:3}))', 'Hangup()']),
+      // Gegensprechen (*80<Nebenstelle>) und Durchsage (*81<Gruppe>, *81 an alle)
+      exten('_*80X.', ['Set(PT=${EXTEN:3})', 'Set(PM=intercom)', 'Goto(p4a-page-run,s,1)']),
+      exten('_*81X.', ['Set(PT=${EXTEN:3})', 'Set(PM=page)', 'Goto(p4a-page-run,s,1)']),
+      exten('*81', ['Set(PT=)', 'Set(PM=page)', 'Goto(p4a-page-run,s,1)']),
       exten('_*31X.', ['Set(CALLERID(pres)=prohib)', 'Set(P4A_NUM=${EXTEN:3})', 'Goto(p4a-out,s,1)']),
       exten('*43', ['Answer()', 'Playback(demo-echotest)', 'Echo()', 'Hangup()']),
     ),
@@ -162,6 +169,94 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
         '(off)Playback(beep)',
         'Playback(beep)',
         'Return()',
+      ]),
+    ),
+    // Handy der Nebenstelle (EXTEN) klingelt mit: nach der Verzögerung über das SIP-Konto,
+    // als Umleitung der Nebenstelle (Rechte, Grenzen, angezeigte Nummer wie bei Umleitungen)
+    ctx(
+      'p4a-mobile',
+      exten('_X.', [
+        CURL_TIMEOUT,
+        'Set(R=${CURL(${P4A_API}/mobile?num=${EXTEN})})',
+        'Set(N=${CUT(R,|,2)})',
+        'GotoIf($["${N}" = ""]?end)',
+        'Set(D=${CUT(R,|,1)})',
+        'GotoIf($["${D}" = "0"]?dial)',
+        'Wait(${D})',
+        '(dial)Set(P4A_FWDBY=${EXTEN})',
+        'Set(P4A_NUM=${N})',
+        'Set(P4A_DIALOPTS=${IF($["${CUT(R,|,3)}" = "1"]?U(p4a-confirm^s^1):)})',
+        'Goto(p4a-out,s,1)',
+        '(end)Hangup()',
+      ]),
+    ),
+    // Am Handy erst mit Taste 1 annehmen – sonst nähme die Mailbox des Handys den Anruf an
+    ctx(
+      'p4a-confirm',
+      exten('s', [
+        'Set(TRIES=0)',
+        '(ask)Read(KEY,beep&vm-press&digits/1,1,,1,4)',
+        'GotoIf($["${KEY}" = "1"]?ok)',
+        'Set(TRIES=$[${TRIES} + 1])',
+        'GotoIf($[${TRIES} < 3]?ask)',
+        'Set(GOSUB_RESULT=ABORT)',
+        '(ok)Return()',
+      ]),
+    ),
+    // Durchsage und Gegensprechen: Telefone nehmen von selbst an (Call-Info/Alert-Info)
+    ctx(
+      'p4a-page-run',
+      exten('s', [
+        CURL_TIMEOUT,
+        'Set(R=${CURL(${P4A_API}/page?ext=${P4A_EXT}&target=${URIENCODE(${PT})}&mode=${PM})})',
+        'GotoIf($["${R}" = ""]?deny)',
+        'Set(D=)',
+        'Set(I=1)',
+        '(next)Set(M=${CUT(R,&,${I})})',
+        'GotoIf($["${M}" = ""]?page)',
+        contacts('M', app),
+        'Set(I=$[${I} + 1])',
+        'GotoIf($["${C}" = ""]?next)',
+        'Set(D=${D}&${C})',
+        'Goto(next)',
+        '(page)GotoIf($["${D}" = ""]?deny)',
+        // Am Namen erkennen die Apps Durchsagen und nehmen sie selbst an (nicht jede wertet Call-Info aus)
+        'Set(CALLERID(name)=${IF($["${PM}" = "intercom"]?Gegensprechen:Durchsage)} ${CALLERID(name)})',
+        'Page(${D:1},${IF($["${PM}" = "intercom"]?d:)}isb(p4a-autoanswer^s^1),20)',
+        'Hangup()',
+        '(deny)Answer()',
+        'Playback(pbx-invalid)',
+        'Hangup()',
+      ]),
+    ),
+    ctx(
+      'p4a-autoanswer',
+      exten('s', [
+        'Set(PJSIP_HEADER(add,Call-Info)=<sip:phone4all>\\;answer-after=0)',
+        'Set(PJSIP_HEADER(add,Alert-Info)=<http://phone4all/autoanswer>\\;info=alert-autoanswer\\;delay=0)',
+        'Return()',
+      ]),
+    ),
+    // Rückfrage zur Dreierkonferenz zusammenführen (/provision/<token>/calls/join)
+    ctx('p4a-join', exten('_X.', ['Answer()', 'ConfBridge(p4a-3way-${EXTEN})', 'Hangup()'])),
+    // Telefone einer Nebenstelle oder Gruppe klingeln lassen (Ansagen über die Schnittstelle)
+    ctx(
+      'p4a-ring',
+      exten('_X.', [
+        CURL_TIMEOUT,
+        'Set(R=${CURL(${P4A_API}/ring?target=${EXTEN})})',
+        'Set(D=)',
+        'Set(I=1)',
+        '(next)Set(M=${CUT(R,&,${I})})',
+        'GotoIf($["${M}" = ""]?dial)',
+        contacts('M', app),
+        'Set(I=$[${I} + 1])',
+        'GotoIf($["${C}" = ""]?next)',
+        'Set(D=${D}&${C})',
+        'Goto(next)',
+        '(dial)GotoIf($["${D}" = ""]?end)',
+        'Dial(${D:1},30)',
+        '(end)Hangup()',
       ]),
     ),
     ctx(
@@ -235,9 +330,16 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
         'Set(REC=${CUT(R,|,3)})',
         'Set(BUSY=${CUT(R,|,4)})',
         'Set(NOANS=${CUT(R,|,5)})',
+        'Set(MOB=${CUT(R,|,6)})',
         'Set(RT=${IF($["${RT}" = ""]?30:${RT})})',
         contacts('P4A_TARGET', app),
-        'GotoIf($["${C}" = ""]?noans)',
+        // Handy klingelt mit (über das SIP-Konto, siehe p4a-mobile)
+        'GotoIf($["${MOB}" != "1"]?nomob)',
+        'GotoIf($["${C}" = ""]?mobonly)',
+        'Set(C=${C}&Local/${P4A_TARGET}@p4a-mobile)',
+        'Goto(nomob)',
+        '(mobonly)Set(C=Local/${P4A_TARGET}@p4a-mobile)',
+        '(nomob)GotoIf($["${C}" = ""]?noans)',
         'Set(__PICKUPMARK=${P4A_TARGET})',
         'GotoIf($["${REC}" != "1"]?dial)',
         'Set(CDR(recordingfile)=${LINKEDID}-${UNIQUEID}.wav)',
@@ -266,6 +368,7 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
         'Set(R=${CURL(${P4A_API}/group?id=${P4A_GID}&name=${URIENCODE(${CALLERID(name)})})})',
         'Set(MODE=${CUT(R,|,1)})',
         'GotoIf($["${MODE}" = ""]?done)',
+        'UserEvent(P4AGroup,Group: ${P4A_GID})',
         'Set(TO=${CUT(R,|,2)})',
         'Set(MEMBERS=${CUT(R,|,3)})',
         'Set(FB=${CUT(R,|,4)})',
@@ -300,7 +403,8 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
         'Dial(${C},${MS},${P4A_DIALOPTS})',
         'GotoIf($["${DIALSTATUS}" = "ANSWER" | "${DIALSTATUS}" = "CANCEL"]?done)',
         'Goto(seqnext)',
-        '(queue)Queue(p4a-${P4A_GID},t,,,${TO})',
+        '(queue)Set(__P4A_QGID=${P4A_GID})',
+        'Queue(p4a-${P4A_GID},t,,,${TO})',
         'GotoIf($["${QUEUESTATUS}" = ""]?done)',
         '(fallback)' + goTo('FB'),
         '(done)Hangup()',
@@ -310,7 +414,7 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
       'p4a-qmember',
       exten('_X.', [
         CURL_TIMEOUT,
-        'GotoIf($["${CURL(${P4A_API}/available?num=${EXTEN})}" = "0"]?off)',
+        'GotoIf($["${CURL(${P4A_API}/available?num=${EXTEN}&gid=${P4A_QGID})}" = "0"]?off)',
         contacts('EXTEN', app),
         'GotoIf($["${C}" = ""]?off)',
         'Dial(${C})',
@@ -360,6 +464,7 @@ export function extensionsConf(cfg: PbxConfig, gen: GenContext): string {
     if (g.number) local.push(exten(g.number, [MARK_TO, `Goto(p4a-group,${g.id},1)`]))
   }
   for (const c of cfg.conferences) local.push(exten(c.number, [MARK_TO, `Goto(p4a-conf,${c.number},1)`]))
+  for (const f of cfg.faxes) if (f.number) local.push(exten(f.number, [MARK_TO, `Goto(p4a-fax,${f.id},1)`]))
   for (const ivr of cfg.ivrs) {
     if (ivr.number) local.push(exten(ivr.number, [MARK_TO, `Goto(p4a-ivr-${ivr.id},s,1)`]))
   }
@@ -410,6 +515,50 @@ export function extensionsConf(cfg: PbxConfig, gen: GenContext): string {
     conf.push(exten(c.number, steps))
   }
   parts.push(ctx('p4a-conf', ...conf))
+
+  // Fax empfangen (als Ton über G.711 oder T.38) und senden; die Anlage macht daraus PDF und E-Mail
+  if (cfg.faxes.length) {
+    const faxDir = `${gen.dirs.spool}/fax`
+    parts.push(
+      ctx(
+        'p4a-fax',
+        ...cfg.faxes.map((f) =>
+          exten(f.id, [
+            'Set(P4A_FAXBOX=${EXTEN})',
+            'Set(CDR(userfield)=fax)',
+            `Set(FAXOPT(localstationid)=${f.station || 'Phone4all'})`,
+            ...(f.header ? [`Set(FAXOPT(headerinfo)=${f.header})`] : []),
+            'Answer()',
+            `Set(P4A_FAXFILE=${faxDir}/in-\${UNIQUEID}.tif)`,
+            'ReceiveFAX(${P4A_FAXFILE},f)',
+            'Hangup()',
+          ]),
+        ),
+        exten('h', [
+          CURL_TIMEOUT,
+          'Set(R=${CURL(${P4A_API}/fax?box=${P4A_FAXBOX}&file=${URIENCODE(${P4A_FAXFILE})}&status=${FAXSTATUS}&error=${URIENCODE(${FAXERROR})}&pages=${FAXPAGES}&remote=${URIENCODE(${REMOTESTATIONID})}&from=${URIENCODE(${CALLERID(num)})})})',
+        ]),
+      ),
+      ctx(
+        'p4a-fax-send',
+        exten('s', [
+          CURL_TIMEOUT,
+          'Set(R=${CURL(${P4A_API}/fax-job?job=${P4A_FAXJOB})})',
+          'Set(P4A_FAXFILE=${CUT(R,|,1)})',
+          'GotoIf($["${P4A_FAXFILE}" = ""]?end)',
+          'Set(FAXOPT(localstationid)=${CUT(R,|,2)})',
+          'Set(FAXOPT(headerinfo)=${CUT(R,|,3)})',
+          'Set(CDR(userfield)=fax)',
+          'SendFAX(${P4A_FAXFILE},f)',
+          '(end)Hangup()',
+        ]),
+        exten('h', [
+          CURL_TIMEOUT,
+          'Set(R=${CURL(${P4A_API}/fax-sent?job=${P4A_FAXJOB}&status=${FAXSTATUS}&error=${URIENCODE(${FAXERROR})}&pages=${FAXPAGES}&remote=${URIENCODE(${REMOTESTATIONID})})})',
+        ]),
+      ),
+    )
+  }
 
   // Videoanrufe aus dem Messenger: Raum-ID wählen, die Anlage prüft die Mitgliedschaft
   if (videoEnabled(cfg)) {

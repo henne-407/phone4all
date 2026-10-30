@@ -7,8 +7,11 @@ import ChatIcon from '@mui/icons-material/Chat'
 import ContactsIcon from '@mui/icons-material/Contacts'
 import DashboardIcon from '@mui/icons-material/Dashboard'
 import DialpadIcon from '@mui/icons-material/Dialpad'
+import FaxIcon from '@mui/icons-material/Fax'
 import GroupsIcon from '@mui/icons-material/Groups'
 import HistoryIcon from '@mui/icons-material/History'
+import InsightsIcon from '@mui/icons-material/Insights'
+import DeskphoneIcon from '@mui/icons-material/LocalPhone'
 import LogoutIcon from '@mui/icons-material/Logout'
 import MenuIcon from '@mui/icons-material/Menu'
 import PersonIcon from '@mui/icons-material/Person'
@@ -20,11 +23,16 @@ import SettingsIcon from '@mui/icons-material/Settings'
 import SettingsPhoneIcon from '@mui/icons-material/SettingsPhone'
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt'
 import {
+  Alert,
   Box,
   Button,
   Card,
   CardContent,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Drawer,
   IconButton,
   List,
@@ -40,7 +48,7 @@ import {
   useTheme,
 } from '@mui/material'
 import { type ReactNode, useEffect, useState } from 'react'
-import { type UpdateInfo, api } from './api'
+import { type SessionUser, type UpdateInfo, api } from './api'
 import Announcements from './pages/Announcements'
 import AppProfiles from './pages/AppProfiles'
 import Blocking from './pages/Blocking'
@@ -49,18 +57,21 @@ import Calls from './pages/Calls'
 import Conferences from './pages/Conferences'
 import Dashboard from './pages/Dashboard'
 import Dect from './pages/Dect'
+import DeskPhones from './pages/DeskPhones'
 import Extensions from './pages/Extensions'
+import Faxes from './pages/Faxes'
 import Flows from './pages/Flows'
 import Groups from './pages/Groups'
 import Ivrs from './pages/Ivrs'
 import Messenger from './pages/Messenger'
 import Outbound from './pages/Outbound'
 import Phonebook from './pages/Phonebook'
+import Stats from './pages/Stats'
 import System from './pages/System'
 import TimeConditions from './pages/TimeConditions'
 import Trunks from './pages/Trunks'
 import { go, useRoute } from './router'
-import { PbxProvider } from './state'
+import { PbxProvider, usePbx } from './state'
 
 interface NavItem {
   key: string
@@ -77,6 +88,7 @@ const NAV: [string, NavItem[]][] = [
     [
       { key: 'extensions', label: 'Nebenstellen', icon: <PersonIcon />, page: <Extensions /> },
       { key: 'groups', label: 'Gruppen', icon: <GroupsIcon />, page: <Groups /> },
+      { key: 'deskphones', label: 'Tischtelefone', icon: <DeskphoneIcon />, page: <DeskPhones /> },
       { key: 'dect', label: 'DECT-Telefone', icon: <SettingsPhoneIcon />, page: <Dect /> },
     ],
   ],
@@ -104,6 +116,7 @@ const NAV: [string, NavItem[]][] = [
       { key: 'calendars', label: 'Kalender', icon: <CalendarMonthIcon />, page: <Calendars /> },
       { key: 'appprofiles', label: 'App-Profile', icon: <PhoneAndroidIcon />, page: <AppProfiles /> },
       { key: 'conferences', label: 'Konferenzräume', icon: <RecordVoiceOverIcon />, page: <Conferences /> },
+      { key: 'faxes', label: 'Fax', icon: <FaxIcon />, page: <Faxes /> },
       { key: 'messenger', label: 'Messenger', icon: <ChatIcon />, page: <Messenger /> },
     ],
   ],
@@ -111,20 +124,66 @@ const NAV: [string, NavItem[]][] = [
     'Auswertung und System',
     [
       { key: 'calls', label: 'Anrufliste', icon: <HistoryIcon />, page: <Calls /> },
+      { key: 'stats', label: 'Auswertungen', icon: <InsightsIcon />, page: <Stats /> },
       { key: 'system', label: 'System', icon: <SettingsIcon />, page: <System /> },
     ],
   ],
 ]
 
 const ITEMS = NAV.flatMap(([, items]) => items)
+
+/** Seiten für „Personen und Anrufe“ (die Anlage prüft die Rechte selbst noch einmal) */
+const OPERATOR_PAGES = new Set(['dashboard', 'extensions', 'groups', 'deskphones', 'dect', 'blocklist', 'phonebook', 'conferences', 'faxes', 'calls', 'stats'])
+
+const ROLE_LABEL: Record<SessionUser['role'], string> = { admin: 'Verwaltung', operator: 'Personen und Anrufe', viewer: 'Nur ansehen' }
+
+/** Eigenes Passwort ändern (für alle Zugänge) */
+function PasswordDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { toast } = usePbx()
+  const [old, setOld] = useState('')
+  const [pw, setPw] = useState('')
+  const [pw2, setPw2] = useState('')
+  const save = (): void => {
+    if (pw !== pw2) return toast('Die Passwörter stimmen nicht überein.', 'error')
+    void api
+      .post('/api/password', { old, password: pw })
+      .then(() => {
+        setOld('')
+        setPw('')
+        setPw2('')
+        toast('Passwort geändert')
+        onClose()
+      })
+      .catch((e: Error) => toast(e.message, 'error'))
+  }
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
+      <DialogTitle>Eigenes Passwort ändern</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ mt: 1 }}>
+          <TextField type="password" label="Bisheriges Passwort" value={old} onChange={(e) => setOld(e.target.value)} autoComplete="current-password" />
+          <TextField type="password" label="Neues Passwort" value={pw} onChange={(e) => setPw(e.target.value)} helperText="Mindestens 10 Zeichen" autoComplete="new-password" />
+          <TextField type="password" label="Wiederholen" value={pw2} onChange={(e) => setPw2(e.target.value)} error={Boolean(pw2) && pw !== pw2} autoComplete="new-password" />
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Abbrechen</Button>
+        <Button variant="contained" disabled={!old || !pw} onClick={save}>
+          Ändern
+        </Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
 const DRAWER = 264
 
-function Login({ name, onLogin }: { name: string; onLogin: () => void }) {
+function Login({ name, users, onLogin }: { name: string; users: boolean; onLogin: () => void }) {
+  const [user, setUser] = useState('admin')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const submit = async (): Promise<void> => {
     try {
-      await api.post('/api/login', { password })
+      await api.post('/api/login', { user, password })
       onLogin()
     } catch (e) {
       setError((e as Error).message)
@@ -148,6 +207,7 @@ function Login({ name, onLogin }: { name: string; onLogin: () => void }) {
               void submit()
             }}
           >
+            {users && <TextField label="Anmeldename" autoComplete="username" value={user} onChange={(e) => setUser(e.target.value)} sx={{ mb: 2 }} fullWidth />}
             <TextField
               type="password"
               label="Passwort"
@@ -171,7 +231,11 @@ function Login({ name, onLogin }: { name: string; onLogin: () => void }) {
 
 function Shell({ onLogout }: { onLogout: () => void }) {
   const route = useRoute()
-  const current = ITEMS.find((x) => x.key === route.page) ?? ITEMS[0]
+  const { user } = usePbx()
+  const [password, setPassword] = useState(false)
+  const allowed = (key: string): boolean => user.role !== 'operator' || OPERATOR_PAGES.has(key)
+  const visible = ITEMS.filter((x) => allowed(x.key))
+  const current = visible.find((x) => x.key === route.page) ?? visible[0]
   const theme = useTheme()
   const wide = useMediaQuery(theme.breakpoints.up('md'))
   const [open, setOpen] = useState(false)
@@ -195,7 +259,9 @@ function Shell({ onLogout }: { onLogout: () => void }) {
         </Box>
       </Stack>
       <Box sx={{ flex: 1, overflowY: 'auto', px: 1.5, pb: 1 }}>
-        {NAV.map(([group, items]) => (
+        {NAV.map(([group, all]) => [group, all.filter((x) => allowed(x.key))] as const)
+          .filter(([, items]) => items.length)
+          .map(([group, items]) => (
           <List
             key={group}
             dense
@@ -232,7 +298,19 @@ function Shell({ onLogout }: { onLogout: () => void }) {
         ))}
       </Box>
       <Box sx={{ p: 1.5, borderTop: 1, borderColor: theme.m3.outlineVariant }}>
-        {update?.available && update.latest && (
+        {user.role !== 'admin' || user.login !== 'admin' ? (
+          <ListItemButton sx={{ borderRadius: 2, mb: 0.5 }} onClick={() => setPassword(true)}>
+            <ListItemIcon sx={{ minWidth: 36 }}>
+              <PersonIcon />
+            </ListItemIcon>
+            <ListItemText
+              primary={user.name || user.login}
+              secondary={`${ROLE_LABEL[user.role]} · Passwort ändern`}
+              slotProps={{ primary: { sx: { fontSize: 14, fontWeight: 600 } }, secondary: { sx: { fontSize: 12 } } }}
+            />
+          </ListItemButton>
+        ) : null}
+        {user.role === 'admin' && update?.available && update.latest && (
           <ListItemButton
             onClick={() => {
               go('system', 'aktualisierung')
@@ -284,16 +362,22 @@ function Shell({ onLogout }: { onLogout: () => void }) {
           </Toolbar>
         )}
         <Box key={current.key} sx={{ p: { xs: 2, md: 4 }, maxWidth: 1280, mx: 'auto', pb: 12 }}>
+          {user.role === 'viewer' && (
+            <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
+              Dieser Zugang darf nur ansehen. Änderungen lehnt die Anlage ab.
+            </Alert>
+          )}
           {current.page}
         </Box>
+        <PasswordDialog open={password} onClose={() => setPassword(false)} />
       </Box>
     </Box>
   )
 }
 
 export default function App() {
-  const [session, setSession] = useState<{ authenticated: boolean; name: string } | null>(null)
-  const check = (): void => void api.get<{ authenticated: boolean; name: string }>('/api/session').then(setSession)
+  const [session, setSession] = useState<{ authenticated: boolean; name: string; users?: boolean } | null>(null)
+  const check = (): void => void api.get<{ authenticated: boolean; name: string; users?: boolean }>('/api/session').then(setSession)
   useEffect(() => {
     check()
     const onLogout = (): void => setSession((s) => (s ? { ...s, authenticated: false } : s))
@@ -306,7 +390,7 @@ export default function App() {
         <CircularProgress />
       </Box>
     )
-  if (!session.authenticated) return <Login name={session.name} onLogin={check} />
+  if (!session.authenticated) return <Login name={session.name} users={Boolean(session.users)} onLogin={check} />
   return (
     <PbxProvider
       fallback={

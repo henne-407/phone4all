@@ -60,6 +60,8 @@ export interface ProvisioningProfile {
   crm: { url: string; auto: boolean } | null
   /** Voicemail in der App unter <url>/voicemail; Besetztanzeige unter <url>/presence */
   voicemail: boolean
+  /** Türsprechstellen: im Gespräch mit number öffnet dtmf die Tür */
+  doors: { number: string; name: string; dtmf: string }[]
   /** Ändert sich mit jeder Änderung am Profil; die App fragt <url>/revision ab */
   revision: string
 }
@@ -189,6 +191,7 @@ export function profile(cfg: PbxConfig, ext: Extension, base: string, ice: IceSe
     parking: cfg.parking.enabled ? { number: cfg.parking.number, slots: parkingNumbers(cfg).slice(1) } : null,
     crm: crm(cfg, ext),
     voicemail: ext.voicemail.enabled,
+    doors: cfg.extensions.filter((e) => e.door.enabled && e.door.dtmf).map((e) => ({ number: e.number, name: e.name, dtmf: e.door.dtmf })),
   }
   const revision = createHash('sha256').update(JSON.stringify(result)).digest('hex').slice(0, 16)
   return { ...result, revision }

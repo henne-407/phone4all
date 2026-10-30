@@ -1,8 +1,10 @@
 import GroupsIcon from '@mui/icons-material/Groups'
-import { Autocomplete, Box, Chip, Stack, TextField, Tooltip, Typography } from '@mui/material'
+import { Autocomplete, Box, Chip, FormControlLabel, Stack, Switch, TextField, Tooltip, Typography } from '@mui/material'
 import type { Group, GroupMode, QueueStrategy } from '../../../server/model'
 import { CollectionPage, Initials, DestinationPicker, FormGrid, FormHeading, Full, NumberField, PermissionChecks, Select, describeDestination } from '../components/common'
+import { api } from '../api'
 import { usePbx } from '../state'
+import { useStatus } from '../useStatus'
 
 const MODES: [GroupMode, string][] = [
   ['all', 'Alle gleichzeitig'],
@@ -67,6 +69,11 @@ function GroupForm({ value, onChange }: { value: Group; onChange: (v: Group) => 
         <Full>
           <FormHeading>Wenn niemand abnimmt</FormHeading>
           <DestinationPicker label="Weiter zu" value={value.fallback} onChange={(d) => set('fallback', d)} />
+          <FormControlLabel
+            sx={{ mt: 1 }}
+            control={<Switch checked={value.missed_list} onChange={(e) => set('missed_list', e.target.checked)} />}
+            label="Verpasste Anrufe als gemeinsame Liste in den Apps (einer übernimmt den Rückruf)"
+          />
         </Full>
         <Full>
           <FormHeading hint="Zusätzlich zu den Rechten aller Nebenstellen (System → Zugang). Gilt für alle Mitglieder in der Phone4All-App.">Rechte der Mitglieder in der App</FormHeading>
@@ -78,7 +85,18 @@ function GroupForm({ value, onChange }: { value: Group; onChange: (v: Group) => 
 }
 
 export default function Groups() {
-  const { config } = usePbx()
+  const { config, toast } = usePbx()
+  const [status, refresh] = useStatus(10000)
+  const away = (n: string, g: Group): boolean => Boolean(status?.away?.[n]?.includes(g.id))
+  const toggle = async (n: string, g: Group): Promise<void> => {
+    try {
+      await api.put(`/api/groups/${g.id}/members/${n}`, { active: away(n, g) })
+      refresh()
+      toast(away(n, g) ? `${n} ist wieder in „${g.name}“ angemeldet` : `${n} ist aus „${g.name}“ abgemeldet`)
+    } catch (e) {
+      toast((e as Error).message, 'error')
+    }
+  }
   return (
     <CollectionPage<Group>
       kind="groups"
@@ -102,7 +120,7 @@ export default function Groups() {
         { label: 'Art', render: (g) => MODES.find(([m]) => m === g.mode)?.[1], hideOnMobile: true },
         {
           label: 'Mitglieder',
-          render: (g) => g.members.map((n) => [n, config.extensions.find((x) => x.number === n)?.name].filter(Boolean).join(' ')).join(', ') || '–',
+          render: (g) => g.members.map((n) => [n, config.extensions.find((x) => x.number === n)?.name, away(n, g) && '(abgemeldet)'].filter(Boolean).join(' ')).join(', ') || '–',
         },
         { label: 'Niemand nimmt ab', render: (g) => describeDestination(g.fallback, config), hideOnMobile: true },
       ]}
@@ -122,9 +140,18 @@ export default function Groups() {
           <Stack direction="row" sx={{ alignItems: 'center', mb: 1.5, pl: 0.5 }}>
             {g.members.map((n) => {
               const e = config.extensions.find((x) => x.number === n)
+              const off = away(n, g)
               return (
-                <Tooltip key={n} title={`${n} ${e?.name ?? ''}`}>
-                  <Box sx={{ ml: -0.75, border: 2, borderColor: 'background.paper', borderRadius: '50%' }}>
+                <Tooltip key={n} title={`${n} ${e?.name ?? ''}${off ? ' – abgemeldet, klicken zum Anmelden' : ' – klicken zum Abmelden'}`}>
+                  <Box
+                    role="button"
+                    aria-label={`${n} ${off ? 'anmelden' : 'abmelden'}`}
+                    onClick={(ev) => {
+                      ev.stopPropagation()
+                      void toggle(n, g)
+                    }}
+                    sx={{ ml: -0.75, border: 2, borderColor: 'background.paper', borderRadius: '50%', cursor: 'pointer', opacity: off ? 0.35 : 1 }}
+                  >
                     <Initials name={e?.name || n} size={30} />
                   </Box>
                 </Tooltip>
@@ -132,6 +159,7 @@ export default function Groups() {
             })}
             <Typography variant="body2" sx={{ ml: 1, color: 'text.secondary' }}>
               {g.members.length ? `${g.members.length} ${g.members.length === 1 ? 'Mitglied' : 'Mitglieder'}` : 'Noch keine Mitglieder'}
+              {g.members.some((n) => away(n, g)) && `, ${g.members.filter((n) => away(n, g)).length} abgemeldet`}
             </Typography>
           </Stack>
           <Typography variant="body2">

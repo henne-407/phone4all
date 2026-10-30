@@ -36,6 +36,7 @@ const LIGHT = {
     conference: '#c5221f',
     announcement: '#9c27b0',
     external: '#1a73e8',
+    fax: '#795548',
     hangup: '#80868b',
   },
 }
@@ -69,6 +70,7 @@ const DARK: typeof LIGHT = {
     conference: '#f2b8b5',
     announcement: '#e3a5ef',
     external: '#8ab4f8',
+    fax: '#bcaaa4',
     hangup: '#9aa0a6',
   },
 }
