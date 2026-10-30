@@ -127,7 +127,9 @@ export default function Flows() {
             <Card key={t.id} sx={{ bgcolor: 'background.default' }}>
               <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
                 <Typography variant="h6" sx={{ mb: 0.5 }}>
+                  {/* Zwei Konten können gleich heißen – die Nummern machen die Karte eindeutig */}
                   Alle übrigen Anrufe über {t.name}
+                  {t.numbers.length > 0 && ` (${t.numbers.join(', ')})`}
                 </Typography>
                 <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
                   Gilt für Nummern ohne eigene Regel. Ändern in den Einstellungen des SIP-Kontos.

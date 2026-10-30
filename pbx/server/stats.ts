@@ -80,7 +80,8 @@ export function computeStats(cfg: PbxConfig, calls: CallRecord[], queueLog: Queu
     const d = new Date(cdrMs(c.start))
     if (c.direction === 'out') {
       totals.outbound++
-      const e = exts.get(c.from)
+      // Bei Anrufen nach außen ist from schon die Rufnummer der Anlage, die Nebenstelle steht in ext
+      const e = exts.get(c.ext || c.from)
       if (e) {
         e.outbound++
         e.talk += c.duration

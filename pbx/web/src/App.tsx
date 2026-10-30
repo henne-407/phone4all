@@ -261,7 +261,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
       <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5, px: 2.5, py: 1.5 }}>
         <Box component="img" src="/icon.svg" alt="" sx={{ width: 32, height: 32 }} />
         <Box>
-          <Typography sx={{ fontWeight: 700, fontSize: 17, lineHeight: 1.2 }}>Phone4all</Typography>
+          <Typography sx={{ fontWeight: 700, fontSize: 17, lineHeight: 1.2 }}>Phone4All</Typography>
           <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             Telefonanlage
           </Typography>

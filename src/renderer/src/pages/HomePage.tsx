@@ -94,7 +94,7 @@ function HomeCardBox({
 }) {
   const [title, icon] = CARDS[card]
   return (
-    <Card sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.25, minHeight: 0, flex: grow ? 1 : 'none' }}>
+    <Card sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.25, flex: grow ? 1 : 'none' }}>
       <Stack direction="row" sx={{ alignItems: 'center', gap: 1.25 }}>
         <Box sx={{ color: 'primary.main', display: 'flex' }}>{icon}</Box>
         <Typography variant="subtitle1" sx={{ flex: 1 }}>
@@ -111,10 +111,14 @@ function HomeCardBox({
   )
 }
 
-/** Liste in einer Karte; im Füllmodus scrollt sie innerhalb der Karte. */
+/**
+ * Liste in einer Karte; im Füllmodus scrollt sie innerhalb der Karte. contain: size sorgt dafür,
+ * dass die lange Liste nicht die Mindesthöhe bestimmt – die Karte bleibt mindestens 120 px hoch,
+ * und reicht das Fenster nicht, scrollt die ganze Startseite statt Karten abzuschneiden.
+ */
 function CardList({ fill, children }: { fill: boolean; children: ReactNode }) {
   return (
-    <Box sx={{ overflowY: fill ? 'auto' : 'visible', minHeight: fill ? 120 : 0, flex: fill ? 1 : 'none', mx: -1 }}>
+    <Box sx={{ overflowY: fill ? 'auto' : 'visible', minHeight: fill ? 120 : 0, flex: fill ? 1 : 'none', contain: fill ? 'size' : 'none', mx: -1 }}>
       <List disablePadding dense>
         {children}
       </List>
@@ -532,10 +536,10 @@ export function HomePage({ columns }: { columns: number }) {
   }
 
   return (
-    <Box sx={{ flex: 1, minHeight: 0, overflowY: fill ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column' }}>
-      <Box sx={{ display: 'grid', gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))`, gap: 2, px: 2, pt: 0.75, flex: fill ? 1 : 'none', minHeight: 0, maxWidth: 1800, width: '100%', mx: 'auto', boxSizing: 'border-box' }}>
+    <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))`, gap: 2, px: 2, pt: 0.75, flex: fill ? 1 : 'none', maxWidth: 1800, width: '100%', mx: 'auto', boxSizing: 'border-box' }}>
         {placed.map((column, i) => (
-          <Stack key={i} sx={{ gap: 2, minHeight: 0 }}>
+          <Stack key={i} sx={{ gap: 2 }}>
             {column.map((key) => render(key, column))}
           </Stack>
         ))}

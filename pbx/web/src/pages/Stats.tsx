@@ -180,7 +180,7 @@ export default function Stats() {
   return (
     <Box>
       <PageHeader
-        overline="Auswertung"
+        overline="Auswertung und System"
         title="Auswertungen"
         description="Wann die meisten anrufen, wie viele Anrufe niemand annimmt und wer wie viel telefoniert. Grundlage ist die Anrufliste der Anlage."
         action={
@@ -190,8 +190,8 @@ export default function Stats() {
         }
       />
       <Stack direction="row" sx={{ gap: 2, flexWrap: 'wrap', alignItems: 'center', mb: 3 }}>
-        <TextField type="date" size="small" label="Von" value={from} onChange={(e) => setFrom(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
-        <TextField type="date" size="small" label="Bis" value={to} onChange={(e) => setTo(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
+        <TextField type="date" size="small" label="Von" sx={{ width: 180 }} value={from} onChange={(e) => setFrom(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
+        <TextField type="date" size="small" label="Bis" sx={{ width: 180 }} value={to} onChange={(e) => setTo(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
         <Stack direction="row" sx={{ gap: 1 }}>
           <Button size="small" onClick={() => preset(7)}>
             7 Tage

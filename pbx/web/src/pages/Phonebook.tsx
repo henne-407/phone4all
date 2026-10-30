@@ -61,7 +61,7 @@ function Ldap() {
         <FormControlLabel control={<Switch checked={draft.enabled} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} />} label="LDAP-Telefonbuch einschalten" />
         {draft.enabled && (
           <Stack sx={{ gap: 2, mt: 2 }}>
-            <FormGrid columns={3}>
+            <FormGrid>
               <NumberField label="Port" value={draft.port} min={1} onChange={(port) => setDraft({ ...draft, port })} helperText="Standard 389" />
               <TextField
                 label="Kennwort (optional)"
@@ -100,7 +100,7 @@ export default function Phonebook() {
       <CollectionPage<PhonebookEntry>
         kind="phonebook"
         overline="Zusammenarbeit"
-        title="Zentrale Kontakte"
+        title="Kontakte"
         singular="Kontakt"
         description="Das gemeinsame Telefonbuch: Die Anlage zeigt bei Anrufen den Namen, und alle Phone4All-Apps übernehmen die Kontakte automatisch – Änderungen hier kommen innerhalb von zwei Minuten an."
         columns={[

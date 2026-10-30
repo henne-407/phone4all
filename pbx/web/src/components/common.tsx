@@ -40,7 +40,7 @@ import {
   useMediaQuery,
   useTheme,
 } from '@mui/material'
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { Fragment, type ReactNode, useEffect, useMemo, useState } from 'react'
 import { APP_PERMISSIONS, type AppPermission, type CollectionName, DESTINATION_LABELS, type Destination, type DestinationType, blankItem } from '../../../server/model'
 import { usages } from '../../../server/references'
 import { takeEditRequest } from '../router'
@@ -51,7 +51,7 @@ export function PageHeader({ title, description, action, overline }: { title: st
     <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ alignItems: { sm: 'flex-end' }, mb: 3, gap: 2 }}>
       <Box sx={{ flex: 1 }}>
         {overline && (
-          <Typography variant="overline" sx={{ color: 'primary.main', display: 'block', lineHeight: 1.6 }}>
+          <Typography variant="overline" sx={{ color: 'primary.main', display: { xs: 'none', sm: 'block' }, lineHeight: 1.6 }}>
             {overline}
           </Typography>
         )}
@@ -509,6 +509,30 @@ export interface Column<T> {
   hideOnMobile?: boolean
 }
 
+/** Karte aus den Tabellenspalten für Seiten ohne eigene Karte: erste Spalte als Titel, der Rest als Angaben */
+function ColumnCard<T>({ item, columns }: { item: T; columns: Column<T>[] }) {
+  const [head, ...rest] = columns
+  return (
+    <Box>
+      <Typography variant="h6" component="div" noWrap sx={{ mb: 1 }}>
+        {head.render(item)}
+      </Typography>
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', columnGap: 2, rowGap: 0.5 }}>
+        {rest.map((c) => (
+          <Fragment key={c.label}>
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              {c.label}
+            </Typography>
+            <Typography variant="body2" component="div" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+              {c.render(item)}
+            </Typography>
+          </Fragment>
+        ))}
+      </Box>
+    </Box>
+  )
+}
+
 /**
  * Seite mit allen Einträgen einer Liste: als Tabelle (columns) oder als Karten (card),
  * „Anlegen“-Knopf und Bearbeiten-Dialog. Gibt es beides, lässt sich die Ansicht umschalten.
@@ -553,9 +577,11 @@ export function CollectionPage<T extends { id: string }>({
   const editor = useEditor<T>(kind, singular, Form, newItem)
   const theme = useTheme()
   const mobile = useMediaQuery(theme.breakpoints.down('sm'))
-  const [mode, setMode] = useViewMode(page ?? kind, card ? 'cards' : 'list')
-  const switchable = Boolean(card && columns)
-  const showCards = card && (!columns || mode === 'cards')
+  // Jede Seite bekommt Karten und Liste: ohne eigene Karte wird sie aus den Spalten gebaut
+  const renderCard = card ?? (columns ? (item: T) => <ColumnCard item={item} columns={columns} /> : undefined)
+  const [mode, setMode] = useViewMode(page ?? kind, 'cards')
+  const switchable = Boolean(renderCard && columns)
+  const showCards = renderCard && (!columns || mode === 'cards')
 
   useEffect(() => {
     const id = takeEditRequest(page ?? kind)
@@ -578,13 +604,13 @@ export function CollectionPage<T extends { id: string }>({
         }
       />
     )
-  } else if (card && showCards) {
+  } else if (renderCard && showCards) {
     list = (
       <CardGrid>
         {items.map((item) => (
           <Card key={item.id} sx={{ display: 'flex', flexDirection: 'column' }}>
             <CardActionArea onClick={() => editor.openItem(item.id)} sx={{ flex: 1, alignItems: 'stretch', display: 'flex', flexDirection: 'column' }}>
-              <CardContent sx={{ flex: 1, width: '100%' }}>{card(item)}</CardContent>
+              <CardContent sx={{ flex: 1, width: '100%' }}>{renderCard(item)}</CardContent>
             </CardActionArea>
             {(() => {
               const actions = extraActions?.(item)

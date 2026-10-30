@@ -20,8 +20,15 @@ const STATUS: Record<CallRecord['status'], [string, 'success' | 'error' | 'warni
   blocked: ['Gesperrt', 'default'],
 }
 
+/** Nach außen ist „verpasst“ falsch: dort hat niemand abgenommen, verpasst hat es keiner von uns */
+function status(c: CallRecord): [string, 'success' | 'error' | 'warning' | 'default'] {
+  if (c.direction === 'out' && c.status === 'missed') return ['Nicht erreicht', 'default']
+  return STATUS[c.status]
+}
+
 function icon(c: CallRecord) {
   if (c.status === 'blocked') return <BlockIcon color="disabled" fontSize="small" />
+  if (c.direction === 'out' && c.status !== 'answered') return <CallMadeIcon color="disabled" fontSize="small" />
   if (c.status !== 'answered') return <CallMissedIcon color="error" fontSize="small" />
   if (c.direction === 'in') return <CallReceivedIcon color="primary" fontSize="small" />
   if (c.direction === 'out') return <CallMadeIcon color="primary" fontSize="small" />
@@ -275,7 +282,7 @@ export default function Calls() {
   const current = tabs.some(([t]) => t === tab) ? tab : 'all'
   return (
     <Box>
-      <PageHeader overline="Auswertung" title="Anrufliste" description="Alle Gespräche der Anlage, neueste zuerst. Aufnahmen lassen sich hier anhören." />
+      <PageHeader overline="Auswertung und System" title="Anrufliste" description="Alle Gespräche der Anlage, neueste zuerst. Aufnahmen lassen sich hier anhören." />
       {tabs.length > 1 && (
         <Tabs value={current} onChange={(_e, v: CallsTab) => setTab(v)} variant="scrollable" sx={{ mb: 2 }}>
           {tabs.map(([t, label]) => (
@@ -335,14 +342,14 @@ function AllCalls() {
                       c.from
                     )}
                   </TableCell>
-                  <TableCell>{c.to}</TableCell>
+                  <TableCell>{c.to || '–'}</TableCell>
                   <TableCell>{c.answeredBy}</TableCell>
                   <TableCell>{c.status === 'answered' ? formatDuration(c.duration) : ''}</TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                    <Chip size="small" color={STATUS[c.status][1]} variant="outlined" label={STATUS[c.status][0]} />
+                    <Chip size="small" color={status(c)[1]} variant="outlined" label={status(c)[0]} />
                     {canBlock(c) && !blocked.has(digits(c.from)) && (
                       <Tooltip title="Nummer sperren">
-                        <IconButton size="small" sx={{ ml: 0.5 }} onClick={() => setBlock(c)}>
+                        <IconButton size="small" sx={{ ml: 0.5, my: -0.5 }} onClick={() => setBlock(c)}>
                           <BlockIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
