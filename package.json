@@ -1,6 +1,6 @@
 {
   "name": "sip-telefon",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Softphone für SIP-Telefonanlagen mit Kontakten, Kalender und Anrufverlauf",
   "main": "./out/main/index.js",
   "scripts": {
