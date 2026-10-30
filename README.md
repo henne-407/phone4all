@@ -143,6 +143,9 @@ holen sich ihre Einrichtung selbst.
 - Handy klingelt mit, Gruppen an- und abmelden, Status aus dem Kalender
 - Durchsage und Gegensprechen
 - Anrufsperren, Gespräche parken, Besetztanzeige
+- Chef und Sekretariat, Rückruf bei besetzt und statt Warteschleife
+- Erinnerungsanrufe, Mithören und Aufschalten, Klingelton je Herkunft
+- KI-Telefonassistent und Gesprächszusammenfassungen (eigenes oder externes Sprachmodell)
 
 </td>
 <td width="50%" valign="top">
@@ -150,9 +153,10 @@ holen sich ihre Einrichtung selbst.
 **Anbinden und zusammenarbeiten**
 - Vorlagen für Telekom, Vodafone, Deutsche Glasfaser, 1&1, o2, sipgate, easybell, Placetel, FRITZ!Box
 - Wahlregeln mit Ausweichkonto
-- Zentrales Telefonbuch, auch per LDAP
+- Zentrales Telefonbuch, auch per LDAP; Kontakte und Kalender aus Microsoft 365 und Google
 - Zentrale Kalender für alle Apps
-- Messenger: Einzel- und Gruppenchats mit Dateien und Videoanrufen
+- Messenger: Einzel- und Gruppenchats mit Dateien, Videoanrufen und Bildschirm teilen
+- SMS senden und empfangen (sipgate oder eigener Anbieter)
 - App-Profile: was die Apps zeigen, CRM beim Anruf öffnen
 - Verpasste Gruppenanrufe gemeinsam abarbeiten
 - Fax per E-Mail, ohne Faxgerät
@@ -170,6 +174,7 @@ holen sich ihre Einrichtung selbst.
 - Auswertungen: wann wer anruft und wie viele niemand annimmt
 - Mehrere Zugänge mit Rollen, Selbstbedienung für alle
 - Benachrichtigung bei Notrufen
+- Wallboard für Warteschlangen, Messwerte für Prometheus, Syslog
 - Sperre nach Fehlanmeldungen, TLS/SRTP
 
 </td>

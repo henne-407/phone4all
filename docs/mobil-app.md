@@ -53,7 +53,12 @@ Minuten nach Änderungen, solange sie geöffnet ist.
 - Karte *Kollegen*: wer frei ist, telefoniert oder umgeleitet ist, Status aus dem Kalender,
   geparkte Gespräche mit *Übernehmen*
 - Karte *Erreichbarkeit*: je Gruppe an- und abmelden, *Handy klingelt mit* schalten,
-  verpasste Gruppenanrufe gemeinsam abarbeiten (übernehmen, zurückrufen, erledigt)
+  verpasste Gruppenanrufe gemeinsam abarbeiten (übernehmen, zurückrufen, erledigt),
+  *Sekretariat nimmt an* für Chef und Sekretariat (wie \*83)
+- Bei einem Kollegen, der telefoniert: **Rückruf, wenn frei** (wie \*37)
+- **SMS senden** über die Anlage (Knopf *SMS* auf der Status-Karte, Recht *SMS*)
+- Eingehende Anrufe zeigen, ob sie **intern, von außen oder über eine Gruppe** kommen,
+  und vibrieren unterschiedlich (wenn *Klingelton je Herkunft* auf der Anlage an ist)
 - Im Gespräch: Stumm, Lautsprecher, Halten, Tastentöne, Weiterleiten, Parken,
   **Rückfrage** (halten und jemand anderen anrufen, dann makeln, verbinden oder
   Dreierkonferenz), bei einer Türsprechstelle *Tür öffnen* und – wenn das App-Profil eine
