@@ -157,7 +157,11 @@ def seed(api: Api) -> None:
         'caller': '', 'name_prefix': '', 'destination': {'type': 'extension', 'target': ids['12']},
     }, 'name')
     upsert('outbound', {'name': 'Test: alles über Fake-Carrier', 'prefixes': [], 'trunks': [TRUNK], 'extensions': []}, 'name')
-    api.call('PUT', '/api/debug', {'verbose': True, 'minutes': 240})
+    try:
+        api.call('PUT', '/api/debug', {'verbose': True, 'minutes': 240})
+    except RuntimeError as e:
+        # Ältere Abbilder (vor 0.13) kennen die Fehlersuche noch nicht
+        log(f'Kein ausführliches Log: {e}')
 
 
 def wait_trunk(api: Api, seconds=60) -> None:
