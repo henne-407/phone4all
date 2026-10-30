@@ -4,6 +4,7 @@ import { Menu, app as electronApp, systemPreferences } from 'electron'
 import path from 'node:path'
 import { App } from './app'
 import { isDialLink } from './links'
+import { DEBUG, DEBUG_PORT } from './paths'
 import { LINK_SCHEME } from './provisioning'
 import { setupScreenShare } from './screenShare'
 
@@ -22,6 +23,13 @@ if (process.platform === 'win32') electronApp.setAppUserModelId('de.hpieper.SipT
 // (Anlage nur im LAN) stünde dann 0.0.0.0 im SDP, und Asterisk hielte das für „gehalten“
 // und schickte keinen Ton.
 electronApp.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns')
+
+// Fehlersuche: Chrome DevTools (auch per MCP) verbinden sich mit 127.0.0.1:9222
+if (DEBUG) {
+  electronApp.commandLine.appendSwitch('remote-debugging-port', String(DEBUG_PORT))
+  electronApp.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1')
+  electronApp.commandLine.appendSwitch('enable-logging')
+}
 
 // Nur eine Instanz: ein zweiter Start holt das vorhandene Fenster nach vorn
 if (!electronApp.requestSingleInstanceLock()) {

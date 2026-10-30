@@ -36,6 +36,13 @@ function base(): Record<'config' | 'data' | 'state' | 'runtime', string> {
   }
 }
 
+/**
+ * Fehlersuche: „sip-telefon --diagnose“ oder PHONE4ALL_DEBUG=1. Öffnet Chrome DevTools auf
+ * 127.0.0.1:9222 (PHONE4ALL_DEBUG_PORT) und lässt baresip ausführlich mit SIP-Mitschnitt loggen.
+ */
+export const DEBUG = process.argv.includes('--diagnose') || process.env.PHONE4ALL_DEBUG === '1'
+export const DEBUG_PORT = Number(process.env.PHONE4ALL_DEBUG_PORT) || 9222
+
 export const DIRS = base()
 export const RINGTONE_DIR = path.join(DIRS.data, 'ringtones')
 

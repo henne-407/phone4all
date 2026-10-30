@@ -56,7 +56,7 @@ const OPERATOR_WRITE = [
 ]
 
 /** Nur für Verwaltung, auch lesend (Passwörter, Protokolle, Sicherungen, Zugänge) */
-const ADMIN_READ = [/^\/api\/(export|backups|log|audit|users|offsite|integration\/token|(monitoring|wallboard|sms)\/token)(\/|$)/]
+const ADMIN_READ = [/^\/api\/(export|backups|log|debug|audit|users|offsite|integration\/token|(monitoring|wallboard|sms)\/token)(\/|$)/]
 
 /** Darf diese Rolle die Anfrage stellen? Sonst Fehlertext. */
 /** Enthält SIP-Passwörter oder Einrichtungslinks: nicht für „Nur ansehen“ */

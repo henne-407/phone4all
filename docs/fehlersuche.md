@@ -10,6 +10,24 @@ Erste Anlaufstellen in der Weboberfläche der Anlage:
 In der Desktop-App: *Einstellungen → Diagnose* und das Log der SIP-Engine
 (siehe [Desktop-App → Dateien](desktop-app.md#dateien)).
 
+## Fehler genauer eingrenzen
+
+Unter *System → Diagnose → Fehlersuche* (nur Verwaltung):
+
+- **Ausführliches Log** für eine gewählte Zeit (höchstens 4 Stunden, endet von selbst):
+  alle SIP-Nachrichten und der Ablauf jedes Anrufs in `debug.log`. Danach den Fehler
+  nachstellen und das Log herunterladen.
+- **Mitschnitt** von SIP, TURN und Sprache (RTP) als pcap-Datei für Wireshark,
+  höchstens 10 Minuten.
+- **Diagnose-Paket**: Logs, Zustand von Asterisk und SIP-Konten und die Konfiguration
+  ohne Passwörter als `.tar.gz` – das, was man bei einer Fehlermeldung mitschicken sollte.
+
+Live mitlesen: `docker exec -it phone4all-pbx sngrep`.
+
+Die Desktop-App mit `sip-telefon --diagnose` starten (oder `PHONE4ALL_DEBUG=1`): baresip
+schreibt dann jede SIP-Nachricht in sein Log, und Chrome DevTools können sich mit
+`http://127.0.0.1:9222` verbinden.
+
 ## Telefonanlage
 
 ### SIP-Konto meldet sich nicht an

@@ -57,7 +57,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       asterisk asterisk-modules asterisk-prompt-de asterisk-core-sounds-en-wav asterisk-moh-opsound-wav \
-      coturn msmtp ca-certificates openssl tzdata tini libtiff-tools ghostscript \
+      coturn msmtp ca-certificates openssl tzdata tini libtiff-tools ghostscript tcpdump sngrep \
  && rm -rf /var/lib/apt/lists/* /etc/asterisk/* /usr/share/doc/*
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=whisper /out/ /opt/whisper/

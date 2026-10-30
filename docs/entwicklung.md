@@ -68,6 +68,12 @@ pytest
 Weitere Hinweise je Teil: [Desktop-App](desktop-app.md#entwicklung),
 [Telefonanlage](../pbx/README.md#entwicklung), [Mobil-App](../mobile/README.md#entwicklung).
 
+## Testumgebung
+
+[`testenv/`](../testenv/README.md) startet eine Test-Anlage mit simuliertem Anbieter und
+spielt echte SIP-Anrufe durch (`podman compose run --rm e2e`). Auf Fedora richtet
+`sudo bash testenv/setup-fedora.sh` dafür einen eigenen Benutzer ohne Administratorrechte ein.
+
 ## Code-Stil
 
 - Oberflächen, Meldungen, Kommentare und Commit-Nachrichten auf Deutsch.
@@ -87,6 +93,7 @@ Weitere Hinweise je Teil: [Desktop-App](desktop-app.md#entwicklung),
 | `mobile.yml` | Änderungen in `mobile/`, Tags `mobile-v*` | Tests, Android-APK, unsignierte iOS-IPA; Release bei Tag |
 | `release.yml` | neue Version in einer `package.json` auf `main` | setzt die fehlenden Tags und startet die Workflows darauf |
 | `homeassistant.yml` | Änderungen an Integration, Tests, Blueprint | pytest, HACS- und hassfest-Prüfung |
+| `e2e.yml` | Änderungen in `pbx/`, `src/`, `testenv/` | echte Anrufe gegen die [Testumgebung](../testenv/README.md); Logs, pcap und Diagnose-Paket als Artefakt |
 
 ## Releases
 
