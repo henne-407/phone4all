@@ -4,7 +4,7 @@
 # Emulation (arm64) wären die Tests langsam und liefen in Zeitlimits
 # Gebaut wird aus dem Hauptordner des Repos (docker build -f pbx/Dockerfile .): Der Web-Client
 # unter /web nutzt die Oberfläche und geteilten Code der App aus src/
-FROM --platform=$BUILDPLATFORM node:24-slim AS build
+FROM --platform=$BUILDPLATFORM node:25-slim AS build
 WORKDIR /src/pbx
 COPY pbx/package.json pbx/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -12,7 +12,7 @@ COPY pbx/ ./
 COPY src/ /src/src/
 RUN npm run typecheck && npm test && npm run build
 
-FROM node:24-slim AS node
+FROM node:25-slim AS node
 
 # Spracherkennung für „Voicemail als Text“ (whisper.cpp). Läuft auf der Bau-Plattform und
 # übersetzt für arm64 mit dem Cross-Compiler – unter Emulation würde das sehr lange dauern.
