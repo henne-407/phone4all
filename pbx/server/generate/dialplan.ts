@@ -281,15 +281,19 @@ function genericContexts(cfg: PbxConfig): string[] {
         'Set(I=1)',
         '(next)Set(M=${CUT(R,&,${I})})',
         'GotoIf($["${M}" = ""]?page)',
-        contacts('M', app),
         'Set(I=$[${I} + 1])',
+        // Wer gerade telefoniert, bekommt keine Durchsage. Nicht über die Option s von Page: die
+        // prüft den Gerätezustand der einzelnen Kontakte (PJSIP/11/sip:…), den es nicht gibt,
+        // und ließ so jedes Telefon aus.
+        'GotoIf(${REGEX("^(INUSE|BUSY|RINGING|RINGINUSE|ONHOLD)$" ${DEVICE_STATE(PJSIP/${M})})}?next)',
+        contacts('M', app),
         'GotoIf($["${C}" = ""]?next)',
         'Set(D=${D}&${C})',
         'Goto(next)',
         '(page)GotoIf($["${D}" = ""]?deny)',
         // Am Namen erkennen die Apps Durchsagen und nehmen sie selbst an (nicht jede wertet Call-Info aus)
         'Set(CALLERID(name)=${IF($["${PM}" = "intercom"]?Gegensprechen:Durchsage)} ${CALLERID(name)})',
-        'Page(${D:1},${IF($["${PM}" = "intercom"]?d:)}isb(p4a-autoanswer^s^1),20)',
+        'Page(${D:1},${IF($["${PM}" = "intercom"]?d:)}ib(p4a-autoanswer^s^1),20)',
         'Hangup()',
         '(deny)Answer()',
         'Playback(pbx-invalid)',

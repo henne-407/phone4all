@@ -37,6 +37,8 @@ describe('Formate', () => {
   it('Dauer und Gesprächszeit', () => {
     expect(formatDuration(83)).toBe('1:23')
     expect(formatDuration(3723)).toBe('1:02:03')
+    // Uhr des Fensters kurz hinter dem Gesprächsbeginn
+    expect(formatDuration(-3)).toBe('0:00')
     expect(formatTalk(59)).toBe('0 Min.')
     expect(formatTalk(3900)).toBe('1 Std. 05 Min.')
   })

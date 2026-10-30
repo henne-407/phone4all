@@ -13,7 +13,7 @@ function EntryForm({ value, onChange }: { value: PhonebookEntry; onChange: (v: P
   const set = <K extends keyof PhonebookEntry>(k: K, v: PhonebookEntry[K]): void => onChange({ ...value, [k]: v })
   return (
     <FormGrid>
-      <TextField label="Name" value={value.name} onChange={(e) => set('name', e.target.value)} autoFocus />
+      <TextField label="Name" value={value.name} onChange={(e) => set('name', e.target.value)} required autoFocus />
       <TextField label="Firma" value={value.company} onChange={(e) => set('company', e.target.value)} />
       <TextField label="Telefon" value={value.phone} onChange={(e) => set('phone', e.target.value)} />
       <TextField label="Mobil" value={value.mobile} onChange={(e) => set('mobile', e.target.value)} />

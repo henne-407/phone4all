@@ -25,6 +25,13 @@ describe('Konfiguration', () => {
     expect(store.config.extensions).toHaveLength(1)
   })
 
+  it('lehnt Kontakte ohne Name oder Nummer ab', () => {
+    expect(() => store.upsert('phonebook', { name: '', phone: '', mobile: '' })).toThrow(/Namen/)
+    expect(() => store.upsert('phonebook', { name: 'Max', phone: ' ', mobile: '' })).toThrow(/Telefon oder Mobil/)
+    expect(store.config.phonebook).toHaveLength(0)
+    expect(store.upsert('phonebook', { name: 'Max', phone: '', mobile: '0170123' }).id).toBeTruthy()
+  })
+
   it('exportiert ohne Passwörter und übernimmt sie beim Import', () => {
     const secret = store.config.extensions[0].secret
     const data = store.exportData(false, false, 'test')

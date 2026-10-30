@@ -36,7 +36,11 @@
   <recv response="180" optional="true" response_txn="invite" next="wait"/>
   <recv response="183" optional="true" response_txn="invite" next="wait"/>
   <recv response="200" rtd="true" rrs="true" response_txn="invite" next="answered">
-    <action><ereg regexp="([0-9]+)" search_in="hdr" header="CSeq:" check_it="true" assign_to="m,cs"/></action>
+    <action>
+      <ereg regexp="([0-9]+)" search_in="hdr" header="CSeq:" check_it="true" assign_to="m,cs"/>
+      <ereg regexp=".*" search_in="hdr" header="To:" check_it="true" assign_to="pto"/>
+      <ereg regexp="&lt;([^&gt;]*)&gt;" search_in="hdr" header="Contact:" check_it="true" assign_to="m2,peer"/>
+    </action>
   </recv>
 
   <label id="auth"/>
@@ -86,16 +90,20 @@
   <recv response="180" optional="true" response_txn="invite"/>
   <recv response="183" optional="true" response_txn="invite"/>
   <recv response="200" rtd="true" rrs="true" response_txn="invite">
-    <action><ereg regexp="([0-9]+)" search_in="hdr" header="CSeq:" check_it="true" assign_to="m,cs"/></action>
+    <action>
+      <ereg regexp="([0-9]+)" search_in="hdr" header="CSeq:" check_it="true" assign_to="m,cs"/>
+      <ereg regexp=".*" search_in="hdr" header="To:" check_it="true" assign_to="pto"/>
+      <ereg regexp="&lt;([^&gt;]*)&gt;" search_in="hdr" header="Contact:" check_it="true" assign_to="m2,peer"/>
+    </action>
   </recv>
 
   <label id="answered"/>
   <send>
     <![CDATA[
-      ACK [next_url] SIP/2.0
+      ACK [$peer] SIP/2.0
       Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
       From: <sip:[from]@[remote_ip]>;tag=[pid]SIPpTag00[call_number]
-      [last_To:]
+      To:[$pto]
       Call-ID: [call_id]
       CSeq: [$cs] ACK
       [routes]
@@ -103,13 +111,43 @@
       Content-Length: 0
     ]]>
   </send>
+  <!-- Die Anlage schickt nach dem Annehmen oft ein re-INVITE (z. B. neuer Name der Gegenstelle) -->
+  <recv request="INVITE" timeout="1500" ontimeout="talk"/>
+  <send>
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Contact: <sip:[from]@[local_ip]:[local_port]>
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=user1 53655765 2353687638 IN IP[local_ip_type] [local_ip]
+      s=-
+      c=IN IP[media_ip_type] [media_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 8 0 101
+      a=rtpmap:8 PCMA/8000
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-16
+      a=sendrecv
+    ]]>
+  </send>
+  <recv request="ACK"/>
+  <label id="talk"/>
+  <!--DTMF-->
   <pause/>
   <send retrans="500">
     <![CDATA[
-      BYE [next_url] SIP/2.0
+      BYE [$peer] SIP/2.0
       Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
       From: <sip:[from]@[remote_ip]>;tag=[pid]SIPpTag00[call_number]
-      [last_To:]
+      To:[$pto]
       Call-ID: [call_id]
       CSeq: 10 BYE
       [routes]
@@ -118,5 +156,5 @@
     ]]>
   </send>
   <recv response="200" crlf="true"/>
-  <Reference variables="m"/>
+  <Reference variables="m,m2"/>
 </scenario>
