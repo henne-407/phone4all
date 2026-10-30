@@ -331,7 +331,7 @@ Geänderte Einstellungen werden erst mit *Anwenden* in der Leiste am unteren Ran
 | Funktionen | Gespräche parken, Benachrichtigung bei Notrufen, Voicemail als Text (siehe oben und unten) |
 | E-Mail | SMTP-Server für Voicemail und Einladungen, Testmail |
 | Sicherheit | Sperre nach Fehlanmeldungen, nie sperren, Nebenstellen nur aus bestimmten Netzen, gesperrte Adressen |
-| Sicherung | Export (mit Passwörtern nur verschlüsselt, mit eigenem Passwort), Import, automatische Sicherungen wiederherstellen, tägliche Sicherung auf WebDAV (Nextcloud, NAS) oder S3, auf Wunsch verschlüsselt |
+| Sicherung | Export (mit Passwörtern nur verschlüsselt, mit eigenem Passwort), Import, automatische Sicherungen wiederherstellen, tägliche Sicherung auf WebDAV (Nextcloud, NAS) oder S3, immer mit eigenem Kennwort verschlüsselt |
 | Aktualisierung | neue Version installieren, Kanal stabil/Beta, automatisch nachts |
 | Zugang | weitere Zugänge mit Rollen, Selbstbedienung, Passwort, Suche der App im lokalen Netz, Rechte aller Nebenstellen in der App (siehe unten) |
 | Fernzugriff | öffentliche HTTPS-Adresse für Mobil-App und Einrichtungslinks ([Anleitung](fernzugriff.md)) |

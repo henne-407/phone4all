@@ -299,7 +299,7 @@ export function Offsite() {
                 type="password"
                 value={o.passphrase}
                 onChange={(e) => d.set({ passphrase: e.target.value })}
-                helperText="Empfohlen: Die Sicherung enthält alle Passwörter der Anlage. Ohne dieses Kennwort lässt sie sich nicht wiederherstellen – gut aufheben!"
+                helperText="Pflicht, mindestens 10 Zeichen: Die Sicherung enthält alle Passwörter der Anlage. Ohne dieses Kennwort lässt sie sich nicht wiederherstellen – gut aufheben!"
               />
             </Full>
           </>
@@ -307,7 +307,7 @@ export function Offsite() {
       </FormGrid>
       {o.enabled && !o.passphrase && (
         <Alert severity="warning" variant="outlined" sx={{ mb: 2 }}>
-          Ohne Kennwort liegen die Passwörter der SIP-Konten und Nebenstellen lesbar auf dem fremden Speicher.
+          Ohne Kennwort läuft die externe Sicherung nicht, sonst lägen die Passwörter der SIP-Konten und Nebenstellen lesbar auf dem fremden Speicher.
         </Alert>
       )}
       {config.offsite.enabled && (

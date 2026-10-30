@@ -73,7 +73,8 @@ jobs:
   #   main              → :edge
   image:
     needs: test
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/pbx-v'))
+    # Tags auch per workflow_dispatch (vom Release-Workflow gestartet)
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || startsWith(github.ref, 'refs/tags/pbx-v')
     runs-on: ubuntu-latest
     permissions:
       contents: write

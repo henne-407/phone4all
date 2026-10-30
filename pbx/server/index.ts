@@ -1949,6 +1949,7 @@ api.get('/api/backups/:name', (r) => {
 async function runOffsite(): Promise<OffsiteStatus> {
   const s = store.config.offsite
   if (!s.enabled) throw new HttpError(400, 'Die externe Sicherung ist ausgeschaltet.')
+  if (!s.passphrase) throw new HttpError(400, 'Für die externe Sicherung fehlt das Kennwort zum Verschlüsseln.')
   const json = JSON.stringify(store.exportData(true, false, SETTINGS.version))
   try {
     const file = await offsiteUpload(s, json)

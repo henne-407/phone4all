@@ -127,7 +127,7 @@ den Proxy. `X-Forwarded-For` gilt nur von *vertrauenswürdigen Proxys* (Einstell
 - **Sicherheit**: Sperre nach Fehlanmeldungen, erlaubte Netze, TLS/SRTP
 - **Konfiguration als Datei** exportieren und importieren (wahlweise mit Passwörtern
   und Ansagen), tägliche automatische Sicherung (14 Tage, Sicherungen vor Import und Update getrennt davon),
-  zusätzlich auf WebDAV oder S3 (auf Wunsch mit AES-256 verschlüsselt)
+  zusätzlich auf WebDAV oder S3 (immer mit AES-256 verschlüsselt)
 - **Home Assistant**: verpasste Anrufe, abgemeldete SIP-Konten und andere Störungen als
   Sensoren und Ereignisse, Türklingel, Schalter für *Nicht stören* und Zeitsteuerungen,
   Aktionen für Anrufe, Ansagen und Umleitungen; auch über HTTPS hinter einem Reverse-Proxy

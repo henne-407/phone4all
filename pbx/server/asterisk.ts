@@ -50,6 +50,32 @@ function ids(user: string): { uid: number; gid: number } | null {
   }
 }
 
+/** Dateien unter dir (rekursiv) uid/gid geben, wo sie abweichen; gibt die Zahl der Änderungen zurück. */
+export function fixOwner(dir: string, uid: number, gid: number): number {
+  let fixed = 0
+  let entries: fs.Dirent[]
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return 0
+  }
+  for (const e of entries) {
+    if (e.isSymbolicLink()) continue
+    const p = path.join(dir, e.name)
+    try {
+      const st = fs.lstatSync(p)
+      if (st.uid !== uid || st.gid !== gid) {
+        fs.chownSync(p, uid, gid)
+        fixed++
+      }
+      if (e.isDirectory()) fixed += fixOwner(p, uid, gid)
+    } catch {
+      // gerade gelöscht
+    }
+  }
+  return fixed
+}
+
 /** Selbst signiertes Zertifikat für TLS (SIP-Konten mit TLS, z. B. CompanyFlex). */
 function ensureTls(): { cert: string; key: string } | null {
   const cert = path.join(PATHS.keys, 'pbx.crt')
@@ -188,6 +214,13 @@ export class Asterisk extends EventEmitter {
     for (const d of dirs) {
       fs.mkdirSync(d, { recursive: true })
       if (this.owner && d !== PATHS.etc) fs.chownSync(d, this.owner.uid, this.owner.gid)
+    }
+    // Hat der Benutzer „asterisk“ in einem neuen Image eine andere Nummer, gehören ihm die
+    // vorhandenen Dateien nicht mehr: Anrufliste, Protokoll und Voicemail bleiben dann stehen
+    if (this.owner) {
+      let fixed = 0
+      for (const d of [PATHS.spool, PATHS.log, PATHS.db, PATHS.recordings, PATHS.run, PATHS.lib]) fixed += fixOwner(d, this.owner.uid, this.owner.gid)
+      if (fixed) console.log(`[asterisk] Eigentümer von ${fixed} Dateien auf den Benutzer „${SETTINGS.runUser}“ korrigiert`)
     }
     // Asterisk läuft nicht als root und muss den TLS-Schlüssel lesen können
     if (this.owner && this.tls) for (const f of [this.tls.key, this.tls.cert]) fs.chownSync(f, this.owner.uid, this.owner.gid)
