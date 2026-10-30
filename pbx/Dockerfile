@@ -17,7 +17,7 @@ FROM node:24-slim AS node
 # Spracherkennung für „Voicemail als Text“ (whisper.cpp). Läuft auf der Bau-Plattform und
 # übersetzt für arm64 mit dem Cross-Compiler – unter Emulation würde das sehr lange dauern.
 # Für amd64 zwei Fassungen: mit AVX2 und ohne (z. B. Celeron-Mini-PCs); die Anlage wählt beim Start.
-FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS whisper
+FROM --platform=$BUILDPLATFORM ubuntu:25.10 AS whisper
 ARG TARGETARCH
 ARG BUILDARCH
 ARG WHISPER_VERSION=v1.9.5
@@ -51,7 +51,7 @@ RUN set -e; mkdir /out; \
       echo "whisper.cpp für $TARGETARCH auf $BUILDARCH wird nicht übersetzt (Voicemail als Text dann nur über eine Schnittstelle)"; \
     fi
 
-FROM ubuntu:24.04
+FROM ubuntu:25.10
 ARG PBX_VERSION=dev
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
