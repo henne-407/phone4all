@@ -20,6 +20,8 @@ if [ "${1:-}" = "--lan" ]; then LAN=1; shift; fi
 TESTUSER=${1:-p4test}
 OWNER=${SUDO_USER:-}
 REPO=https://github.com/henne-407/phone4all.git
+# Derselbe Branch wie das Repository, aus dem das Skript gestartet wurde (testenv/ gibt es evtl. nur dort)
+BRANCH=$(sudo -u "${SUDO_USER:-root}" git -C "$(dirname "$(readlink -f "$0")")" rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)
 
 [ "$(id -u)" = 0 ] || { echo "Bitte mit sudo starten: sudo bash $0"; exit 1; }
 [ -n "$OWNER" ] && [ "$OWNER" != root ] || { echo "Bitte aus dem eigenen Konto mit sudo starten (nicht als root anmelden)."; exit 1; }
@@ -85,6 +87,8 @@ step "Repository und Zugangsdaten"
 if [ ! -d "$TEST_HOME/phone4all/.git" ]; then
   sudo -iu "$TESTUSER" git clone "$REPO" phone4all
 fi
+sudo -iu "$TESTUSER" git -C phone4all fetch -q origin "$BRANCH"
+sudo -iu "$TESTUSER" git -C phone4all checkout -q -B "$BRANCH" "origin/$BRANCH"
 ENVFILE="$TEST_HOME/phone4all/testenv/.env"
 if [ ! -f "$ENVFILE" ]; then
   LANIP=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
