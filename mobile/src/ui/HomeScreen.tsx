@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Alert, ScrollView, StyleSheet, View } from 'react-native'
-import { Button, Card, Dialog, IconButton, List, Portal, Switch, Text, useTheme } from 'react-native-paper'
+import { Button, Card, Dialog, IconButton, List, Portal, Switch, Text, TextInput, useTheme } from 'react-native-paper'
 import { groupByDay, timeLabel } from '../dates'
 import { findName } from '../numbers'
 import { phone } from '../phone'
@@ -12,8 +12,12 @@ import {
   type ForwardInfo,
   type GroupMissed,
   actGroupMissed,
+  cancelCallback,
   fetchForward,
   fetchGroupMissed,
+  requestCallback,
+  sendSms,
+  setBoss,
   setGroup,
   setMobileRing,
 } from '../provisioning'
@@ -42,6 +46,14 @@ function TeamCard() {
   const ready = state.registration === 'registered' && !state.call
   const name = (n: string): string => presence.extensions.find((e) => e.number === n)?.name || n
   const others = presence.extensions.filter((e) => e.number !== profile?.extension)
+  const callbacks = presence.callbacks ?? []
+  const callback = (to: string, id?: string): void => {
+    if (!profile) return
+    const done = id ? cancelCallback(profile, id) : requestCallback(profile, to)
+    void done
+      .then(() => !id && Alert.alert('Rückruf', `Sobald ${name(to)} frei ist, klingelt dein Telefon.`))
+      .catch((err: Error) => Alert.alert('Telefonanlage', err.message))
+  }
   return (
     <Card mode="contained" style={styles.card}>
       <Card.Title title="Kollegen" />
@@ -63,12 +75,27 @@ function TeamCard() {
         let detail = e.dnd ? 'Nicht stören' : e.forward ? `Umgeleitet${e.forward === 'extern' ? '' : ` an ${name(e.forward)}`}` : label
         // Status aus dem Kalender („Urlaub bis Fr“)
         if (e.note) detail += ` · ${e.note}`
+        const waiting = callbacks.find((c) => c.to === e.number)
+        if (waiting) detail += ' · Rückruf angefordert'
+        const offer = presence.callback_enabled && (waiting || e.state === 'busy' || e.state === 'ringing')
         return (
           <List.Item
             key={e.number}
             title={e.name || e.number}
             description={`${e.number} · ${detail}`}
             left={() => <View style={[styles.dot, { backgroundColor: e.dnd ? CALL_RED : color, marginTop: 16 }]} />}
+            right={
+              offer
+                ? () => (
+                    <IconButton
+                      icon="phone-return"
+                      mode={waiting ? 'contained-tonal' : undefined}
+                      accessibilityLabel={waiting ? 'Rückruf zurücknehmen' : 'Rückruf, wenn frei'}
+                      onPress={() => callback(e.number, waiting?.id)}
+                    />
+                  )
+                : undefined
+            }
             onPress={ready ? () => phone.dial(e.number) : undefined}
           />
         )
@@ -169,12 +196,30 @@ function ReachCard() {
     if (profile && canForward) fetchForward(profile).then(setForward).catch(() => setForward(null))
   }, [profile?.url, canForward])
   const groups = presence?.groups ?? []
+  const bosses = presence?.boss ?? []
   const open = presence?.missed?.open ?? 0
-  if (!profile || (!groups.length && !forward?.mobile && !presence?.missed)) return null
+  const nameOf = (n: string): string => presence?.extensions.find((e) => e.number === n)?.name || n
+  if (!profile || (!groups.length && !bosses.length && !forward?.mobile && !presence?.missed)) return null
   const fail = (e: Error): void => Alert.alert('Telefonanlage', e.message)
   return (
     <Card mode="contained" style={styles.card}>
       <Card.Title title="Erreichbarkeit" />
+      {bosses.map((b) => (
+        <List.Item
+          key={b.id}
+          title={b.role === 'boss' ? 'Sekretariat nimmt an' : `Anrufe für ${nameOf(b.partner)}`}
+          description={
+            b.role === 'boss'
+              ? b.active
+                ? `Anrufe gehen zuerst an ${nameOf(b.partner)}`
+                : 'Anrufe klingeln direkt hier'
+              : b.active
+                ? 'Klingeln hier mit „Für …“ vor dem Namen'
+                : `Klingeln direkt bei ${nameOf(b.partner)}`
+          }
+          right={() => <Switch value={b.active} onValueChange={(v) => void setBoss(profile, b.id, v).catch(fail)} />}
+        />
+      ))}
       {groups.map((g) => (
         <List.Item
           key={g.id}
@@ -202,8 +247,51 @@ function ReachCard() {
   )
 }
 
+/** SMS über die Anlage senden; Antworten kommen im Messenger an */
+function SmsDialog({ visible, onDismiss }: { visible: boolean; onDismiss: () => void }) {
+  const { profile } = useStore()
+  const [to, setTo] = useState('')
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (!visible) return
+    setTo('')
+    setText('')
+  }, [visible])
+  const send = (): void => {
+    if (!profile) return
+    setBusy(true)
+    sendSms(profile, to.trim(), text.trim())
+      .then((n) => {
+        Alert.alert('SMS', `An ${n} gesendet.`)
+        onDismiss()
+      })
+      .catch((e: Error) => Alert.alert('SMS', e.message))
+      .finally(() => setBusy(false))
+  }
+  return (
+    <Portal>
+      <Dialog visible={visible} onDismiss={onDismiss}>
+        <Dialog.Title>SMS senden</Dialog.Title>
+        <Dialog.Content style={{ gap: 12 }}>
+          <TextInput mode="outlined" label="Handynummer" value={to} onChangeText={setTo} keyboardType="phone-pad" />
+          <TextInput mode="outlined" label="Nachricht" value={text} onChangeText={(t) => setText(t.slice(0, 1530))} multiline numberOfLines={4} />
+          <Text variant="bodySmall">{text.length} Zeichen · Absender ist die Firma</Text>
+        </Dialog.Content>
+        <Dialog.Actions>
+          <Button onPress={onDismiss}>Abbrechen</Button>
+          <Button mode="contained" disabled={busy || !to.trim() || !text.trim()} onPress={send}>
+            Senden
+          </Button>
+        </Dialog.Actions>
+      </Dialog>
+    </Portal>
+  )
+}
+
 function StatusCard() {
-  const { phone: state, profile } = useStore()
+  const { phone: state, profile, presence } = useStore()
+  const [sms, setSms] = useState(false)
   const theme = useTheme()
   const label = registrationLabel(state.registration)
   const color = state.registration === 'registered' ? CALL_GREEN : state.registration === 'failed' ? CALL_RED : theme.colors.onSurfaceVariant
@@ -222,7 +310,13 @@ function StatusCard() {
         <Button icon="voicemail" disabled={!ready} onPress={() => phone.dial(profile?.features.voicemail || '*97')}>
           Voicemail
         </Button>
+        {presence?.sms && (
+          <Button icon="message-text-outline" onPress={() => setSms(true)}>
+            SMS
+          </Button>
+        )}
       </Card.Actions>
+      <SmsDialog visible={sms} onDismiss={() => setSms(false)} />
     </Card>
   )
 }

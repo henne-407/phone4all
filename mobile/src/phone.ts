@@ -10,7 +10,7 @@ import type { IncomingRTCSessionEvent, RTCSessionEvent } from 'jssip/lib/UA'
 import InCallManager from 'react-native-incall-manager'
 import { registerGlobals } from 'react-native-webrtc'
 import { cleanNumber, numberFromUri } from './numbers'
-import { type Profile, joinCalls } from './provisioning'
+import { type CallOrigin, type Profile, callOrigin, joinCalls } from './provisioning'
 
 registerGlobals()
 
@@ -30,6 +30,16 @@ export interface Call {
   speaker: boolean
   /** Grund, falls das Gespräch nicht zustande kam */
   reason: string
+  /** Herkunft laut Anlage: intern, von außen oder über eine Gruppe ('' = unbekannt) */
+  origin?: CallOrigin
+}
+
+/** Vibrationsmuster je Herkunft: intern kurz-kurz, von außen lang, Gruppe dreimal */
+const VIBRATION: Record<CallOrigin, number[]> = {
+  '': [0, 1000, 1000],
+  internal: [0, 300, 200, 300, 1200],
+  external: [0, 1000, 1000],
+  group: [0, 250, 150, 250, 150, 250, 1200],
 }
 
 export interface PhoneState {
@@ -340,6 +350,7 @@ export class Phone {
       return
     }
     const number = numberFromUri(session.remote_identity.uri.toString())
+    const origin = callOrigin(e.request.getHeader('Alert-Info') ?? '')
     const call: Call = {
       id: `${Date.now()}`,
       direction: 'in',
@@ -352,6 +363,7 @@ export class Phone {
       held: false,
       speaker: false,
       reason: '',
+      origin,
     }
     this.track(session, call)
     // Durchsage/Gegensprechen der Anlage (Call-Info, Name von außen filtert die Anlage)
@@ -362,7 +374,7 @@ export class Phone {
       this.setCall({ speaker: true })
       return
     }
-    InCallManager.startRingtone('_DEFAULT_', [0, 1000, 1000], 'playback', 30)
+    InCallManager.startRingtone('_DEFAULT_', VIBRATION[origin], 'playback', 30)
     this.onIncoming(call)
   }
 

@@ -117,6 +117,30 @@ export interface Presence {
   groups?: PbxGroup[]
   /** Verpasste Gruppenanrufe (null = keine Gruppe mit gemeinsamer Liste) */
   missed?: { open: number; revision: string } | null
+  /** Chef und Sekretariat, an denen die Nebenstelle beteiligt ist */
+  boss?: BossPair[]
+  /** Offene Rückrufe bei besetzt */
+  callbacks?: PendingCallback[]
+  /** Rückruf bei besetzt auf der Anlage eingeschaltet */
+  callback_enabled?: boolean
+  /** SMS senden erlaubt */
+  sms?: boolean
+}
+
+export interface BossPair {
+  id: string
+  name: string
+  role: 'boss' | 'secretary'
+  partner: string
+  /** eingeschaltet: Anrufe für den Chef gehen ans Sekretariat */
+  active: boolean
+}
+
+export interface PendingCallback {
+  id: string
+  to: string
+  name: string
+  expires: number
 }
 
 export interface VoicemailMessage {
@@ -292,6 +316,36 @@ export async function actGroupMissed(p: Profile, e: GroupMissed, action: 'claim'
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action }),
   })
+}
+
+const JSON_HEADERS = { 'Content-Type': 'application/json' }
+
+/** Chef und Sekretariat ein- oder ausschalten (wie *83) */
+export async function setBoss(p: Profile, id: string, active: boolean): Promise<BossPair[]> {
+  return getJson<BossPair[]>(`${p.url}/boss/${encodeURIComponent(id)}`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ active }) })
+}
+
+/** Rückruf, sobald die Nebenstelle frei ist (wie *37) */
+export async function requestCallback(p: Profile, to: string): Promise<PendingCallback[]> {
+  return getJson<PendingCallback[]>(`${p.url}/callback`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ to }) })
+}
+
+export async function cancelCallback(p: Profile, id: string): Promise<PendingCallback[]> {
+  return getJson<PendingCallback[]>(`${p.url}/callback/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+/** SMS über die Anlage senden; liefert die Nummer, an die gesendet wurde */
+export async function sendSms(p: Profile, to: string, text: string): Promise<string> {
+  const r = await getJson<{ to: string }>(`${p.url}/sms`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ to, text }) })
+  return r.to
+}
+
+/** Herkunft eines Anrufs aus dem Kopf Alert-Info der Anlage (info=alert-internal …) */
+export type CallOrigin = '' | 'internal' | 'external' | 'group'
+
+export function callOrigin(alertInfo: string): CallOrigin {
+  const m = /alert-(internal|external|group)\b/.exec(alertInfo) ?? /\/ring\/(internal|external|group)\b/.exec(alertInfo)
+  return (m?.[1] as CallOrigin | undefined) ?? ''
 }
 
 /** Rückfrage abschließen: verbinden oder Dreierkonferenz */
