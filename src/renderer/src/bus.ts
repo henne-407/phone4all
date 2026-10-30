@@ -9,6 +9,8 @@ export interface UiEvents {
   'open-preferences': string
   navigate: PageName
   'customize-home': undefined
+  /** SMS-Fenster öffnen, optional mit Nummer */
+  'send-sms': string
   about: undefined
 }
 

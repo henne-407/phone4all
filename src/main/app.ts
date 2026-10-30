@@ -385,6 +385,9 @@ export class App {
       voicemail: this.provisioning.active ? this.provisioning.voicemail : null,
       groups: this.provisioning.active ? this.provisioning.groups : null,
       groupMissed: this.provisioning.active ? this.provisioning.groupMissed : null,
+      boss: this.provisioning.active ? this.provisioning.boss : [],
+      callbacks: this.provisioning.active ? this.provisioning.callbacks : null,
+      sms: this.provisioning.active && this.provisioning.sms,
     }
   }
 

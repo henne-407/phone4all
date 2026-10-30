@@ -12,7 +12,9 @@ import EditIcon from '@mui/icons-material/Edit'
 import GroupsIcon from '@mui/icons-material/Groups'
 import LocalParkingIcon from '@mui/icons-material/LocalParking'
 import HistoryIcon from '@mui/icons-material/History'
+import PhoneCallbackIcon from '@mui/icons-material/PhoneCallback'
 import PhoneMissedIcon from '@mui/icons-material/PhoneMissed'
+import SmsIcon from '@mui/icons-material/Sms'
 import InsightsIcon from '@mui/icons-material/Insights'
 import StarIcon from '@mui/icons-material/Star'
 import WifiIcon from '@mui/icons-material/WifiCalling3'
@@ -36,6 +38,7 @@ import {
   Stack,
   Switch,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import { type ReactNode, useEffect, useState } from 'react'
@@ -124,6 +127,9 @@ function StatusCard({ grow }: { grow: boolean }) {
   const [text, setText] = useState('')
   const setGroup = (id: string, active: boolean): void =>
     void api.pbxSetGroup(id, active).then((r) => toast(r.ok ? (active ? 'In der Gruppe angemeldet' : 'Aus der Gruppe abgemeldet') : r.error))
+  const setBoss = (id: string, active: boolean): void =>
+    void api.pbxSetBoss(id, active).then((r) => toast(r.ok ? (active ? 'Sekretariat eingeschaltet' : 'Sekretariat ausgeschaltet') : r.error))
+  const nameOf = (n: string): string => state.team?.extensions.find((e) => e.number === n)?.name || n
   const dial = async (): Promise<void> => {
     let target = text.trim()
     if (!hasDigit(target)) {
@@ -165,6 +171,28 @@ function StatusCard({ grow }: { grow: boolean }) {
           </Box>
         }
       />
+      {state.boss.map((b) => (
+        <FormControlLabel
+          key={b.id}
+          labelPlacement="start"
+          sx={{ mx: 0, justifyContent: 'space-between' }}
+          control={<Switch checked={b.active} onChange={(e) => setBoss(b.id, e.target.checked)} />}
+          label={
+            <Box>
+              <Typography>{b.role === 'boss' ? 'Sekretariat nimmt an' : `Anrufe für ${nameOf(b.partner)}`}</Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                {b.role === 'boss'
+                  ? b.active
+                    ? `Anrufe gehen zuerst an ${nameOf(b.partner)}`
+                    : 'Anrufe klingeln direkt hier'
+                  : b.active
+                    ? 'Klingeln hier mit „Für …“ vor dem Namen'
+                    : `Klingeln direkt bei ${nameOf(b.partner)}`}
+              </Typography>
+            </Box>
+          }
+        />
+      ))}
       {state.groups?.map((g) => (
         <FormControlLabel
           key={g.id}
@@ -193,6 +221,13 @@ function StatusCard({ grow }: { grow: boolean }) {
         <Fab size="small" color="success" aria-label="Anrufen" onClick={() => void dial()} sx={{ flexShrink: 0 }}>
           <CallIcon />
         </Fab>
+        {state.sms && (
+          <Tooltip title="SMS senden">
+            <IconButton aria-label="SMS senden" onClick={() => emit('send-sms', hasDigit(text) ? text.trim() : '')} sx={{ flexShrink: 0 }}>
+              <SmsIcon />
+            </IconButton>
+          </Tooltip>
+        )}
       </Stack>
     </HomeCardBox>
   )
@@ -331,7 +366,7 @@ function minutes(ms: number): string {
 
 /** Kollegen mit Besetztanzeige und geparkte Gespräche (Telefonanlage) */
 function TeamCard({ grow, fill }: { grow: boolean; fill: boolean }) {
-  const { state } = useApp()
+  const { state, toast } = useApp()
   const team = state.team
   const me = state.settings.provisioning.extension
   const [now, setNow] = useState(Date.now())
@@ -345,6 +380,12 @@ function TeamCard({ grow, fill }: { grow: boolean; fill: boolean }) {
   const missed = state.groupMissed
   const name = (n: string): string => team?.extensions.find((e) => e.number === n)?.name || n
   const others = (team?.extensions ?? []).filter((e) => e.number !== me)
+  const callbacks = state.callbacks
+  const callback = (n: string): void => {
+    const open = callbacks?.find((c) => c.to === n)
+    if (open) void api.pbxCallbackCancel(open.id).then((r) => toast(r.ok ? 'Rückruf zurückgenommen' : r.error))
+    else void api.pbxCallback(n).then((r) => toast(r.ok ? `Sobald ${name(n)} frei ist, klingelt dein Telefon` : r.error))
+  }
   return (
     <HomeCardBox card="team" grow={grow}>
       {!team ? (
@@ -390,8 +431,23 @@ function TeamCard({ grow, fill }: { grow: boolean; fill: boolean }) {
                 let detail = e.dnd ? 'Nicht stören' : e.forward ? `Umgeleitet${e.forward === 'extern' ? '' : ` an ${name(e.forward)}`}` : label
                 // Status aus dem Kalender („Urlaub bis Fr“)
                 if (e.note) detail += ` · ${e.note}`
+                const waiting = callbacks?.some((c) => c.to === e.number)
+                if (waiting) detail += ' · Rückruf angefordert'
+                const offer = callbacks && (waiting || e.state === 'busy' || e.state === 'ringing')
                 return (
-                  <ListItem key={e.number} disablePadding>
+                  <ListItem
+                    key={e.number}
+                    disablePadding
+                    secondaryAction={
+                      offer ? (
+                        <Tooltip title={waiting ? 'Rückruf zurücknehmen' : 'Rückruf, wenn frei'}>
+                          <IconButton edge="end" size="small" color={waiting ? 'primary' : 'default'} aria-label={waiting ? 'Rückruf zurücknehmen' : 'Rückruf, wenn frei'} onClick={() => callback(e.number)}>
+                            <PhoneCallbackIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      ) : undefined
+                    }
+                  >
                     <CardActionArea sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 1, py: 0.75, borderRadius: 2 }} onClick={() => void api.dial(e.number)}>
                       <Box sx={{ position: 'relative', display: 'flex' }}>
                         <ContactAvatar name={e.name || e.number} size={34} />

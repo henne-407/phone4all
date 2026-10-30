@@ -5,6 +5,7 @@ import path from 'node:path'
 import { App } from './app'
 import { isDialLink } from './links'
 import { LINK_SCHEME } from './provisioning'
+import { setupScreenShare } from './screenShare'
 
 const background = process.argv.includes('--background') || process.argv.includes('-b')
 
@@ -74,6 +75,7 @@ if (!electronApp.requestSingleInstanceLock()) {
     } else {
       Menu.setApplicationMenu(null)
     }
+    setupScreenShare()
     instance = new App()
     const shotDir = process.env.SIP_TELEFON_SCREENSHOT
     instance.start(background || Boolean(shotDir))

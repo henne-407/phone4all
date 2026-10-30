@@ -17,6 +17,7 @@ import { isExecutable, safeFileName, writeDownload } from './files'
 import { DIRS, RINGTONE_DIR } from './paths'
 import { discover } from './provisioning'
 import { ringtonePath, saveCustomRingtone } from './ringtones'
+import { chooseScreen, screenSources } from './screenShare'
 import { MsSqlSource } from './sqlSource'
 
 type DavKind = 'caldav' | 'carddav'
@@ -181,6 +182,10 @@ export function createApi(app: App) {
       }),
     pbxSetGroup: (id: string, active: boolean) => attempt(() => app.provisioning.setGroup(id, active)),
     pbxGroupMissed: () => attempt(() => app.provisioning.groupMissedList()),
+    pbxSetBoss: (id: string, active: boolean) => attempt(() => app.provisioning.setBoss(id, active)),
+    pbxCallback: (to: string) => attempt(() => app.provisioning.requestCallback(to)),
+    pbxCallbackCancel: (id: string) => attempt(() => app.provisioning.cancelCallback(id)),
+    pbxSendSms: (to: string, text: string) => attempt(() => app.provisioning.sendSms(to, text)),
     pbxGroupMissedAct: (group: string, id: string, action: 'claim' | 'release' | 'done' | 'reopen') =>
       attempt(() => app.provisioning.groupMissedAct(group, id, action)),
     pbxFaxInfo: () => attempt(() => app.provisioning.faxInfo()),
@@ -324,6 +329,9 @@ export function createApi(app: App) {
       const mic = await systemPreferences.askForMediaAccess('microphone')
       return video ? mic && (await systemPreferences.askForMediaAccess('camera')) : mic
     },
+    /** Bildschirm teilen: Bildschirme und Fenster zur Auswahl, dann die gewählte Quelle merken */
+    screenSources: () => attempt(() => screenSources()),
+    chooseScreen: (id: string) => chooseScreen(id),
     /** Raum des laufenden eigenen Videoanrufs (null = keiner); Updates warten so lange */
     messengerInCall: (room: string | null) => {
       app.videoCall = room

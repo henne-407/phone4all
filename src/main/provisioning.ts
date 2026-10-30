@@ -22,6 +22,8 @@ import type {
   PbxFax,
   PbxFound,
   PbxDoor,
+  PbxBoss,
+  PbxCallback,
   PbxGroup,
   PbxPermission,
   PbxPreview,
@@ -111,6 +113,9 @@ export function parsePresence(data: unknown): {
   voicemail: { unread: number; revision: string } | null
   groups: PbxGroup[] | null
   missed: { open: number; revision: string } | null
+  boss: PbxBoss[]
+  callbacks: PbxCallback[] | null
+  sms: boolean
 } | null {
   const p = data as {
     extensions?: unknown
@@ -119,6 +124,10 @@ export function parsePresence(data: unknown): {
     voicemail?: { unread?: unknown; revision?: unknown } | null
     groups?: unknown
     missed?: { open?: unknown; revision?: unknown } | null
+    boss?: unknown
+    callbacks?: unknown
+    callback_enabled?: unknown
+    sms?: unknown
   } | null
   if (!p || !Array.isArray(p.extensions) || !Array.isArray(p.parked)) return null
   const states = ['idle', 'ringing', 'busy', 'offline']
@@ -148,7 +157,22 @@ export function parsePresence(data: unknown): {
     // Ältere Anlagen kennen beides nicht
     groups: Array.isArray(p.groups) ? parseGroups(p.groups) : null,
     missed: p.missed ? { open: Number(p.missed.open) || 0, revision: String(p.missed.revision ?? '') } : null,
+    boss: Array.isArray(p.boss) ? parseBoss(p.boss) : [],
+    callbacks: p.callback_enabled === true && Array.isArray(p.callbacks) ? parseCallbacks(p.callbacks) : null,
+    sms: p.sms === true,
   }
+}
+
+export function parseBoss(data: unknown[]): PbxBoss[] {
+  return data
+    .filter((b): b is PbxBoss => Boolean(b) && typeof (b as PbxBoss).id === 'string')
+    .map((b) => ({ id: b.id, name: String(b.name ?? ''), role: b.role === 'boss' ? 'boss' : 'secretary', partner: String(b.partner ?? ''), active: b.active === true }))
+}
+
+export function parseCallbacks(data: unknown[]): PbxCallback[] {
+  return data
+    .filter((c): c is PbxCallback => Boolean(c) && typeof (c as PbxCallback).id === 'string')
+    .map((c) => ({ id: c.id, to: String(c.to ?? ''), name: String(c.name ?? ''), expires: Number(c.expires) || 0 }))
 }
 
 export function parseGroups(data: unknown[]): PbxGroup[] {
@@ -418,6 +442,9 @@ export class Provisioning {
   voicemail: { unread: number; version: string } | null = null
   groups: PbxGroup[] | null = null
   groupMissed: { open: number; version: string } | null = null
+  boss: PbxBoss[] = []
+  callbacks: PbxCallback[] | null = null
+  sms = false
   phonebook: Omit<Contact, 'id'>[]
   /** Umleitungen der Nebenstelle (null = Anlage kennt sie nicht oder nicht erreichbar) */
   forward: PbxForward | null = null
@@ -465,13 +492,17 @@ export class Provisioning {
   private setPresence(p: ReturnType<typeof parsePresence>): void {
     const vm = p?.voicemail && this.host.store.settings.provisioning.voicemail ? { unread: p.voicemail.unread, version: p.voicemail.revision } : null
     const missed = p?.missed ? { open: p.missed.open, version: p.missed.revision } : null
-    const revision = p ? `${p.revision}|${JSON.stringify(vm)}|${JSON.stringify(p.groups)}|${JSON.stringify(missed)}` : ''
+    const extras = p ? JSON.stringify([p.boss, p.callbacks, p.sms]) : ''
+    const revision = p ? `${p.revision}|${JSON.stringify(vm)}|${JSON.stringify(p.groups)}|${JSON.stringify(missed)}|${extras}` : ''
     if (revision === this.presenceRevision) return
     this.presenceRevision = revision
     this.team = p ? { extensions: p.extensions, parked: p.parked } : null
     this.voicemail = vm
     this.groups = p?.groups ?? null
     this.groupMissed = missed
+    this.boss = p?.boss ?? []
+    this.callbacks = p?.callbacks ?? null
+    this.sms = p?.sms ?? false
     this.host.stateChanged()
   }
 
@@ -529,6 +560,30 @@ export class Provisioning {
     this.groups = groups
     this.host.stateChanged()
     void this.pollPresence()
+  }
+
+  /** Chef und Sekretariat ein- oder ausschalten (wie *83) */
+  async setBoss(id: string, active: boolean): Promise<void> {
+    this.boss = parseBoss((await (await this.call(`/boss/${encodeURIComponent(id)}`, 'PUT', { active })).json()) as unknown[])
+    this.host.stateChanged()
+    void this.pollPresence()
+  }
+
+  /** Rückruf, sobald die Nebenstelle frei ist (wie *37) */
+  async requestCallback(to: string): Promise<void> {
+    this.callbacks = parseCallbacks((await (await this.call('/callback', 'POST', { to })).json()) as unknown[])
+    this.host.stateChanged()
+  }
+
+  async cancelCallback(id: string): Promise<void> {
+    this.callbacks = parseCallbacks((await (await this.call(`/callback/${encodeURIComponent(id)}`, 'DELETE')).json()) as unknown[])
+    this.host.stateChanged()
+  }
+
+  /** SMS über die Anlage senden; liefert die Nummer, an die gesendet wurde */
+  async sendSms(to: string, text: string): Promise<string> {
+    const r = (await (await this.call('/sms', 'POST', { to, text })).json()) as { to?: string }
+    return String(r.to ?? to)
   }
 
   async groupMissedList(): Promise<GroupMissed[]> {
