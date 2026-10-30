@@ -22,7 +22,7 @@
   "dependencies": {
     "fast-xml-parser": "^5.11.2",
     "ical.js": "^2.2.1",
-    "mssql": "^12.7.10"
+    "mssql": "^12.7.13"
   },
   "devDependencies": {
     "@emotion/react": "^11.14.0",
