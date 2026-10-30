@@ -1,6 +1,6 @@
 {
   "name": "sip-telefon-mobil",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "main": "index.ts",
   "dependencies": {
     "@config-plugins/react-native-webrtc": "^15.0.2",
