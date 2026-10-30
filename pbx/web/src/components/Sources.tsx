@@ -51,6 +51,56 @@ function Login({ user, password, onChange }: { user: string; password: string; o
   )
 }
 
+/** Microsoft 365 (App-Registrierung) oder Google (Dienstkonto): Postfach und Zugang */
+function CloudLogin({
+  value,
+  onChange,
+  what,
+}: {
+  value: { type: string; user: string; password: string; tenant?: string; client_id?: string }
+  onChange: (v: { user?: string; password?: string; tenant?: string; client_id?: string }) => void
+  what: 'Kontakte' | 'Kalender'
+}) {
+  const m365 = value.type === 'm365'
+  return (
+    <>
+      <Full>
+        <TextField fullWidth label="Postfach" value={value.user} onChange={(e) => onChange({ user: e.target.value })} helperText={`E-Mail-Adresse, deren ${what} gelesen werden`} />
+      </Full>
+      {m365 ? (
+        <>
+          <TextField label="Verzeichnis-ID (Mandant)" value={value.tenant ?? ''} onChange={(e) => onChange({ tenant: e.target.value })} helperText="Entra ID → Übersicht, oder firma.onmicrosoft.com" />
+          <TextField label="Anwendungs-ID (Client)" value={value.client_id ?? ''} onChange={(e) => onChange({ client_id: e.target.value })} helperText="Aus der App-Registrierung" />
+          <Full>
+            <TextField
+              fullWidth
+              label="Geheimer Clientschlüssel"
+              type="password"
+              value={value.password}
+              onChange={(e) => onChange({ password: e.target.value })}
+              autoComplete="new-password"
+              helperText={`Anwendungsberechtigung ${what === 'Kontakte' ? 'Contacts.Read' : 'Calendars.Read'} mit Administratorzustimmung; mit einer Zugriffsrichtlinie auf einzelne Postfächer beschränkbar`}
+            />
+          </Full>
+        </>
+      ) : (
+        <Full>
+          <TextField
+            fullWidth
+            multiline
+            minRows={3}
+            label="Schlüsseldatei des Dienstkontos (JSON)"
+            value={value.password}
+            onChange={(e) => onChange({ password: e.target.value })}
+            helperText={`Inhalt der JSON-Datei einfügen. Das Dienstkonto braucht domänenweite Delegierung mit ${what === 'Kontakte' ? 'contacts.readonly' : 'calendar.readonly'} (Google Admin → Sicherheit → API-Steuerung).`}
+            slotProps={{ htmlInput: { style: { fontFamily: 'monospace', fontSize: 12 } } }}
+          />
+        </Full>
+      )}
+    </>
+  )
+}
+
 export function CalendarSourceFields({ value, onChange }: { value: CalendarSource; onChange: (v: CalendarSource) => void }) {
   const set = (patch: Partial<CalendarSource>): void => onChange({ ...value, ...patch })
   return (
@@ -62,9 +112,22 @@ export function CalendarSourceFields({ value, onChange }: { value: CalendarSourc
         options={[
           ['ics', 'Kalender-Abo (ICS / webcal)'],
           ['caldav', 'CalDAV-Kalender'],
+          ['m365', 'Microsoft 365 (Exchange Online)'],
+          ['google', 'Google Workspace'],
         ]}
       />
       <NumberField label="Alle … Minuten lesen" value={value.refresh_minutes} onChange={(refresh_minutes) => set({ refresh_minutes })} min={5} />
+      {value.type === 'm365' || value.type === 'google' ? (
+        <>
+          <CloudLogin value={value} onChange={set} what="Kalender" />
+          {value.type === 'google' && (
+            <Full>
+              <TextField fullWidth label="Kalender-ID" value={value.url} onChange={(e) => set({ url: e.target.value })} helperText="Leer = Hauptkalender des Postfachs; sonst z. B. team@group.calendar.google.com" />
+            </Full>
+          )}
+        </>
+      ) : (
+        <>
       <Full>
         <TextField
           fullWidth
@@ -79,6 +142,8 @@ export function CalendarSourceFields({ value, onChange }: { value: CalendarSourc
         />
       </Full>
       <Login user={value.user} password={value.password} onChange={set} />
+        </>
+      )}
     </>
   )
 }
@@ -96,9 +161,13 @@ function ContactSourceForm({ value, onChange }: { value: ContactSource; onChange
           ['carddav', 'CardDAV (Nextcloud, iCloud, mailbox.org …)'],
           ['url', 'vCard- oder CSV-Datei im Netz'],
           ['mssql', 'Microsoft SQL Server (CRM, Warenwirtschaft)'],
+          ['m365', 'Microsoft 365 (Outlook-Kontakte eines Postfachs)'],
+          ['google', 'Google Workspace (Kontakte eines Postfachs)'],
         ]}
       />
-      {value.type !== 'mssql' ? (
+      {value.type === 'm365' || value.type === 'google' ? (
+        <CloudLogin value={value} onChange={set} what="Kontakte" />
+      ) : value.type !== 'mssql' ? (
         <>
           <Full>
             <TextField
@@ -156,7 +225,7 @@ function ContactSourceForm({ value, onChange }: { value: ContactSource; onChange
   )
 }
 
-const TYPE_LABEL: Record<ContactSource['type'], string> = { carddav: 'CardDAV', url: 'Datei', mssql: 'SQL Server' }
+const TYPE_LABEL: Record<ContactSource['type'], string> = { carddav: 'CardDAV', url: 'Datei', mssql: 'SQL Server', m365: 'Microsoft 365', google: 'Google' }
 
 /** Abschnitt auf der Kontakte-Seite */
 export function ContactSources() {
