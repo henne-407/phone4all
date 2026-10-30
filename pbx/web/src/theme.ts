@@ -37,6 +37,7 @@ const LIGHT = {
     announcement: '#9c27b0',
     external: '#1a73e8',
     fax: '#795548',
+    ai: '#00897b',
     hangup: '#80868b',
   },
 }
@@ -71,6 +72,7 @@ const DARK: typeof LIGHT = {
     announcement: '#e3a5ef',
     external: '#8ab4f8',
     fax: '#bcaaa4',
+    ai: '#80cbc4',
     hangup: '#9aa0a6',
   },
 }

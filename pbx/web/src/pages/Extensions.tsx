@@ -313,9 +313,20 @@ function ExtensionForm({ value, onChange, isNew }: { value: Extension; onChange:
         <FormControlLabel control={<Switch checked={value.voicemail.attach} disabled={!value.voicemail.enabled} onChange={(e) => set('voicemail', { ...value.voicemail, attach: e.target.checked })} />} label="Nachricht als Anhang per E-Mail" />
         <FormControlLabel control={<Switch checked={value.allow_premium} onChange={(e) => set('allow_premium', e.target.checked)} />} label="Sonderrufnummern erlauben (0900, 0137, 118 …)" />
         <Full>
-          <FormControlLabel control={<Switch checked={value.record} onChange={(e) => set('record', e.target.checked)} />} label="Gespräche aufzeichnen" />
+          <FormControlLabel control={<Switch checked={value.record} onChange={(e) => onChange({ ...value, record: e.target.checked, summary: e.target.checked && value.summary })} />} label="Gespräche aufzeichnen" />
           <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', ml: 6 }}>
             Nur mit Einwilligung aller Gesprächspartner zulässig (§ 201 StGB, DSGVO).
+          </Typography>
+        </Full>
+        <Full>
+          <FormControlLabel
+            control={<Switch checked={value.summary} onChange={(e) => onChange({ ...value, summary: e.target.checked, record: e.target.checked || value.record })} />}
+            label="Gespräche zusammenfassen (KI)"
+          />
+          <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', ml: 6 }}>
+            {config.ai.summaries
+              ? 'Zeichnet auf und schreibt nach dem Gespräch eine Zusammenfassung in den Messenger und die Anrufliste. Anrufer hören vorher die Hinweisansage (System → Funktionen → KI).'
+              : 'Dafür zuerst unter System → Funktionen → KI ein Sprachmodell eintragen und Zusammenfassungen einschalten.'}
           </Typography>
         </Full>
       </FormGrid>

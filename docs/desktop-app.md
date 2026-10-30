@@ -116,6 +116,13 @@ nach Änderungen (siehe [App-Profile](telefonanlage.md#app-profile)).
   mit *Übernehmen* und die **verpassten Gruppenanrufe** zum gemeinsamen Abarbeiten
   („Ich kümmere mich“, zurückrufen, erledigt); auf der Status-Karte je Gruppe ein Schalter
   zum An- und Abmelden – ein-/ausblenden, sortieren, Startansicht wählbar
+- **Rückruf, wenn frei**: Bei einem Kollegen, der gerade telefoniert, auf der Karte
+  *Kollegen* den Rückruf-Knopf drücken – sobald beide frei sind, klingelt das eigene
+  Telefon und die Anlage verbindet (wie \*37 am Telefon; nochmal drücken nimmt ihn zurück)
+- **Chef und Sekretariat**: Wer zu einem Paar gehört, hat auf der Status-Karte einen
+  Schalter *Sekretariat nimmt an* (wie \*83)
+- **SMS senden** über die Anlage (Recht *SMS*): Hauptmenü *SMS senden …* oder der
+  SMS-Knopf neben der Schnellwahl; Antworten kommen im Messenger an
 - Mit Phone4All-Telefonanlage: **Voicemail** im Verlauf anhören oder als Text lesen,
   zurückrufen und löschen (gehörte Nachrichten löschen auch die Anzeige an den Telefonen),
   **Fax senden** aus dem Hauptmenü (PDF wählen oder hineinziehen, Recht *Faxe senden*),
@@ -174,7 +181,13 @@ Die Kamera oben im Chat startet einen Videoanruf mit allen Mitgliedern, im Einze
 in Gruppen. Bei den anderen klingelt es (Fenster und Systembenachrichtigung) mit
 **Annehmen**, **Nur Ton** oder **Ablehnen**; wer später dazukommen will, tippt im Chat auf
 **Beitreten**. In der Anrufansicht lassen sich Mikrofon und Kamera abschalten, mit dem
-Pfeil oben rechts wird sie zur kleinen Leiste und der Chat bleibt bedienbar. Am Ende steht
+Pfeil oben rechts wird sie zur kleinen Leiste und der Chat bleibt bedienbar.
+
+**Bildschirm teilen:** Der Knopf mit dem Bildschirm zeigt alle Bildschirme und Fenster mit
+Vorschau; das gewählte Bild ersetzt das Kamerabild, bis man *Teilen beenden* drückt. Das
+geht in Anrufen, die mit Kamera begonnen wurden. Auf dem Mac muss Phone4All einmalig unter
+*Systemeinstellungen → Datenschutz & Sicherheit → Bildschirmaufnahme* erlaubt werden;
+unter Linux mit Wayland fragt das System selbst nach dem Bildschirm. Am Ende steht
 im Chat „Videoanruf, Dauer“ oder „Verpasster Videoanruf“.
 
 ![Eingehender Videoanruf](bilder/app-videoanruf-klingeln.png)

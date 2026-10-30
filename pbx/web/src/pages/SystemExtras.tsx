@@ -28,6 +28,7 @@ import { type EmergencySettings, type OffsiteSettings, type ParkingSettings, typ
 import { api } from '../api'
 import { ChangesBar, ChipsInput, ConfirmDialog, FormGrid, Full, NumberField, Section, Select, useDraft, useEditor } from '../components/common'
 import { usePbx } from '../state'
+import { CallFeatures } from './SystemFeatures'
 
 // -- Funktionen: Parken und Notrufe -----------------------------------------------------
 
@@ -83,6 +84,7 @@ export function Features() {
         </Typography>
       </Section>
       <ChangesBar dirty={emergency.dirty} onApply={() => saveSection('emergency', emergency.draft)} onDiscard={emergency.reset} text="Notrufe: ungespeicherte Änderungen" />
+      <CallFeatures />
       <Transcription />
     </>
   )

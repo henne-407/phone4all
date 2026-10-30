@@ -70,9 +70,9 @@ describe('Sicherungen', () => {
     const data = store.exportData(false, false, 'test')
     store.state.dnd = {}
     store.state.cfu = {}
-    data.state = { dnd: { '10': true, '99': true }, cfu: { '10': '0171555', x: 5 as never }, away: { '10': ['g1'], '99': ['g1'] } }
+    data.state = { dnd: { '10': true, '99': true }, cfu: { '10': '0171555', x: 5 as never }, away: { '10': ['g1'], '99': ['g1'] }, boss: { gone: true } }
     store.importData(data)
-    expect(store.state).toEqual({ dnd: { '10': true }, cfu: { '10': '0171555' }, away: { '10': ['g1'] } })
+    expect(store.state).toEqual({ dnd: { '10': true }, cfu: { '10': '0171555' }, away: { '10': ['g1'] }, boss: {} })
   })
 
   it('hebt je Anlass getrennt auf, damit tägliche Sicherungen die übrigen nicht verdrängen', async () => {

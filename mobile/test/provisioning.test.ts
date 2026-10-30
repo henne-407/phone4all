@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { type Profile, checkProfile, crmUrl, fetchPresence, fetchProfile, normalizeBase, parseSetupInput, setupWithPin, visiblePages } from '../src/provisioning'
+import { type Profile, callOrigin, checkProfile, crmUrl, fetchPresence, fetchProfile, normalizeBase, parseSetupInput, setupWithPin, visiblePages } from '../src/provisioning'
 
 const profile = (extra: Partial<Profile> = {}): Profile => ({
   format: 'phone4all-provisioning',
@@ -86,5 +86,15 @@ describe('Welle 1', () => {
 
   it('füllt die CRM-Adresse', () => {
     expect(crmUrl('https://crm/s?t={e164}&n={nummer}&q={name}', '030 123456', 'Anna Müller')).toBe('https://crm/s?t=%2B4930123456&n=030123456&q=Anna%20M%C3%BCller')
+  })
+})
+
+describe('Herkunft eines Anrufs (Alert-Info)', () => {
+  it('liest intern, extern und Gruppe', () => {
+    expect(callOrigin('<http://phone4all/ring/internal>;info=alert-internal')).toBe('internal')
+    expect(callOrigin('<http://phone4all/ring/external>')).toBe('external')
+    expect(callOrigin('info=alert-group')).toBe('group')
+    expect(callOrigin('')).toBe('')
+    expect(callOrigin('<http://x/ring/other>')).toBe('')
   })
 })

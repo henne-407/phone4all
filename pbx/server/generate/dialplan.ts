@@ -77,9 +77,33 @@ function limitSteps(maxExt: number, maxTotal: number): string[] {
   ]
 }
 
-function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTotal: number): string[] {
-  const limits = limitSteps(maxExt, maxTotal)
+/** Namen für den Wählplan: ohne Zeichen, die Asterisk als Trenner liest */
+function dpName(name: string): string {
+  return name.replace(/[^\p{L}\p{N} .\-]/gu, '').trim()
+}
+
+/** Klingelton je Herkunft: Kennung im Alert-Info-Kopf (intern, extern, Gruppe) für Telefone und Apps */
+function alertContext(): string {
+  return ctx(
+    'p4a-alert',
+    exten('s', [
+      'GotoIf($["${CHANNEL(channeltype)}" != "PJSIP"]?end)',
+      'Set(O=${IF($["${P4A_ORIGIN}" = ""]?internal:${P4A_ORIGIN})})',
+      'Set(PJSIP_HEADER(add,Alert-Info)=<http://phone4all/ring/${O}>\\;info=alert-${O})',
+      '(end)Return()',
+    ]),
+  )
+}
+
+function genericContexts(cfg: PbxConfig): string[] {
+  const app = cfg.remote.enabled
+  const parking = cfg.parking.enabled
+  const limits = limitSteps(cfg.security.max_calls_ext, cfg.security.max_calls_total)
+  // Vorwahl-Handler für jeden klingelnden Kanal (setzt Alert-Info)
+  const alert = cfg.ring.enabled ? 'b(p4a-alert^s^1)' : ''
+  const ccbs = cfg.callback.enabled
   return [
+    ...(cfg.ring.enabled ? [alertContext()] : []),
     ...(app ? [contactsContext()] : []),
     ctx(
       'p4a-from-ext',
@@ -96,6 +120,8 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
         'GotoIf($["${C}" = ""]?end)',
         'Set(CALLERID(num)=${P4A_DIAL})',
         'Set(CALLERID(name)=Anruf an ${P4A_DIAL})',
+        // Rückruf bei besetzt und Erinnerungen bringen ihren eigenen Text mit
+        'ExecIf($["${P4A_LABEL}" != ""]?Set(CALLERID(name)=${P4A_LABEL}))',
         'Dial(${C},30)',
         '(end)Hangup()',
       ]),
@@ -117,6 +143,7 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
         'Set(CALLERID(num)=${CUT(R,|,3)})',
         'Set(CDR(p4a_to)=${CUT(R,|,4)})',
         'Set(CDR(userfield)=in)',
+        'Set(__P4A_ORIGIN=external)',
         goTo('T'),
         // Verwaltungsdienst antwortet nicht: Standardziel des SIP-Kontos (fest im Wählplan)
         '(fail)Goto(p4a-trunk-fallback,${P4A_TRUNK},1)',
@@ -152,7 +179,47 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
       exten('*81', ['Set(PT=)', 'Set(PM=page)', 'Goto(p4a-page-run,s,1)']),
       exten('_*31X.', ['Set(CALLERID(pres)=prohib)', 'Set(P4A_NUM=${EXTEN:3})', 'Goto(p4a-out,s,1)']),
       exten('*43', ['Answer()', 'Playback(demo-echotest)', 'Echo()', 'Hangup()']),
+      // Chef und Sekretariat umschalten
+      exten('*83', ['Gosub(p4a-feature,s,1(boss,))', 'Hangup()']),
+      // Erinnerungsanruf: *55HHMM einmalig (heute oder morgen), *55 alle einmaligen löschen
+      exten('*55', ['Gosub(p4a-feature,s,1(remind,))', 'Hangup()']),
+      exten('_*55XXXX', ['Gosub(p4a-feature,s,1(remind,${EXTEN:3}))', 'Hangup()']),
+      ...(ccbs
+        ? [
+            // Rückruf, sobald frei: *37 für den zuletzt besetzten Anschluss, *37<Nebenstelle> gezielt, *370 alle löschen
+            exten('*37', ['Gosub(p4a-feature,s,1(ccbs,))', 'Hangup()']),
+            exten('_*37X.', ['Gosub(p4a-feature,s,1(ccbs,${EXTEN:3}))', 'Hangup()']),
+          ]
+        : []),
+      ...(cfg.spy.enabled
+        ? [
+            // Mithören *90<Nebenstelle>, Einflüstern *91, Aufschalten *92 (nur mit dem Recht „spy“)
+            exten('_*90X.', ['Set(ST=${EXTEN:3})', 'Set(SM=listen)', 'Goto(p4a-spy,s,1)']),
+            exten('_*91X.', ['Set(ST=${EXTEN:3})', 'Set(SM=whisper)', 'Goto(p4a-spy,s,1)']),
+            exten('_*92X.', ['Set(ST=${EXTEN:3})', 'Set(SM=barge)', 'Goto(p4a-spy,s,1)']),
+          ]
+        : []),
     ),
+    ...(cfg.spy.enabled
+      ? [
+          ctx(
+            'p4a-spy',
+            exten('s', [
+              'Answer()',
+              'Wait(0.5)',
+              CURL_TIMEOUT,
+              'Set(R=${CURL(${P4A_API}/spy?ext=${P4A_EXT}&target=${URIENCODE(${ST})}&mode=${SM})})',
+              'GotoIf($["${R}" = ""]?deny)',
+              'Playback(beep)',
+              // Vorsilbe „PJSIP/<nr>-“ trifft die Telefone und die App (<nr>-app) der Nebenstelle
+              'ChanSpy(PJSIP/${ST}-,${R})',
+              'Hangup()',
+              '(deny)Playback(pbx-invalid)',
+              'Hangup()',
+            ]),
+          ),
+        ]
+      : []),
     ctx(
       'p4a-feature',
       exten('s', [
@@ -255,7 +322,7 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
         'Set(D=${D}&${C})',
         'Goto(next)',
         '(dial)GotoIf($["${D}" = ""]?end)',
-        'Dial(${D:1},30)',
+        `Dial(\${D:1},30,${alert})`,
         '(end)Hangup()',
       ]),
     ),
@@ -323,7 +390,7 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
         'Set(P4A_HOPS=$[0${P4A_HOPS} + 1])',
         'GotoIf($[${P4A_HOPS} > 6]?loop)',
         CURL_TIMEOUT,
-        'Set(R=${CURL(${P4A_API}/ext?num=${P4A_TARGET}&from=${URIENCODE(${CALLERID(num)})})})',
+        'Set(R=${CURL(${P4A_API}/ext?num=${P4A_TARGET}&from=${URIENCODE(${CALLERID(num)})}&bt=${URIENCODE(${BLINDTRANSFER})})})',
         'Set(ACT=${CUT(R,|,1)})',
         'GotoIf($["${ACT}" = "goto"]?go)',
         'Set(RT=${CUT(R,|,2)})',
@@ -331,8 +398,17 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
         'Set(BUSY=${CUT(R,|,4)})',
         'Set(NOANS=${CUT(R,|,5)})',
         'Set(MOB=${CUT(R,|,6)})',
+        'Set(ALSO=${CUT(R,|,7)})',
+        'Set(NOTICE=${CUT(R,|,8)})',
         'Set(RT=${IF($["${RT}" = ""]?30:${RT})})',
         contacts('P4A_TARGET', app),
+        // Sekretariat klingelt mit (Chef und Sekretariat, Modus „beide“)
+        'GotoIf($["${ALSO}" = ""]?noalso)',
+        'GotoIf($["${C}" = ""]?alsoonly)',
+        'Set(C=${C}&Local/${ALSO}@p4a-direct)',
+        'Goto(noalso)',
+        '(alsoonly)Set(C=Local/${ALSO}@p4a-direct)',
+        '(noalso)NoOp()',
         // Handy klingelt mit (über das SIP-Konto, siehe p4a-mobile)
         'GotoIf($["${MOB}" != "1"]?nomob)',
         'GotoIf($["${C}" = ""]?mobonly)',
@@ -342,14 +418,20 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
         '(nomob)GotoIf($["${C}" = ""]?noans)',
         'Set(__PICKUPMARK=${P4A_TARGET})',
         'GotoIf($["${REC}" != "1"]?dial)',
+        // Hinweis auf die Aufzeichnung (Zusammenfassung), bevor jemand abhebt
+        'GotoIf($["${NOTICE}" = ""]?rec)',
+        'Answer()',
+        'Playback(${NOTICE})',
+        '(rec)NoOp()',
         'Set(CDR(recordingfile)=${LINKEDID}-${UNIQUEID}.wav)',
         'MixMonitor(${P4A_REC}/${LINKEDID}-${UNIQUEID}.wav,b)',
-        '(dial)Dial(${C},${RT},${P4A_DIALOPTS})',
+        `(dial)Dial(\${C},\${RT},\${P4A_DIALOPTS}${alert})`,
         'GotoIf($["${DIALSTATUS}" = "BUSY"]?busy)',
         'GotoIf($["${DIALSTATUS}" = "ANSWER" | "${DIALSTATUS}" = "CANCEL"]?done)',
         '(noans)Set(T=${NOANS})',
         'Goto(target)',
-        '(busy)Set(T=${BUSY})',
+        // Besetzt: für *37 (Rückruf, sobald frei) merken
+        ...(ccbs ? ['(busy)Set(X=${CURL(${P4A_API}/busy?ext=${P4A_EXT}&to=${P4A_TARGET})})', 'Set(T=${BUSY})'] : ['(busy)Set(T=${BUSY})']),
         'Goto(target)',
         '(go)Set(T=${CUT(R,|,2)})',
         '(target)GotoIf($["${T}" = ""]?busytone)',
@@ -369,6 +451,7 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
         'Set(MODE=${CUT(R,|,1)})',
         'GotoIf($["${MODE}" = ""]?done)',
         'UserEvent(P4AGroup,Group: ${P4A_GID})',
+        'Set(__P4A_ORIGIN=group)',
         'Set(TO=${CUT(R,|,2)})',
         'Set(MEMBERS=${CUT(R,|,3)})',
         'Set(FB=${CUT(R,|,4)})',
@@ -391,7 +474,7 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
         'Set(D=${D}&${C})',
         'Goto(allnext)',
         '(alldial)GotoIf($["${D}" = ""]?fallback)',
-        'Dial(${D:1},${TO},${P4A_DIALOPTS})',
+        `Dial(\${D:1},\${TO},\${P4A_DIALOPTS}${alert})`,
         'GotoIf($["${DIALSTATUS}" = "ANSWER" | "${DIALSTATUS}" = "CANCEL"]?done)',
         'Goto(fallback)',
         '(seq)Set(I=1)',
@@ -400,7 +483,7 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
         contacts('M', app),
         'Set(I=$[${I} + 1])',
         'GotoIf($["${C}" = ""]?seqnext)',
-        'Dial(${C},${MS},${P4A_DIALOPTS})',
+        `Dial(\${C},\${MS},\${P4A_DIALOPTS}${alert})`,
         'GotoIf($["${DIALSTATUS}" = "ANSWER" | "${DIALSTATUS}" = "CANCEL"]?done)',
         'Goto(seqnext)',
         '(queue)Set(__P4A_QGID=${P4A_GID})',
@@ -417,9 +500,14 @@ function genericContexts(app: boolean, parking: boolean, maxExt: number, maxTota
         'GotoIf($["${CURL(${P4A_API}/available?num=${EXTEN}&gid=${P4A_QGID})}" = "0"]?off)',
         contacts('EXTEN', app),
         'GotoIf($["${C}" = ""]?off)',
-        'Dial(${C})',
+        `Dial(\${C},,${alert})`,
         '(off)Hangup()',
       ]),
+    ),
+    // Direkt klingeln, ohne Umleitungen und Mailbox (Sekretariat beim Chef, Rückruf aus der Warteschlange)
+    ctx(
+      'p4a-direct',
+      exten('_X.', ['Set(P4A_TARGET=${EXTEN})', contacts('P4A_TARGET', app), 'GotoIf($["${C}" = ""]?end)', `Dial(\${C},,${alert})`, '(end)Hangup()']),
     ),
     ctx(
       'p4a-tc-run',
@@ -450,7 +538,7 @@ export function extensionsConf(cfg: PbxConfig, gen: GenContext): string {
     '; Erzeugt von Phone4all – Änderungen in der Weboberfläche vornehmen',
     ctx('general', ['static=yes', 'writeprotect=yes', 'clearglobalvars=yes']),
     ctx('globals', [`P4A_API=${gen.apiUrl}`, `P4A_REC=${gen.dirs.recordings}`, 'P4A_DIALOPTS=']),
-    ...genericContexts(cfg.remote.enabled, cfg.parking.enabled, cfg.security.max_calls_ext, cfg.security.max_calls_total),
+    ...genericContexts(cfg),
   ]
 
   // Interne Rufnummern
@@ -468,6 +556,7 @@ export function extensionsConf(cfg: PbxConfig, gen: GenContext): string {
   for (const ivr of cfg.ivrs) {
     if (ivr.number) local.push(exten(ivr.number, [MARK_TO, `Goto(p4a-ivr-${ivr.id},s,1)`]))
   }
+  for (const a of cfg.aiagents) if (a.number) local.push(exten(a.number, [`Goto(p4a-ai,${a.id},1)`]))
   parts.push(ctx('p4a-local', ...local))
 
   parts.push(
@@ -482,6 +571,83 @@ export function extensionsConf(cfg: PbxConfig, gen: GenContext): string {
       ...cfg.timeconditions.map((tc) => exten(tc.id, [`Set(P4A_TC=${tc.id})`, 'Goto(p4a-tc-run,s,1)'])),
     ),
   )
+
+  // Chef und Sekretariat: Anrufe für den Chef klingeln im Sekretariat, mit Hinweis im Namen
+  if (cfg.bosses.length) {
+    parts.push(
+      ctx(
+        'p4a-boss',
+        ...cfg.bosses.map((b) => {
+          const boss = dpName(cfg.extensions.find((e) => e.number === b.boss)?.name || b.boss)
+          return exten(b.id, [`Set(CALLERID(name)=Für ${boss}: \${CALLERID(name)})`, `Set(P4A_TARGET=${b.secretary})`, 'Goto(p4a-ext-run,s,1)'])
+        }),
+      ),
+    )
+  }
+
+  // Rückruf statt Warteschleife: Taste 1 in der Warteschlange, die Anlage ruft zurück, sobald jemand frei ist
+  const qcb = cfg.callback.enabled ? cfg.groups.filter((g) => g.mode === 'queue' && g.callback) : []
+  for (const g of qcb) {
+    parts.push(
+      ctx(
+        `p4a-qcb-${g.id}`,
+        exten('1', [
+          CURL_TIMEOUT,
+          `Set(R=\${CURL(\${P4A_API}/qcallback?gid=${g.id}&num=\${URIENCODE(\${CALLERID(num)})}&name=\${URIENCODE(\${CALLERID(name)})})})`,
+          'GotoIf($["${R}" != "ok"]?back)',
+          `Playback(${gen.dirs.prompts}/qcb-ok)`,
+          'Hangup()',
+          '(back)Playback(pbx-invalid)',
+          `Goto(p4a-group,${g.id},1)`,
+        ]),
+      ),
+    )
+  }
+  if (qcb.length) {
+    parts.push(
+      ctx(
+        'p4a-qcb-in',
+        exten('s', [
+          'Set(__P4A_QGID=${P4A_GID})',
+          'Set(__P4A_ORIGIN=group)',
+          // Nach dem Abheben meldet die Gegenseite ihren Namen; in der Schlange soll „Rückruf …“ stehen
+          'Set(CALLERID(name)=Rückruf ${P4A_QNAME})',
+          'Set(CALLERID(num)=${P4A_QNUM})',
+          // Rückruf kommt an erster Stelle in die Warteschlange (10. Parameter: Position)
+          'Queue(p4a-${P4A_GID},t,,,300,,,,,1)',
+          'Hangup()',
+        ]),
+      ),
+    )
+  }
+
+  // KI-Telefonassistent: Gespräch über AudioSocket mit dem Verwaltungsdienst, danach Weiterleitung
+  if (cfg.aiagents.length) {
+    parts.push(
+      ctx(
+        'p4a-ai',
+        ...cfg.aiagents.map((a) =>
+          exten(a.id, [
+            MARK_TO,
+            'Answer()',
+            'Wait(0.3)',
+            CURL_TIMEOUT,
+            `Set(R=\${CURL(\${P4A_API}/ai-start?agent=${a.id}&uid=\${UNIQUEID}&from=\${URIENCODE(\${CALLERID(num)})}&name=\${URIENCODE(\${CALLERID(name)})})})`,
+            'GotoIf($["${R}" = ""]?fallback)',
+            // Als Kanal (nicht als Anwendung): Beendet der Assistent die Verbindung, geht der Wählplan weiter (g)
+            `Dial(AudioSocket/127.0.0.1:${gen.audioSocket ?? 9093}/\${R},,g)`,
+            'Set(T=${CURL(${P4A_API}/ai-end?id=${R})})',
+            'GotoIf($["${T}" = "hangup"]?done)',
+            'GotoIf($["${T}" = ""]?fallback)',
+            'Set(P4A_FWDBY=flow)',
+            goTo('T'),
+            `(fallback)Goto(${gotoArgs(destTarget(cfg, a.fallback))})`,
+            '(done)Hangup()',
+          ]),
+        ),
+      ),
+    )
+  }
 
   // Konferenzen
   const conf: string[][] = []

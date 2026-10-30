@@ -155,6 +155,7 @@ function usedNumbers(cfg: PbxConfig): Map<string, string> {
   for (const c of cfg.conferences) add(c.number, `Konferenz ${c.name || c.number}`)
   for (const i of cfg.ivrs) add(i.number, `Sprachmenü ${i.name || i.number}`)
   for (const f of cfg.faxes) add(f.number, `Fax ${f.name || f.number}`)
+  for (const a of cfg.aiagents) add(a.number, `KI-Telefonassistent ${a.name || a.number}`)
   for (const n of parkingNumbers(cfg)) add(n, n === cfg.parking.number ? 'Parken' : `Parkplatz ${n}`)
   return used
 }
@@ -208,6 +209,18 @@ export function isAddressOrNet(entry: string): boolean {
   if (extra !== undefined) return false
   if (bits === undefined) return net.isIP(addr) !== 0
   return net.isIPv4(addr) && /^\d{1,2}$/.test(bits) && Number(bits) <= 32
+}
+
+/** Microsoft 365 / Google: Postfach und Zugang (leeres Passwort = unverändert, wird beim Speichern ergänzt) */
+function cloudCheck(src: { type: string; user: string; password: string; tenant?: string; client_id?: string }, what: string): void {
+  src.user = src.user.trim()
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(src.user)) throw new ValidationError(`${what}: Postfach als E-Mail-Adresse angeben.`)
+  if (src.type === 'm365') {
+    src.tenant = (src.tenant ?? '').trim()
+    src.client_id = (src.client_id ?? '').trim()
+    if (!src.tenant || !/^[0-9a-f-]{36}$/i.test(src.client_id)) throw new ValidationError(`${what}: Verzeichnis-ID (Mandant) und Anwendungs-ID aus der App-Registrierung angeben.`)
+  }
+  if (src.type === 'google' && src.password && !/"private_key"/.test(src.password)) throw new ValidationError(`${what}: Den Inhalt der JSON-Schlüsseldatei des Dienstkontos einfügen.`)
 }
 
 export function validate(cfg: PbxConfig): void {
@@ -276,8 +289,11 @@ export function validate(cfg: PbxConfig): void {
     if (c.kind === 'subscription') {
       // Abonnierte Kalender sind nur zum Lesen
       c.writable = false
-      c.source.url = c.source.url.trim().replace(/^webcal:\/\//i, 'https://')
-      if (!/^https?:\/\/\S+$/i.test(c.source.url)) throw new ValidationError(`Kalender ${c.name}: Adresse mit http:// oder https:// angeben.`)
+      if (c.source.type === 'm365' || c.source.type === 'google') cloudCheck(c.source, `Kalender ${c.name}`)
+      else {
+        c.source.url = c.source.url.trim().replace(/^webcal:\/\//i, 'https://')
+        if (!/^https?:\/\/\S+$/i.test(c.source.url)) throw new ValidationError(`Kalender ${c.name}: Adresse mit http:// oder https:// angeben.`)
+      }
       c.source.refresh_minutes = Math.max(5, Math.round(c.source.refresh_minutes) || 60)
     }
   }
@@ -288,6 +304,8 @@ export function validate(cfg: PbxConfig): void {
       if (!s.host.trim() || !s.database.trim()) throw new ValidationError(`Kontaktquelle ${s.name}: Server und Datenbank angeben.`)
       if (s.mode === 'table' && (!s.table.trim() || !s.phone_cols.trim())) throw new ValidationError(`Kontaktquelle ${s.name}: Tabelle und Telefonspalten angeben.`)
       if (s.mode === 'query' && !/^\s*(select|with)\b/i.test(s.query)) throw new ValidationError(`Kontaktquelle ${s.name}: Die Abfrage muss mit SELECT beginnen.`)
+    } else if (s.type === 'm365' || s.type === 'google') {
+      cloudCheck(s, `Kontaktquelle ${s.name}`)
     } else {
       s.url = s.url.trim()
       if (!/^https?:\/\/\S+$/i.test(s.url)) throw new ValidationError(`Kontaktquelle ${s.name}: Adresse mit http:// oder https:// angeben.`)
@@ -346,6 +364,61 @@ export function validate(cfg: PbxConfig): void {
     if (!(pk.seconds >= 15 && pk.seconds <= 3600)) throw new ValidationError('Parken: Wartezeit 15 bis 3600 Sekunden.')
     if (String(Number(pk.number) + pk.slots).length !== pk.number.length) throw new ValidationError('Parken: Die Parkplätze müssen dieselbe Stellenzahl wie die Parknummer haben.')
   }
+  const known = (n: string): boolean => cfg.extensions.some((e) => e.number === n)
+  for (const b of cfg.bosses) {
+    if (!known(b.boss) || !known(b.secretary)) throw new ValidationError('Chef und Sekretariat: beide Nebenstellen wählen.')
+    if (b.boss === b.secretary) throw new ValidationError('Chef und Sekretariat: zwei verschiedene Nebenstellen wählen.')
+    if (cfg.bosses.some((x) => x !== b && x.boss === b.boss)) throw new ValidationError(`Chef und Sekretariat: Für Nebenstelle ${b.boss} gibt es schon ein Sekretariat.`)
+    if (!['secretary', 'both'].includes(b.mode)) b.mode = 'secretary'
+    b.name = b.name.trim().slice(0, 80)
+    b.vip = b.vip.map((v) => v.trim().replace(/[\s\-/().]/g, '')).filter(Boolean)
+    const bad = b.vip.find((v) => !/^\+?\d+\*?$/.test(v))
+    if (bad) throw new ValidationError(`Chef und Sekretariat: „${bad}“ ist keine Rufnummer.`)
+  }
+  for (const r of cfg.reminders) {
+    if (!known(r.extension)) throw new ValidationError('Erinnerungsanruf: Nebenstelle wählen.')
+    if (!TIME.test(r.time)) throw new ValidationError('Erinnerungsanruf: Uhrzeit im Format 07:30 angeben.')
+    r.days = [...new Set(r.days.filter((d) => Number.isInteger(d) && d >= 1 && d <= 7))].sort()
+    if (!r.days.length && !/^\d{4}-\d{2}-\d{2}$/.test(r.date)) throw new ValidationError('Erinnerungsanruf: Wochentage oder ein Datum angeben.')
+    if (r.days.length) r.date = ''
+    r.text = r.text.replace(/\s+/g, ' ').trim().slice(0, 500)
+  }
+  for (const a of cfg.aiagents) {
+    if (!a.name.trim()) throw new ValidationError('KI-Telefonassistent ohne Namen.')
+    if (a.number && !isInternalNumber(a.number)) throw new ValidationError(`KI-Telefonassistent ${a.name}: ungültige Nummer „${a.number}“.`)
+    if (!(a.max_seconds >= 30 && a.max_seconds <= 1800)) throw new ValidationError(`KI-Telefonassistent ${a.name}: Höchstdauer 30 bis 1800 Sekunden.`)
+    a.greeting = a.greeting.trim().slice(0, 500)
+    a.instructions = a.instructions.slice(0, 8000)
+    a.targets = a.targets.map((t) => ({ name: t.name.trim().slice(0, 60), number: cleanNumber(t.number) })).filter((t) => t.name && t.number)
+    for (const n of a.notify_exts) if (!known(n)) throw new ValidationError(`KI-Telefonassistent ${a.name}: Nebenstelle ${n} gibt es nicht.`)
+    emailList(a.notify_email, `KI-Telefonassistent ${a.name}`)
+  }
+  const cb = cfg.callback
+  if (!(Number.isInteger(cb.minutes) && cb.minutes >= 1 && cb.minutes <= 240)) throw new ValidationError('Rückruf bei besetzt: 1 bis 240 Minuten.')
+  const mon = cfg.monitoring
+  if (mon.syslog) {
+    mon.syslog_host = mon.syslog_host.trim()
+    if (!/^[\w.:-]+$/.test(mon.syslog_host)) throw new ValidationError('Syslog: Server fehlt oder ist ungültig.')
+    if (!(mon.syslog_port > 0 && mon.syslog_port < 65536)) throw new ValidationError('Syslog: ungültiger Port.')
+    if (!['udp', 'tcp'].includes(mon.syslog_proto)) mon.syslog_proto = 'udp'
+  }
+  const sms = cfg.sms
+  if (sms.enabled) {
+    if (!['sipgate', 'http'].includes(sms.provider)) throw new ValidationError('SMS: unbekannter Anbieter.')
+    if (sms.provider === 'sipgate' && (!sms.user.trim() || !sms.password || !/^s\d+$/.test(sms.sender.trim()))) {
+      throw new ValidationError('SMS über sipgate: Token-ID, Token und SMS-ID (z. B. s0) angeben.')
+    }
+    sms.url = sms.url.trim()
+    if (sms.provider === 'http' && !/^https?:\/\/\S+$/i.test(sms.url)) throw new ValidationError('SMS: Adresse mit http:// oder https:// angeben.')
+  }
+  const ai = cfg.ai
+  ai.url = ai.url.trim().replace(/\/+$/, '')
+  if (ai.url && !/^https?:\/\/\S+$/i.test(ai.url)) throw new ValidationError('KI: Adresse mit http:// oder https:// angeben, z. B. http://ollama:11434/v1.')
+  ai.model = ai.model.trim()
+  if ((ai.summaries || cfg.aiagents.length) && (!ai.url || !ai.model)) throw new ValidationError('KI: Für Zusammenfassungen und den Telefonassistenten Adresse und Modell des Sprachmodells angeben.')
+  for (const g of cfg.groups) if (g.callback && g.mode !== 'queue') g.callback = false
+  // Zusammenfassen braucht die Aufnahme
+  for (const e of cfg.extensions) if (e.summary) e.record = true
   usedNumbers(cfg)
   for (const b of cfg.blocklist) {
     b.number = b.number.trim().replace(/[\s\-/().]/g, '')
@@ -429,6 +502,7 @@ function cleanState(raw: unknown): RuntimeState {
     dnd: pick(r.dnd, (x): x is boolean => x === true),
     cfu: pick(r.cfu, (x): x is string => typeof x === 'string' && x.trim() !== ''),
     away: pick(r.away, (x): x is string[] => Array.isArray(x) && x.length > 0 && x.every((g) => typeof g === 'string')),
+    boss: pick(r.boss, (x): x is boolean => x === true),
   }
 }
 
@@ -505,6 +579,13 @@ export function stripSecrets(cfg: PbxConfig): PbxConfig {
   c.ldap.password = ''
   c.offsite.password = ''
   c.offsite.passphrase = ''
+  c.monitoring.token = ''
+  c.wallboard.token = ''
+  c.sms.password = ''
+  c.sms.inbound_token = ''
+  c.ai.key = ''
+  for (const s of c.contactsources) s.password = ''
+  for (const k of c.calendars) k.source.password = ''
   for (const w of c.webhooks) w.secret = ''
   return c
 }
@@ -583,6 +664,9 @@ export class ConfigStore {
     for (const b of draft.dect) fillDectSecrets(b)
     for (const d of draft.deskphones) fillDeskSecrets(d)
     if (draft.integration.enabled && !draft.integration.token) draft.integration.token = newSecret(40)
+    if (draft.monitoring.metrics && !draft.monitoring.token) draft.monitoring.token = newSecret(40)
+    if (draft.wallboard.enabled && !draft.wallboard.token) draft.wallboard.token = newSecret(32)
+    if (draft.sms.enabled && !draft.sms.inbound_token) draft.sms.inbound_token = newSecret(32)
     validate(draft)
     this.config = draft
     this.save()
@@ -801,6 +885,7 @@ export class ConfigStore {
       this.state.dnd = Object.fromEntries(Object.entries(state.dnd).filter(([n]) => known.has(n)))
       this.state.cfu = Object.fromEntries(Object.entries(state.cfu).filter(([n]) => known.has(n)))
       this.state.away = Object.fromEntries(Object.entries(state.away).filter(([n]) => known.has(n)))
+      this.state.boss = Object.fromEntries(Object.entries(state.boss).filter(([id]) => this.config.bosses.some((b) => b.id === id)))
       this.saveState()
     }
     for (const [id, events] of Object.entries(data.calendars ?? {})) {

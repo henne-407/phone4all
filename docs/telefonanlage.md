@@ -64,6 +64,13 @@ Mehrere Nebenstellen unter einer Nummer:
 setzen* zeigt am Telefon z. B. „Vertrieb: Anna Müller“, damit man weiß, über welche
 Nummer der Anruf kam. \*8 holt einen klingelnden Anruf der eigenen Gruppe heran.
 
+**Rückruf statt Warten** (nur Warteschlange, dafür unter *System → Funktionen* die
+Rückrufe einschalten): Alle 45 Sekunden hören Wartende „Für einen Rückruf drücken Sie die
+1“ (oder eine eigene Ansage). Wer die 1 drückt, legt auf und behält seinen Platz: Sobald
+jemand in der Gruppe frei ist, ruft die Anlage den Anrufer an und stellt ihn an die erste
+Stelle. Am Telefon steht dann „Rückruf <Name>“. Nimmt der Anrufer nicht ab, versucht es
+die Anlage noch zweimal im Abstand von zwei Minuten.
+
 **An- und abmelden:** Wer gerade nicht mitklingeln soll (Pause, Außentermin), meldet sich
 aus der Gruppe ab: \*45 schaltet alle eigenen Gruppen um, \*45 + Gruppennummer nur eine;
 in den Apps und unter `/me` gibt es je Gruppe einen Schalter. Abgemeldete bekommen auch
@@ -89,6 +96,8 @@ Nebenstellen stehen unter *System → Zugang*:
 | Rufnummern sperren | Anrufer aus dem Verlauf auf die Sperrliste der Anlage setzen |
 | Durchsage und Gegensprechen | \*80 + Nebenstelle, \*81 + Gruppe, \*81 an alle (siehe unten) |
 | Faxe senden | PDF aus der Desktop-App als Fax verschicken |
+| Mithören und Aufschalten | \*90/\*91/\*92 + Nebenstelle (siehe unten, muss unter *System → Funktionen* eingeschaltet sein) |
+| SMS | SMS aus den Apps senden, SMS-Unterhaltungen im Messenger |
 
 ### Tischtelefone
 
@@ -122,6 +131,42 @@ Mit dem Recht *Durchsage und Gegensprechen* (unter *System → Zugang* oder je G
 Tischtelefone und die Phone4All-Apps nehmen von selbst auf dem Lautsprecher an (in den
 Apps abschaltbar). Wer *Nicht stören* hat, wird ausgelassen. Anrufer von außen können sich
 nicht als Durchsage ausgeben.
+
+### Chef und Sekretariat
+
+Ein Paar aus Chef- und Sekretariats-Nebenstelle. Ist es eingeschaltet, klingeln Anrufe für
+den Chef im Sekretariat (oder bei beiden gleichzeitig); das Sekretariat sieht „Für
+<Chef>: <Anrufer>“ und verbindet weiter. Direkt beim Chef klingeln immer:
+
+- Anrufe aus dem Sekretariat und von dort weiterverbundene Gespräche,
+- Kollegen, wenn *Interne Anrufe kommen direkt durch* an ist,
+- die Nummern unter *Kommen immer direkt durch* (mit `*` am Ende alle, die so beginnen).
+
+Ein- und ausschalten mit \*83 am Telefon des Chefs oder des Sekretariats oder mit dem
+Schalter in den Apps (*Sekretariat nimmt an*). Ist es aus, klingelt der Chef selbst.
+
+### Erinnerungsanrufe
+
+Das Telefon klingelt zur eingestellten Uhrzeit und liest nach dem Abheben eine Ansage vor
+(Sprachausgabe; ohne Text nur ein Signalton) – an bestimmten Wochentagen oder einmal an
+einem Datum. Wer nicht abnimmt, wird noch zweimal im Abstand von fünf Minuten angerufen. Am Telefon selbst stellt
+\*55 + Uhrzeit (z. B. \*550730) einen einmaligen Weckruf, heute oder – wenn die Zeit
+vorbei ist – morgen; \*55 allein löscht die einmaligen.
+
+### Mithören, Einflüstern, Aufschalten
+
+Für Schulung und Unterstützung, z. B. im Kundendienst. Unter *System → Funktionen*
+einschalten und Nebenstellen das Recht *Mithören und Aufschalten* geben:
+
+- \*90 + Nebenstelle: **mithören** (niemand hört einen),
+- \*91 + Nebenstelle: **einflüstern** (nur der Kollege hört einen),
+- \*92 + Nebenstelle: **aufschalten** (alle hören einen).
+
+Während des Mithörens wechseln die Tasten 4, 5 und 6 zwischen den drei Arten. Auf Wunsch
+erfährt der Kollege im Messenger, wer dabei war.
+
+> Heimliches Mithören ist in Deutschland verboten. Mitarbeiter müssen vorher informiert
+> sein (z. B. Betriebsvereinbarung), Anrufer über eine Ansage.
 
 ## Eingehende Anrufe
 
@@ -176,6 +221,28 @@ der *Anrufliste* (Knopf neben dem Anruf) und in den Apps, wenn die Nebenstelle d
 *Rufnummern sperren* hat (*System → Zugang* oder bei der Gruppe). Gesperrte Anrufe stehen
 in der Anrufliste als *Gesperrt*.
 
+### KI-Telefonassistent
+
+Ein Sprachassistent nimmt Anrufe an, versteht das Anliegen und antwortet mit der
+Sprachausgabe der Anlage. Er beantwortet Fragen aus *Wissen und Anweisungen*
+(Öffnungszeiten, Leistungen …), verbindet mit einem der Ziele unter *Darf verbinden mit*
+und notiert auf Wunsch einen Rückruf: Name, Nummer und Anliegen gehen per Messenger
+und/oder E-Mail an die eingetragenen Personen und als Webhook `ai.note`. Andere Nummern
+wählt er nie.
+
+In einer Rufabfolge als Ziel *KI-Telefonassistent* wählen; mit einer internen Nummer lässt
+er sich vorher vom eigenen Telefon aus ausprobieren. Er braucht drei Dinge:
+
+1. ein **Sprachmodell** unter *System → Funktionen → KI* (OpenAI-kompatibel, z. B. Ollama
+   auf einem eigenen Rechner, OpenAI, Groq oder Mistral),
+2. die **Spracherkennung** von *Voicemail als Text* (whisper.cpp oder ein Dienst),
+3. eine geladene Stimme der **Sprachausgabe** (*Ansagen und Musik*).
+
+Fehlt etwas, kommt er nicht weiter oder ist die Höchstdauer erreicht, geht der Anruf an
+*Wenn der Assistent nicht weiterkommt*. Auf einem Raspberry Pi mit whisper.cpp vergehen
+zwischen Frage und Antwort einige Sekunden; flüssiger wird es mit einem schnelleren Rechner
+für Erkennung und Modell.
+
 ## Nach außen
 
 ### SIP-Konten
@@ -219,6 +286,8 @@ eingehenden Anrufen.
 | CardDAV | Adresse des Servers, Kontos oder Adressbuchs (Nextcloud, iCloud, mailbox.org …), Benutzer, (App-)Passwort; alle Adressbücher des Kontos werden gelesen |
 | vCard- oder CSV-Datei | Adresse einer `.vcf`/`.csv`-Datei, z. B. Export-Link eines CRM; optional mit Anmeldung |
 | Microsoft SQL Server | Server (auch `server\instanz`), Port, Datenbank, Benutzer (auch `DOMÄNE\benutzer`); Tabelle/Sicht mit Namens-, Firmen- und Telefonspalten oder eine eigene `SELECT`-Abfrage |
+| Microsoft 365 | Postfach, Verzeichnis-ID (Mandant), Anwendungs-ID und geheimer Clientschlüssel einer App-Registrierung in Entra ID mit der Anwendungsberechtigung `Contacts.Read` (Administratorzustimmung) |
+| Google Workspace | Postfach und Schlüsseldatei (JSON) eines Dienstkontos mit domänenweiter Delegierung für `https://www.googleapis.com/auth/contacts.readonly` |
 
 Die Liste zeigt je Quelle, wann sie zuletzt gelesen wurde, wie viele Kontakte sie liefert
 oder warum das Lesen fehlschlug. Bei einem Fehler bleiben die zuletzt gelesenen Kontakte
@@ -231,7 +300,10 @@ erhalten.
 Gemeinsame Kalender für alle Apps: *Eigene Termine* (z. B. Betriebsferien, Schichtplan),
 *Feiertage des Bundeslandes (automatisch)* oder *Anderer Kalender* – ein Kalender-Abo
 (ICS/webcal-Link aus Google, Outlook/Exchange, Nextcloud …) oder ein CalDAV-Kalender, den
-die Anlage regelmäßig liest (nur lesen, zwei Monate zurück bis gut ein Jahr voraus). Bei
+die Anlage regelmäßig liest (nur lesen, zwei Monate zurück bis gut ein Jahr voraus). Auch
+Kalender aus **Microsoft 365** (`Calendars.Read`) und **Google Workspace**
+(`calendar.readonly`, optional mit Kalender-ID) gehen direkt, mit denselben Angaben wie bei
+den Kontakten. Bei
 eigenen Terminen ist einstellbar, ob alle eintragen dürfen oder nur hier geändert wird. Welche Kalender eine App zeigt, legt das
 App-Profil fest.
 
@@ -297,7 +369,8 @@ laufen. Für Anrufe von unterwegs gelten dieselben Voraussetzungen wie für die 
 ### Anrufliste
 
 Alle Gespräche, neueste zuerst: eingehend, ausgehend, intern, mit Dauer. Aufnahmen
-lassen sich hier anhören, lästige Anrufer mit einem Klick sperren.
+lassen sich hier anhören, lästige Anrufer mit einem Klick sperren. Weitere Reiter zeigen
+die verpassten Gruppenanrufe, die KI-Zusammenfassungen und die offenen Rückrufe.
 
 ### Auswertungen
 
@@ -320,6 +393,66 @@ bisherigen Mail von Asterisk – in der Voicemail-Mail samt Aufnahme.
 
 *Probe* spricht einen Satz über die Sprachausgabe und zeigt, was erkannt wurde.
 
+### Gespräche zusammenfassen (KI)
+
+Bei Nebenstellen mit *Gespräche zusammenfassen* zeichnet die Anlage Gespräche auf,
+schreibt sie mit der Spracherkennung mit und lässt das Sprachmodell eine kurze
+Zusammenfassung schreiben: Anliegen, Ergebnis und nächste Schritte. Sie kommt als
+Nachricht der *Telefonanlage* in den Messenger der Nebenstelle, steht in der Anrufliste
+und geht als Webhook `call.summary` raus. Einschalten unter *System → Funktionen → KI*.
+Zusammenfassungen werden wie Aufnahmen nach der Aufbewahrungszeit unter *System →
+Speicher* gelöscht.
+
+> Gespräche ohne Wissen der Beteiligten aufzuzeichnen ist strafbar (§ 201 StGB). Unter
+> *Hinweisansage vor Aufzeichnungen* eine Ansage wählen (z. B. „Dieses Gespräch wird
+> aufgezeichnet und zusammengefasst“) und die Einwilligung der Mitarbeiter einholen. Mit
+> einem Dienst wie OpenAI verlassen Gesprächsinhalte das Haus – dafür besser ein eigenes
+> Modell nutzen.
+
+### Rückruf bei besetzt
+
+Unter *System → Funktionen* einschalten. Ist ein Kollege besetzt, nach dem Besetztzeichen
+\*37 wählen (oder \*37 + Nebenstelle, in den Apps *Rückruf, wenn frei* bei einem
+besetzten Kollegen). Sobald beide frei sind, klingelt zuerst das eigene Telefon
+(„Rückruf <Name>“); nach dem Abheben wählt die Anlage den Kollegen. Der Wunsch gilt die
+eingestellte Zeit (Standard 30 Minuten); \*37 0 löscht alle eigenen.
+
+### Klingelton je Herkunft
+
+Unter *System → Funktionen*. Die Anlage kennzeichnet jeden Anruf mit dem SIP-Kopf
+`Alert-Info` als intern, von außen oder über eine Gruppe (`info=alert-internal`,
+`alert-external`, `alert-group`). Bei Tischtelefonen ordnet man dem im Telefon unter
+*Distinctive Ring* einen Klingelton zu; die Mobil-App zeigt die Herkunft an und vibriert
+unterschiedlich (intern kurz-kurz, Gruppe dreimal, von außen lang).
+
+### SMS
+
+Unter *System → Schnittstellen*, über **sipgate** (Token-ID, Token mit dem Bereich
+`sessions:sms:write`, SMS-ID) oder einen beliebigen Anbieter mit **HTTP-Schnittstelle**
+(Adresse, Inhalt mit `{to}`, `{text}`, `{from}` als JSON oder Formular). Nebenstellen mit
+dem Recht *SMS* senden aus den Apps. Eingehende SMS kommen über die angezeigte geheime
+Adresse `/sms/<schlüssel>` (beim Anbieter als Webhook eintragen, Felder `from` und
+`text`) in den Messenger als Unterhaltung „SMS <Absender>“; Antworten dort gehen als SMS
+zurück. Außerdem gibt es den Webhook `sms.received`.
+
+### Wallboard
+
+Unter *System → Schnittstellen*: eine Vollbildseite für einen Bildschirm im Büro mit allen
+Warteschlangen – wer wartet und wie lange, wer frei ist, offene Rückrufe und die Zahlen
+des Tages. Die Adresse `/wallboard/<schlüssel>` braucht keine Anmeldung; Rufnummern
+erscheinen teilweise verdeckt. *Neu erzeugen* macht die alte Adresse ungültig.
+
+### Überwachung: Prometheus und Syslog
+
+Unter *System → Schnittstellen*:
+
+- **Messwerte** unter `/metrics` für Prometheus/Grafana, mit dem angezeigten Schlüssel
+  (`Authorization: Bearer <schlüssel>`): Asterisk läuft, angemeldete Nebenstellen und
+  SIP-Konten, laufende Gespräche, Anrufe heute, Wartende je Warteschlange, offene
+  Rückrufe, gesperrte Adressen, freier Speicher (alle beginnen mit `phone4all_`).
+- **Syslog**: Meldungen des Watchdogs und Fehler gehen per UDP oder TCP (RFC 5424,
+  Facility local0) an einen Syslog-Server, z. B. Graylog oder ein NAS.
+
 ### System
 
 Geänderte Einstellungen werden erst mit *Anwenden* in der Leiste am unteren Rand
@@ -328,7 +461,7 @@ Geänderte Einstellungen werden erst mit *Anwenden* in der Leiste am unteren Ran
 | Reiter | Inhalt |
 | --- | --- |
 | Allgemein | Name, Adresse für Telefone, Länder-/Ortsvorwahl, Bundesland, Zeitzone, Ports, öffentliche Adresse (NAT), lokale Netze, verschlüsselte Sprache (SRTP; sinnvoll nur mit SIP über TLS am Telefon), Codecs |
-| Funktionen | Gespräche parken, Benachrichtigung bei Notrufen, Voicemail als Text (siehe oben und unten) |
+| Funktionen | Gespräche parken, Benachrichtigung bei Notrufen, Rückrufe, Klingelton je Herkunft, Mithören, KI (Zusammenfassungen und Telefonassistent), Voicemail als Text |
 | E-Mail | SMTP-Server für Voicemail und Einladungen, Testmail |
 | Sicherheit | Sperre nach Fehlanmeldungen, nie sperren, Nebenstellen nur aus bestimmten Netzen, gesperrte Adressen |
 | Sicherung | Export (mit Passwörtern nur verschlüsselt, mit eigenem Passwort), Import, automatische Sicherungen wiederherstellen, tägliche Sicherung auf WebDAV (Nextcloud, NAS) oder S3, immer mit eigenem Kennwort verschlüsselt |
@@ -336,7 +469,7 @@ Geänderte Einstellungen werden erst mit *Anwenden* in der Leiste am unteren Ran
 | Zugang | weitere Zugänge mit Rollen, Selbstbedienung, Passwort, Suche der App im lokalen Netz, Rechte aller Nebenstellen in der App (siehe unten) |
 | Fernzugriff | öffentliche HTTPS-Adresse für Mobil-App und Einrichtungslinks ([Anleitung](fernzugriff.md)) |
 | Diagnose | Zustand, Watchdog-Einstellungen, Ereignisprotokoll |
-| Schnittstellen | Home Assistant und Zugriffsschlüssel ([Anleitung](home-assistant.md)), Anrufe über die Schnittstelle auslösen, Webhooks |
+| Schnittstellen | Home Assistant und Zugriffsschlüssel ([Anleitung](home-assistant.md)), Anrufe über die Schnittstelle auslösen, Webhooks, SMS, Wallboard, Prometheus und Syslog |
 | Protokoll | Warnungen und Fehler von Asterisk, Neustart der Anlage |
 
 ### Zugänge und Selbstbedienung
@@ -347,7 +480,7 @@ Passwort, mindestens 10 Zeichen):
 | Rolle | darf |
 | --- | --- |
 | Verwaltung | alles |
-| Personen und Anrufe | Nebenstellen, Gruppen, Tisch- und DECT-Telefone, Kontakte, Sperren, Konferenzen, Fax, Anrufliste und Auswertungen; nicht Rufabfolgen, SIP-Konten und System |
+| Personen und Anrufe | Nebenstellen, Gruppen, Tisch- und DECT-Telefone, Chef und Sekretariat, Erinnerungsanrufe, Kontakte, Sperren, Konferenzen, Fax, Anrufliste und Auswertungen; nicht Rufabfolgen, SIP-Konten und System |
 | Nur ansehen | alles ansehen, nichts ändern; Passwörter und Einrichtungslinks bleiben verborgen |
 
 Der eingebaute Zugang heißt `admin`. Jede Änderung steht mit dem Anmeldenamen im
@@ -380,7 +513,7 @@ Unter *System → Schnittstellen*:
 
 - **Webhooks** schicken Ereignisse als JSON per POST an eine Adresse: `call.ringing`,
   `call.answered`, `call.ended`, `call.missed`, `voicemail.new`, `voicemail.transcribed`,
-  `call.blocked`, `emergency`, `door.ring`. Die Kopfzeile `X-Phone4all-Signature: sha256=…` ist ein HMAC-SHA256 über
+  `call.blocked`, `emergency`, `door.ring`, `call.summary`, `sms.received`, `ai.note`. Die Kopfzeile `X-Phone4all-Signature: sha256=…` ist ein HMAC-SHA256 über
   den Body mit dem Schlüssel des Webhooks – so prüft der Empfänger die Herkunft.
 - **Anrufe über die Schnittstelle**: `POST /api/integration/call` mit dem Zugriffsschlüssel
   und `{"extension":"10","number":"030123456"}`. Erst klingelt die Nebenstelle, nach dem
@@ -403,3 +536,8 @@ Unter *System → Schnittstellen*:
 | \*31 + Nummer | anonym anrufen |
 | \*28 + Nummer | Zeitsteuerung umschalten (Nachtschaltung) |
 | \*43 | Echo-Test (Mikrofon prüfen) |
+| \*37 | Rückruf, wenn der zuletzt besetzte Kollege frei ist; \*37 + Nebenstelle für diese, \*37 0 löscht alle |
+| \*55 + Uhrzeit | einmaliger Weckruf (z. B. \*550730); \*55 allein löscht ihn |
+| \*83 | Chef und Sekretariat ein/aus |
+| \*90 / \*91 / \*92 + Nebenstelle | mithören / einflüstern / aufschalten |
+| 1 (in der Warteschlange) | Rückruf statt Warten |

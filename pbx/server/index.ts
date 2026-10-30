@@ -7,8 +7,10 @@ import http from 'node:http'
 import https from 'node:https'
 import type { Duplex } from 'node:stream'
 import path from 'node:path'
+import { AgentServer, wav8k } from './aiagent'
 import { Asterisk } from './asterisk'
 import { CalendarStore } from './calendars'
+import { Callbacks } from './callbacks'
 import { external } from './directory'
 import { AuditLog, auditText } from './audit'
 import { Auth, SESSION_COOKIE, SESSION_MAX_AGE } from './auth'
@@ -20,27 +22,31 @@ import { type DoorRing, EmergencyLog, emergencyCall, emergencyText, isEmergency 
 import { CallTracker, type GroupMissedCall, type PbxEvent, Webhooks } from './events'
 import { JoinError, callLegs, joinActions, joinRoom } from './join'
 import { type FaxRecord, FaxStore, MAX_ATTEMPTS, RETRY_MS, faxErrorText, faxRoute, pdfToTiff, tiffPages, tiffToPdf } from './fax'
-import { loadJson, saveJson } from './files'
+import { loadJson, saveJson, writeAtomic } from './files'
 import { type ForwardChange, ForwardError, applyCfu, applyMobile, applyRules, check as checkForward, forwardInfo } from './forwarding'
 import { localTime } from './holidays'
 import { type MissedAction, MissedList } from './missed'
 import { integrationReport, validToken } from './integration'
 import { LdapServer } from './ldap'
+import { aiReady, llmChat } from './llm'
 import { HttpError, type Request, Router, clientIp, makeRequest, proxyHints, sendFile, sendJson, sendText, serveStatic, setTrustedProxies, socketIp } from './http'
 import { type MailAttachment, sendMail } from './mail'
 import { PORTAL_COOKIE, PORTAL_JS, PORTAL_MAX_AGE, PortalSessions, portalPage } from './portal'
 import { ChatError, MessengerHub, MessengerStore, messengerUsers } from './messenger'
+import { Syslog, metricsText } from './monitoring'
 import { BUNDESLAENDER, COLLECTIONS, type CollectionName, type Extension, type PhonebookEntry, SECTIONS, type SectionName, type TranscriptionSettings, WEBHOOK_EVENTS } from './model'
 import { cleanNumber } from './numbers'
 import { type OffsiteStatus, OffsiteError, download as offsiteDownload, target as offsiteTarget, upload as offsiteUpload } from './offsite'
 import { PATHS, SETTINGS } from './paths'
 import { Presence } from './presence'
+import { Reminders } from './reminders'
 import { PROVIDERS } from './providers'
 import { appLink, baseUrl, expiredPage, landingPage, linkBase, profile, startDiscovery, visibleCalendars } from './provisioning'
 import { Turn, WsProxy, appEndpoint, webrtcEnabled } from './remote'
 import {
   BLOCKED_TARGET,
   appPermissions,
+  bossView,
   calendarStatus,
   extensionPlan,
   feature,
@@ -49,6 +55,7 @@ import {
   isAvailable,
   isInternational,
   isLocalNumber,
+  lookupName,
   memberGroups,
   mobilePlan,
   pagePlan,
@@ -56,9 +63,13 @@ import {
   routeInbound,
   routeOutbound,
   setAway,
+  spyPlan,
   timeConditionTarget,
+  targetForNumber,
+  toggleBoss,
 } from './routing'
 import { Guard, inList } from './security'
+import { SmsError, parseInbound, sendSms, smsNumber } from './sms'
 import { SourceSync } from './sources/sync'
 import { listSounds, saveSound, soundDir, soundFile, type SoundKind, toTelephoneWav } from './sounds'
 import { expire, moveMailbox, recordingFile, removeMailbox, report as storageReport } from './storage'
@@ -85,10 +96,12 @@ import {
 import { Tts, TtsError, VOICES } from './tts'
 import { TranscribeError, type Transcript, Transcriber, WHISPER_MODELS } from './transcribe'
 import { callsCsv, computeStats, parseQueueLog } from './stats'
+import { type CallSummary, Summaries, recordingsOf } from './summaries'
 import type { DectBase, DeskPhone, PbxConfig } from './model'
 import { Updater } from './updates'
 import { VoicemailBox, type VoicemailMessage } from './voicemail'
 import { type WatchEvent, Watchdog } from './watchdog'
+import { WALLBOARD_JS, wallboardData, wallboardPage } from './wallboard'
 import { reject, upgrade } from './websocket'
 
 const store = new ConfigStore()
@@ -124,10 +137,165 @@ const tts = new Tts(PATHS.tts)
 const missed = new MissedList(PATHS.missed)
 const faxes = new FaxStore(PATHS.fax)
 const transcriber = new Transcriber(PATHS.whisper, PATHS.transcripts, SETTINGS.whisper)
+
+// -- Welle 3: Rückrufe, Erinnerungen, Überwachung, Zusammenfassungen, KI-Assistent ------
+
+/** Gespräch über AMI starten (ohne Async: wartet, bis abgehoben oder abgelaufen) */
+async function amiOriginate(fields: Record<string, string>): Promise<boolean> {
+  if (!asterisk.ami.connected) return false
+  const [res] = await asterisk.ami.action(fields, (Number(fields.Timeout) || 30000) + 15000).catch(() => [undefined])
+  return res?.Response === 'Success'
+}
+
+/** Text als Ansage für ein paar Minuten ablegen; Pfad ohne Endung, '' ohne Sprachausgabe */
+async function speakTemp(text: string, voice = ''): Promise<string> {
+  const v = voice || tts.status().voices[0]
+  if (!v) return ''
+  const dir = path.join(PATHS.tts, 'announce')
+  fs.mkdirSync(dir, { recursive: true })
+  const base = path.join(dir, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+  fs.writeFileSync(`${base}.wav`, toTelephoneWav(await tts.speak(text, v)))
+  setTimeout(() => fs.rmSync(`${base}.wav`, { force: true }), 15 * 60000).unref()
+  return base
+}
+
+/** Von der Anlage gesprochene Ansagen (Rückruf statt Warteschleife), falls die Sprachausgabe geladen ist */
+const PROMPTS: Record<string, string> = {
+  'qcb-offer': 'Wenn Sie zurückgerufen werden möchten, drücken Sie bitte die Eins. Ihr Platz bleibt dabei erhalten.',
+  'qcb-ok': 'Vielen Dank. Wir rufen Sie zurück, sobald jemand frei ist. Auf Wiederhören.',
+}
+async function ensurePrompts(): Promise<void> {
+  const voice = tts.status().voices[0]
+  if (!voice) return
+  fs.mkdirSync(PATHS.prompts, { recursive: true })
+  for (const [name, text] of Object.entries(PROMPTS)) {
+    const file = path.join(PATHS.prompts, `${name}.wav`)
+    if (fs.existsSync(file)) continue
+    try {
+      writeAtomic(file, toTelephoneWav(await tts.speak(text, voice)))
+    } catch (e) {
+      console.error('Ansage erzeugen:', (e as Error).message)
+    }
+  }
+}
+
+const callbacks = new Callbacks(path.join(PATHS.data, 'callbacks.json'), {
+  config: () => store.config,
+  lineState: (num) => presence.stateOf(num),
+  available: (num, gid) => isAvailable(store.state, num, store.config, gid),
+  originate: amiOriginate,
+  report: (event, req) => {
+    if (event !== 'failed') return
+    if (req.kind === 'ccbs') messenger.notice(req.from, req.to, `Rückruf zu ${req.name || req.to} nicht zustande gekommen (${req.attempts} Versuche).`)
+    else watchdog.log('warning', 'asterisk', `Rückruf an ${req.from} aus der Warteschlange nicht zustande gekommen (${req.attempts} Versuche)`)
+  },
+})
+presence.on('changed', () => void callbacks.tick())
+
+const reminders = new Reminders(path.join(PATHS.data, 'reminders-state.json'), {
+  config: () => store.config,
+  update: (change) => void store.update(change),
+  originate: amiOriginate,
+  speak: (text) => speakTemp(text),
+})
+
+const syslog = new Syslog(() => store.config.monitoring)
+audit.onAdd = (e) => syslog.send('notice', 'audit', `${e.user ?? 'admin'} (${e.ip}): ${e.action}`)
+
+/** Spracherkennung bereit (lokales Modell geladen oder Dienst eingetragen)? */
+function sttReady(): boolean {
+  const t = store.config.transcription
+  return t.engine === 'api' ? Boolean(t.api_url.trim()) : transcriber.status().models.includes(t.model)
+}
+
+const summaries = new Summaries(path.join(PATHS.data, 'summaries'), {
+  transcribe: (file) => transcriber.transcribe(store.config.transcription, file),
+  chat: () => llmChat(store.config.ai),
+  deliver: (s) => deliverSummary(s),
+})
+
+function deliverSummary(s: CallSummary): void {
+  const cfg = store.config
+  const ext = cfg.extensions.find((e) => e.number === s.extension)
+  const who = s.other_name ? `${s.other_name} (${s.other})` : s.other || 'unbekannt'
+  const when = new Date(s.time).toLocaleString('de-DE', { timeZone: cfg.system.timezone, dateStyle: 'short', timeStyle: 'short' })
+  const body = s.summary || `Keine Zusammenfassung: ${s.error}`
+  messenger.inbox(s.extension, `Gespräch mit ${who}, ${when}:\n\n${body}`)
+  if (ext?.email && cfg.mail.host && s.summary) {
+    sendMail(cfg.mail, ext.email, `Zusammenfassung: Gespräch mit ${who}`, `${when}, ${Math.max(1, Math.round(s.duration / 60))} Minuten\n\n${s.summary}\n\n— Abschrift —\n${s.transcript}`).catch(
+      (e: Error) => console.error('Zusammenfassung per E-Mail:', e.message),
+    )
+  }
+  tracker.report('call.summary', { call: s.id, extension: s.extension, other: s.other, other_name: s.other_name, summary: s.summary, error: s.error })
+}
+
+/** Rufnummer → Ansage-Datei (ohne Endung) einer Ansage aus der Liste */
+function announcementFile(id: string): string {
+  const a = store.config.announcements.find((x) => x.id === id)
+  return a?.file ? path.join(PATHS.sounds, a.file) : ''
+}
+
+const agents = new AgentServer({
+  stt: async (pcm) => {
+    const file = path.join(os.tmpdir(), `p4a-ai-${process.pid}-${Date.now()}.wav`)
+    fs.writeFileSync(file, wav8k(pcm))
+    try {
+      return await transcriber.transcribe(store.config.transcription, file)
+    } finally {
+      fs.rmSync(file, { force: true })
+    }
+  },
+  chat: (messages, opts) => llmChat(store.config.ai)(messages, opts),
+  tts: async (text, voice) => {
+    const v = voice && tts.status().voices.includes(voice) ? voice : tts.status().voices[0]
+    return toTelephoneWav(await tts.speak(text, v ?? '')).subarray(44)
+  },
+  note: (n) => {
+    const cfg = store.config
+    const agent = cfg.aiagents.find((a) => a.name === n.agent)
+    const caller = n.from_name ? `${n.from_name} (${n.from})` : n.from || 'unbekannt'
+    const text = `Rückrufnotiz von ${n.agent} – Anruf von ${caller}:\n\n${n.message}`
+    for (const ext of agent?.notify_exts ?? []) messenger.inbox(ext, text)
+    if (agent?.notify_email && cfg.mail.host) {
+      sendMail(cfg.mail, agent.notify_email, `Rückrufnotiz: ${caller}`, `${text}\n\n— Gesprächsverlauf —\n${n.transcript}`).catch((e: Error) =>
+        console.error('Rückrufnotiz per E-Mail:', e.message),
+      )
+    }
+    tracker.report('ai.note', { agent: n.agent, from: n.from, from_name: n.from_name, message: n.message })
+  },
+  context: () => {
+    const cfg = store.config
+    const now = new Date().toLocaleString('de-DE', { timeZone: cfg.system.timezone, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    return { company: cfg.system.name, now }
+  },
+})
+
+messenger.onSms = (room, msg, ext) => {
+  const cfg = store.config
+  if (!cfg.sms.enabled || !appPermissions(cfg, ext).includes('sms')) return messenger.note(room, 'SMS nicht gesendet: Für diese Nebenstelle ist SMS nicht freigegeben.')
+  sendSms(cfg.sms, { to: room.sms!, text: msg.text }).catch((e: Error) => messenger.note(room, `SMS nicht gesendet: ${e.message}`))
+}
+
+/** Nebenstellen mit dem Recht „SMS“ */
+function smsMembers(): string[] {
+  return store.config.extensions.filter((e) => appPermissions(store.config, e.number).includes('sms')).map((e) => e.number)
+}
+
+/** Heutige Auswertung für Wallboard und Messwerte (höchstens alle 30 s neu berechnet) */
+let todayCache: { at: number; report: ReturnType<typeof computeStats> } | null = null
+function todayStats(): ReturnType<typeof computeStats> {
+  const now = Date.now()
+  if (todayCache && now - todayCache.at < 30000) return todayCache.report
+  const midnight = new Date()
+  midnight.setHours(0, 0, 0, 0)
+  todayCache = { at: now, report: computeStats(store.config, readAllCalls(), parseQueueLog(readQueueLog()), midnight.getTime(), now + 60000) }
+  return todayCache.report
+}
 let offsiteStatus: OffsiteStatus = { time: 0, ok: true, file: '', error: '' }
 auth.init()
 store.hooks = {
   renumbered: (from, to) => {
+    callbacks.forget(from)
     messenger.store.renumber(from, to)
     moveMailbox(from, to)
     missed.renumber(from, to)
@@ -135,6 +303,7 @@ store.hooks = {
     portal.logoutExt(from)
   },
   removed: (number) => {
+    callbacks.forget(number)
     messenger.forgotten(number)
     removeMailbox(number)
     fs.rmSync(path.join(PATHS.transcripts, number), { recursive: true, force: true })
@@ -144,6 +313,7 @@ store.hooks = {
 
 tracker.on('event', (e: PbxEvent) => {
   void Promise.all(webhooks.dispatch(e))
+  if (e.event === 'call.ended') summarizeLater(e.data as { call: string; direction: 'in' | 'out' | 'internal'; from: string; from_name: string; to?: string; answered?: boolean; answered_by?: string; duration?: number })
   if (e.event === 'voicemail.new') setTimeout(() => scanVoicemail(String((e.data as { extension: string }).extension)), 1000).unref()
   // Türsprechstelle ruft an: für Home Assistant und als eigenes Ereignis
   if (e.event === 'call.ringing') {
@@ -160,6 +330,19 @@ tracker.on('event', (e: PbxEvent) => {
   if (d.direction === 'out' && d.to) missed.resolve(store.config, d.to, d.from, 'callback')
   if (d.direction === 'in') missed.resolve(store.config, d.from, d.extension ?? '', 'answered')
 })
+/** Aufgezeichnetes Gespräch einer Nebenstelle mit „Zusammenfassen“: nach dem Auflegen zusammenfassen */
+function summarizeLater(d: { call: string; direction: 'in' | 'out' | 'internal'; from: string; from_name: string; to?: string; answered?: boolean; answered_by?: string; duration?: number }): void {
+  const cfg = store.config
+  const ext = cfg.extensions.find((x) => x.number === d.answered_by)
+  if (!d.answered || !ext?.summary || !ext.record || !cfg.ai.summaries || !aiReady(cfg.ai)) return
+  // MixMonitor schreibt die Datei beim Auflegen zu Ende
+  setTimeout(() => {
+    const files = recordingsOf(PATHS.recordings, d.call)
+    const other = d.direction === 'out' ? (d.to ?? '') : d.from
+    summaries.enqueue({ id: d.call, extension: ext.number, direction: d.direction, other, other_name: d.from_name || lookupName(cfg, other), duration: d.duration ?? 0 }, files)
+  }, 3000).unref()
+}
+
 tracker.on('group-missed', (m: GroupMissedCall) => missed.add(store.config, m.call, m.groups, m.from, m.from_name))
 
 // -- Fax per E-Mail ----------------------------------------------------------------------
@@ -383,6 +566,7 @@ watchdog.events = loadJson<WatchEvent[]>(PATHS.watchdog, [])
 let saveEventsTimer: NodeJS.Timeout | null = null
 const mailed = new Map<string, number>() // Prüfung → Zeit der letzten Störungsmeldung
 watchdog.on('event', (e: WatchEvent) => {
+  syslog.send(e.level === 'error' ? 'error' : e.level === 'warning' ? 'warning' : e.level === 'ok' ? 'notice' : 'info', 'watchdog', `${e.check}: ${e.text}`)
   saveEventsTimer ??= setTimeout(() => {
     saveEventsTimer = null
     saveJson(PATHS.watchdog, watchdog.events, 0o644)
@@ -411,6 +595,7 @@ function applySoon(): void {
     ldap.apply()
     messenger.refresh()
     transcriptionChanged()
+    void ensurePrompts()
     asterisk
       .apply(store.config, guard.banned())
       .then(() => setTimeout(() => void loadPresence(), 2000))
@@ -562,7 +747,48 @@ internal.get('/internal/alert', (r) => {
   }
   return 'ok'
 })
-internal.get('/internal/ext', (r) => extensionPlan(store.config, store.state, r.query.get('num') ?? ''))
+internal.get('/internal/ext', (r) =>
+  extensionPlan(store.config, store.state, r.query.get('num') ?? '', new Date(), {
+    from: r.query.get('from') ?? '',
+    transfer: r.query.get('bt') ?? '',
+    // Hinweisansage vor aufgezeichneten Gesprächen
+    notice: announcementFile(store.config.ai.record_notice),
+  }),
+)
+internal.get('/internal/busy', (r) => {
+  callbacks.busy(r.query.get('ext') ?? '', r.query.get('to') ?? '')
+  return 'ok'
+})
+internal.get('/internal/spy', (r) => {
+  const ext = r.query.get('ext') ?? ''
+  const target = r.query.get('target') ?? ''
+  const mode = r.query.get('mode') ?? ''
+  const opts = spyPlan(store.config, ext, target, mode)
+  if (!opts) return ''
+  const what = { listen: 'Mithören', whisper: 'Einflüstern', barge: 'Aufschalten' }[mode] ?? mode
+  audit.add('Telefon', `${what}: Nebenstelle ${ext} bei ${target}`)
+  if (store.config.spy.notify) messenger.notice(target, ext, `${what}: Nebenstelle ${ext} ist in Ihrem laufenden Gespräch dabei.`)
+  return opts
+})
+internal.get('/internal/qcallback', (r) =>
+  callbacks.requestQueue(r.query.get('gid') ?? '', r.query.get('num') ?? '', r.query.get('name') ?? '') ? 'ok' : '',
+)
+/** KI-Telefonassistent: Gespräch anlegen; liefert die Kennung für AudioSocket, '' = nicht verfügbar */
+internal.get('/internal/ai-start', (r) => {
+  const cfg = store.config
+  const agent = cfg.aiagents.find((a) => a.id === r.query.get('agent'))
+  if (!agent || !aiReady(cfg.ai) || !tts.status().voices.length || !sttReady()) return ''
+  return agents.open(agent, r.query.get('from') ?? '', r.query.get('name') ?? '').id
+})
+/** … und das Ergebnis: Ziel im Wählplan, „hangup“ oder '' (Ausweichziel) */
+internal.get('/internal/ai-end', (r) => {
+  const call = agents.get(r.query.get('id') ?? '')
+  if (!call) return ''
+  call.end(call.result)
+  if (call.result.kind === 'hangup') return 'hangup'
+  if (call.result.kind === 'transfer') return targetForNumber(store.config, call.result.number)
+  return ''
+})
 internal.get('/internal/group', (r) =>
   groupPlan(store.config, store.state, r.query.get('id') ?? '', r.query.get('name') ?? '', PATHS.sounds),
 )
@@ -593,7 +819,10 @@ internal.get('/internal/page', (r) => pagePlan(store.config, store.state, r.quer
 internal.get('/internal/ring', (r) => ringPlan(store.config, store.state, r.query.get('target') ?? ''))
 internal.get('/internal/feature', (r) => {
   const ext = r.query.get('ext') ?? ''
-  const result = feature(store.config, store.state, ext, r.query.get('code') ?? '', r.query.get('arg') ?? '')
+  const code = r.query.get('code') ?? ''
+  if (code === 'ccbs') return callbacks.requestCcbs(ext, cleanNumber(r.query.get('arg') ?? ''))
+  if (code === 'remind') return reminders.feature(ext, r.query.get('arg') ?? '')
+  const result = feature(store.config, store.state, ext, code, r.query.get('arg') ?? '')
   if (r.query.get('code') === 'cfu' && result.reply === 'on') forwardAlert(ext, store.state.cfu[ext] ?? '')
   if (result.stateChanged) store.saveState()
   if (result.configChanged) store.save()
@@ -926,7 +1155,62 @@ pub.get('/provision/:token/presence', (r) => {
     voicemail: vm,
     groups,
     missed: list ? { open: missed.open(store.config, ext.number), revision: String(missed.revision) } : null,
+    boss: bossView(store.config, store.state, ext.number),
+    callbacks: callbacks.forExtension(ext.number),
+    callback_enabled: store.config.callback.enabled,
+    sms: store.config.sms.enabled && appPermissions(store.config, ext.number).includes('sms'),
   }
+})
+
+/** Chef und Sekretariat in der App umschalten (wie *83) */
+pub.put('/provision/:token/boss/:id', async (r) => {
+  const ext = tokenExtension(r.params.token)
+  const { active } = await r.json<{ active: boolean }>()
+  if (toggleBoss(store.config, store.state, ext.number, r.params.id, Boolean(active)) === null) throw new HttpError(404, 'Nicht gefunden.')
+  store.saveState()
+  return bossView(store.config, store.state, ext.number)
+})
+
+/** Rückruf, sobald frei (wie *37<Nebenstelle>) */
+pub.post('/provision/:token/callback', async (r) => {
+  const ext = tokenExtension(r.params.token)
+  const { to } = await r.json<{ to: string }>()
+  const target = cleanNumber(String(to ?? ''))
+  if (!target || target === '0') throw new HttpError(400, 'Nebenstelle angeben.')
+  // In der App ist es ein Schalter: vorhandenen Wunsch nicht zurücknehmen
+  if (!callbacks.forExtension(ext.number).some((c) => c.to === target) && callbacks.requestCcbs(ext.number, target) !== 'on') {
+    throw new HttpError(400, store.config.callback.enabled ? 'Rückruf zu dieser Nummer ist nicht möglich (nur interne Nebenstellen).' : 'Rückruf ist ausgeschaltet.')
+  }
+  return callbacks.forExtension(ext.number)
+})
+
+pub.delete('/provision/:token/callback/:id', (r) => {
+  const ext = tokenExtension(r.params.token)
+  callbacks.cancel(r.params.id, ext.number)
+  return callbacks.forExtension(ext.number)
+})
+
+/** SMS aus der App senden (Recht „SMS“); erscheint auch im Messenger */
+pub.post('/provision/:token/sms', async (r) => {
+  const ext = tokenExtension(r.params.token)
+  const cfg = store.config
+  if (!cfg.sms.enabled || !appPermissions(cfg, ext.number).includes('sms')) throw new HttpError(403, 'SMS ist für diese Nebenstelle nicht freigegeben.')
+  const body = await r.json<{ to: string; text: string }>()
+  let to: string
+  try {
+    to = smsNumber(String(body.to ?? ''), cfg.system.country_code, cfg.system.area_code)
+    await sendSms(cfg.sms, { to, text: String(body.text ?? '') })
+  } catch (e) {
+    if (e instanceof SmsError) throw new HttpError(400, e.message)
+    throw e
+  }
+  try {
+    const room = messenger.smsRoom(to, lookupName(cfg, to), smsMembers())
+    if (room.members.includes(ext.number)) messenger.postAs(room, ext.number, String(body.text ?? ''))
+  } catch {
+    // Ohne Messenger nur senden
+  }
+  return { ok: true, to }
 })
 
 /** Gruppen der Nebenstelle: an- und abmelden (wie *45 am Telefon) */
@@ -1344,6 +1628,113 @@ pub.get('/api/integration/status', async (r) => {
   })
 })
 
+// -- Überwachung, Wallboard und SMS-Empfang (geheime Schlüssel statt Anmeldung) -------
+
+function sameSecret(given: string, expected: string): boolean {
+  const a = Buffer.from(given)
+  const b = Buffer.from(expected)
+  return Boolean(expected) && a.length === b.length && timingSafeEqual(a, b)
+}
+
+/** Messwerte für Prometheus: Authorization: Bearer <schlüssel> (oder ?token=) */
+pub.get('/metrics', async (r) => {
+  const m = store.config.monitoring
+  const given = /^Bearer\s+(\S+)$/i.exec(r.raw.headers.authorization ?? '')?.[1] ?? r.query.get('token') ?? ''
+  if (!m.metrics) throw new HttpError(404, 'Nicht gefunden.')
+  if (isBlocked(r.ip)) throw new HttpError(429, TOO_MANY)
+  if (!sameSecret(given, m.token)) {
+    auth.failed(r.ip, 'Falscher Schlüssel für die Messwerte')
+    r.res.setHeader('WWW-Authenticate', 'Bearer')
+    throw new HttpError(401, 'Zugriffsschlüssel fehlt oder ist falsch.')
+  }
+  const cfg = store.config
+  const status = await asterisk.status()
+  const waiting: Record<string, number> = {}
+  if (asterisk.ami.connected && cfg.groups.some((g) => g.mode === 'queue')) {
+    for (const q of await asterisk.ami.list({ Action: 'QueueSummary' }).catch(() => [])) {
+      if (q.Event === 'QueueSummary' && q.Queue?.startsWith('p4a-')) waiting[q.Queue.slice(4)] = Number(q.Callers) || 0
+    }
+  }
+  const t = todayStats().totals
+  sendText(
+    r.res,
+    200,
+    metricsText({
+      cfg,
+      version: SETTINGS.version,
+      asterisk: status.asterisk,
+      amiConnected: asterisk.ami.connected,
+      registered: status.endpoints.filter((e) => e.contacts.length).map((e) => e.number),
+      trunks: status.registrations,
+      activeCalls: status.calls.length,
+      today: { inbound: t.inbound, answered: t.answered, missed: t.missed, voicemail: t.voicemail, outbound: t.outbound, internal: t.internal },
+      waiting,
+      callbacks: callbacks.all().length,
+      banned: guard.bans.length,
+      freeBytes: freeBytes() ?? 0,
+      uptime: process.uptime(),
+    }),
+    'text/plain; version=0.0.4; charset=utf-8',
+  )
+})
+
+function wallboardAuth(r: Request): void {
+  const w = store.config.wallboard
+  if (!w.enabled || !sameSecret(r.params.token, w.token)) throw new HttpError(404, 'Nicht gefunden.')
+}
+
+pub.get('/wallboard/:token', (r) => {
+  wallboardAuth(r)
+  r.res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'self'")
+  r.res.setHeader('Referrer-Policy', 'no-referrer')
+  sendText(r.res, 200, wallboardPage(store.config.system.name, `/wallboard/${r.params.token}`), 'text/html; charset=utf-8')
+})
+pub.get('/wallboard/:token/app.js', (r) => {
+  wallboardAuth(r)
+  sendText(r.res, 200, WALLBOARD_JS, 'text/javascript; charset=utf-8')
+})
+pub.get('/wallboard/:token/data', async (r) => {
+  wallboardAuth(r)
+  const cfg = store.config
+  const status = asterisk.ami.connected && cfg.groups.some((g) => g.mode === 'queue') ? await asterisk.ami.list({ Action: 'QueueStatus' }).catch(() => []) : []
+  return wallboardData(cfg, status, {
+    lineState: (n) => presence.stateOf(n),
+    available: (n, gid) => isAvailable(store.state, n, cfg, gid),
+    callbacks: (gid) => callbacks.forGroup(gid).length,
+    today: todayStats().queues,
+    knownName: (n) => (n ? lookupName(cfg, n) : ''),
+    now: Date.now(),
+  })
+})
+
+/** Eingehende SMS vom Anbieter (JSON oder Formular) */
+pub.post('/sms/:token', async (r) => {
+  const cfg = store.config
+  if (!cfg.sms.enabled || !sameSecret(r.params.token, cfg.sms.inbound_token)) throw new HttpError(404, 'Nicht gefunden.')
+  const raw = (await r.body()).toString('utf8')
+  let body: Record<string, unknown> = {}
+  if (/json/i.test(String(r.raw.headers['content-type'] ?? '')) || raw.trim().startsWith('{')) {
+    try {
+      body = JSON.parse(raw) as Record<string, unknown>
+    } catch {
+      throw new HttpError(400, 'Ungültiges JSON.')
+    }
+  } else {
+    body = Object.fromEntries(new URLSearchParams(raw))
+  }
+  const sms = parseInbound(body)
+  if (!sms) throw new HttpError(400, 'Absender und Text fehlen.')
+  const name = lookupName(cfg, sms.from)
+  try {
+    messenger.smsReceived(sms.from, name, sms.text, smsMembers())
+  } catch (e) {
+    if (!(e instanceof ChatError)) throw e
+    watchdog.log('warning', 'asterisk', `SMS von ${sms.from} empfangen, aber niemand mit SMS-Recht nutzt den Messenger`)
+  }
+  tracker.report('sms.received', { from: sms.from, from_name: name, text: sms.text })
+  return { ok: true }
+})
+
 /** Anruf auslösen (CRM, Hausautomation): erst klingelt die Nebenstelle, nach dem Abheben wird gewählt */
 pub.post('/api/integration/call', async (r) => {
   integrationAuth(r, 'call_api')
@@ -1458,6 +1849,10 @@ function configFor(role: Role): PbxConfig {
   Object.assign(c.integration, { token: '' })
   Object.assign(c.offsite, { password: '', passphrase: '' })
   Object.assign(c.transcription, { api_key: '' })
+  Object.assign(c.monitoring, { token: '' })
+  Object.assign(c.wallboard, { token: '' })
+  Object.assign(c.sms, { password: '', inbound_token: '' })
+  Object.assign(c.ai, { key: '' })
   return c
 }
 
@@ -1478,6 +1873,13 @@ api.put('/api/config/:section', async (r) => {
     if (section === 'mail' && !values.password) merged.password = draft.mail.password
     // Den Zugriffsschlüssel vergibt nur der Server
     if (section === 'integration') merged.token = draft.integration.token
+    if (section === 'monitoring') merged.token = draft.monitoring.token
+    if (section === 'wallboard') merged.token = draft.wallboard.token
+    if (section === 'sms') {
+      merged.inbound_token = draft.sms.inbound_token
+      if (!values.password) merged.password = draft.sms.password
+    }
+    if (section === 'ai' && !values.key) merged.key = draft.ai.key
     ;(draft as unknown as Record<string, unknown>)[section] = merged
   })
   applySoon()
@@ -1751,6 +2153,67 @@ api.post('/api/integration/token', () => {
     draft.integration.token = newSecret(40)
   })
   return store.config.integration
+})
+
+// -- Welle 3 in der Verwaltung -----------------------------------------------------------
+
+api.get('/api/summaries', (r) => summaries.list(r.query.get('ext') ?? ''))
+api.get('/api/summaries/:id', (r) => {
+  const s = summaries.get(r.params.id)
+  if (!s) throw new HttpError(404, 'Keine Zusammenfassung.')
+  return s
+})
+api.delete('/api/summaries/:id', (r) => {
+  summaries.remove(r.params.id)
+  return { ok: true }
+})
+
+/** Offene Rückrufe (besetzt und Warteschlange) */
+api.get('/api/callbacks', () => callbacks.all())
+api.delete('/api/callbacks/:id', (r) => {
+  callbacks.cancel(r.params.id)
+  return { ok: true }
+})
+
+/** Sprachmodell ausprobieren */
+api.post('/api/ai/test', async () => {
+  const cfg = store.config
+  if (!aiReady(cfg.ai)) throw new HttpError(400, 'Adresse und Modell eintragen und speichern.')
+  try {
+    const reply = await llmChat(cfg.ai)([{ role: 'user', content: 'Antworte nur mit dem Wort: Bereit' }], { maxTokens: 20, timeoutMs: 60000 })
+    return { ok: true, reply, tts: tts.status().voices.length > 0, stt: sttReady() }
+  } catch (e) {
+    throw new HttpError(502, (e as Error).message)
+  }
+})
+
+/** Test-SMS aus der Weboberfläche */
+api.post('/api/sms/test', async (r) => {
+  const cfg = store.config
+  const body = await r.json<{ to: string; text?: string }>()
+  try {
+    const to = smsNumber(String(body.to ?? ''), cfg.system.country_code, cfg.system.area_code)
+    await sendSms(cfg.sms, { to, text: body.text || `Test von ${cfg.system.name}` })
+    return { ok: true, to }
+  } catch (e) {
+    if (e instanceof SmsError) throw new HttpError(400, e.message)
+    throw e
+  }
+})
+
+/** Zustand für die Seite Überwachung */
+api.get('/api/monitoring/status', () => ({ syslog_error: syslog.error }))
+
+/** Neuen Zugangsschlüssel für Messwerte, Wallboard oder SMS-Empfang vergeben (der alte gilt nicht mehr) */
+api.post('/api/:section/token', (r) => {
+  const section = r.params.section
+  if (section !== 'monitoring' && section !== 'wallboard' && section !== 'sms') throw new HttpError(404, 'Unbekannter Bereich.')
+  store.update((draft) => {
+    if (section === 'monitoring') draft.monitoring.token = newSecret(40)
+    if (section === 'wallboard') draft.wallboard.token = newSecret(32)
+    if (section === 'sms') draft.sms.inbound_token = newSecret(32)
+  })
+  return store.config[section]
 })
 
 api.post('/api/unban', async (r) => {
@@ -2032,7 +2495,10 @@ api.get('/api/tts', () => ({ ...tts.status(), all: VOICES.map(({ id, name }) => 
 api.post('/api/tts/install', async (r) => {
   const { voice } = await r.json<{ voice: string }>()
   // Läuft im Hintergrund (Programm und Stimme sind zusammen etwa 90 MB)
-  tts.install(String(voice ?? '')).catch((e: Error) => console.error('Sprachausgabe laden:', e.message))
+  tts
+    .install(String(voice ?? ''))
+    .then(() => ensurePrompts())
+    .catch((e: Error) => console.error('Sprachausgabe laden:', e.message))
   return tts.status()
 })
 api.post('/api/tts/speak', async (r) => {
@@ -2084,7 +2550,7 @@ function isLoopback(ip: string): boolean {
 }
 
 /** Pfade mit geheimem Token im zweiten Teil */
-const SECRET_PATH = /^\/(?:provision|setup|dect|desk)\/([^/]+)/
+const SECRET_PATH = /^\/(?:provision|setup|dect|desk|wallboard|sms)\/([^/]+)/
 
 async function handle(raw: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const isUpload = raw.url?.startsWith('/api/sounds') || raw.url?.startsWith('/api/import') || raw.url?.startsWith('/api/faxes/send') || FAX_UPLOAD.test((raw.url ?? '').split('?')[0])
@@ -2184,6 +2650,16 @@ async function main(): Promise<void> {
     }
   }
   startDiscovery(() => store.config)
+  agents.start(SETTINGS.audioSocketPort)
+  void ensurePrompts()
+  setInterval(() => void reminders.tick().catch((e: Error) => console.error('Erinnerungsanrufe:', e.message)), 20000).unref()
+  setInterval(() => void callbacks.tick().catch((e: Error) => console.error('Rückrufe:', e.message)), 15000).unref()
+  // Fehlermeldungen auch an den Syslog-Server
+  const consoleError = console.error.bind(console)
+  console.error = (...args: unknown[]) => {
+    consoleError(...args)
+    syslog.send('error', 'pbx', args.map((a) => (a instanceof Error ? a.message : String(a))).join(' '))
+  }
   asterisk.start()
   watchdog.log('info', 'asterisk', `Verwaltungsdienst gestartet (Version ${SETTINGS.version})`)
   if (store.recovered) watchdog.log('error', 'disk', store.recovered)
@@ -2211,6 +2687,7 @@ async function main(): Promise<void> {
       if (store.config.offsite.enabled) await runOffsite()
     }
     const expired = expire(store.config.storage)
+    summaries.prune(store.config.storage.recordings_days)
     if (expired.recordings || expired.voicemail) {
       watchdog.log('info', 'disk', `Aufbewahrungsfrist: ${expired.recordings} Aufnahmen und ${expired.voicemail} Voicemails gelöscht`)
     }
@@ -2235,6 +2712,8 @@ async function main(): Promise<void> {
     watchdog.stop()
     saveJson(PATHS.watchdog, watchdog.events, 0o644)
     messenger.close()
+    agents.close()
+    syslog.close()
     server.close()
     turn.stop()
     ldap.stop()

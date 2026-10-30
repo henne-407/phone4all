@@ -8,14 +8,17 @@ import CloseFullscreenIcon from '@mui/icons-material/CloseFullscreen'
 import MicIcon from '@mui/icons-material/Mic'
 import MicOffIcon from '@mui/icons-material/MicOff'
 import OpenInFullIcon from '@mui/icons-material/OpenInFull'
+import ScreenShareIcon from '@mui/icons-material/ScreenShare'
+import StopScreenShareIcon from '@mui/icons-material/StopScreenShare'
 import VideocamIcon from '@mui/icons-material/Videocam'
 import VideocamOffIcon from '@mui/icons-material/VideocamOff'
-import { Alert, Box, Button, Dialog, DialogActions, DialogContent, Fab, IconButton, Paper, Snackbar, Stack, Tooltip, Typography } from '@mui/material'
+import { Alert, Box, Button, CardActionArea, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Fab, IconButton, Paper, Snackbar, Stack, Tooltip, Typography } from '@mui/material'
 import { useEffect, useRef, useState } from 'react'
 import type { ChatRoom, MessengerState } from '../../../shared/types'
+import type { ScreenSource } from '../../../main/screenShare'
 import { api, onMain } from '../api'
 import { roomTitle, useMessenger, userName } from '../messenger'
-import { clearNotice, joinVideo, leaveVideo, setCamera, setMinimized, setMuted, useVideo, videoState } from '../video'
+import { clearNotice, joinVideo, leaveVideo, setCamera, setMinimized, setMuted, startScreenShare, stopScreenShare, useVideo, videoState } from '../video'
 import { ContactAvatar } from './common'
 
 /** So lange klingelt es (wie im Hauptprozess) */
@@ -129,6 +132,75 @@ function ControlButton({ label, active, onClick, children }: { label: string; ac
   )
 }
 
+/** Auswahl, was geteilt wird: ganze Bildschirme und einzelne Fenster mit Vorschau */
+function ScreenPicker({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [sources, setSources] = useState<ScreenSource[] | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    if (!open) return
+    setSources(null)
+    setError('')
+    void api.screenSources().then((r) => (r.ok ? setSources(r.value) : setError(r.error)))
+  }, [open])
+  const pick = (id: string): void => {
+    onClose()
+    void startScreenShare(id).then((notice) => notice && setError(notice))
+  }
+  const groups: [string, ScreenSource[]][] = [
+    ['Bildschirme', (sources ?? []).filter((x) => x.screen)],
+    ['Fenster', (sources ?? []).filter((x) => !x.screen)],
+  ]
+  return (
+    <>
+      <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+        <DialogTitle>Was möchtest du teilen?</DialogTitle>
+        <DialogContent>
+          {!sources && !error && (
+            <Stack sx={{ alignItems: 'center', py: 4 }}>
+              <CircularProgress />
+            </Stack>
+          )}
+          {sources && !sources.length && (
+            <Typography sx={{ color: 'text.secondary' }}>
+              Keine Bildschirme gefunden. Unter macOS die Bildschirmaufnahme für Phone4All in den Systemeinstellungen erlauben.
+            </Typography>
+          )}
+          {groups.map(
+            ([label, list]) =>
+              list.length > 0 && (
+                <Box key={label} sx={{ mb: 2 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                    {label}
+                  </Typography>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 1.5 }}>
+                    {list.map((x) => (
+                      <CardActionArea key={x.id} onClick={() => pick(x.id)} sx={{ borderRadius: 2, p: 1, border: 1, borderColor: 'divider' }}>
+                        <Box sx={{ aspectRatio: '16 / 9', bgcolor: 'action.hover', borderRadius: 1, overflow: 'hidden', mb: 0.75 }}>
+                          {x.thumbnail && <Box component="img" src={x.thumbnail} alt="" sx={{ width: '100%', height: '100%', objectFit: 'contain' }} />}
+                        </Box>
+                        <Typography variant="body2" noWrap>
+                          {x.name}
+                        </Typography>
+                      </CardActionArea>
+                    ))}
+                  </Box>
+                </Box>
+              ),
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={onClose}>Abbrechen</Button>
+        </DialogActions>
+      </Dialog>
+      <Snackbar open={Boolean(error) && !open} autoHideDuration={8000} onClose={() => setError('')} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        <Alert severity="warning" variant="filled" onClose={() => setError('')}>
+          {error}
+        </Alert>
+      </Snackbar>
+    </>
+  )
+}
+
 function CallView({ s, room }: { s: MessengerState; room: ChatRoom | undefined }) {
   const v = useVideo()
   const now = useNow(v.status === 'active')
@@ -138,6 +210,9 @@ function CallView({ s, room }: { s: MessengerState; room: ChatRoom | undefined }
   const waiting = v.status === 'connecting' ? 'Verbinde …' : others.length ? '' : room?.kind === 'direct' ? 'Klingelt …' : 'Warte auf die anderen …'
   const n = v.remotes.length
   const cols = columns(n, usePortrait())
+  const [picker, setPicker] = useState(false)
+  // Teilen ersetzt das Kamerabild; ohne Kamera gibt es keine Bildübertragung
+  const canShare = v.status === 'active' && Boolean(v.local?.getVideoTracks().length)
 
   return (
     <Box sx={{ position: 'fixed', inset: 0, zIndex: (t) => t.zIndex.modal - 1, bgcolor: '#202124', color: '#fff', display: 'flex', flexDirection: 'column' }}>
@@ -181,7 +256,9 @@ function CallView({ s, room }: { s: MessengerState; room: ChatRoom | undefined }
             elevation={6}
             sx={{ position: 'absolute', right: 28, bottom: 12, width: { xs: 120, sm: 200 }, aspectRatio: '16 / 9', borderRadius: 2, overflow: 'hidden', bgcolor: '#3c4043' }}
           >
-            {v.camera && v.local.getVideoTracks().length ? (
+            {v.screen ? (
+              <Video stream={v.screen} muted cover={false} />
+            ) : v.camera && v.local.getVideoTracks().length ? (
               <Video stream={v.local} muted mirror />
             ) : (
               <Stack sx={{ height: '100%', alignItems: 'center', justifyContent: 'center' }}>
@@ -199,6 +276,11 @@ function CallView({ s, room }: { s: MessengerState; room: ChatRoom | undefined }
         <ControlButton label={v.camera ? 'Kamera aus' : 'Kamera an'} active={v.camera} onClick={() => setCamera(!v.camera)}>
           {v.camera ? <VideocamIcon /> : <VideocamOffIcon />}
         </ControlButton>
+        {(canShare || v.screen) && (
+          <ControlButton label={v.screen ? 'Teilen beenden' : 'Bildschirm teilen'} active={!v.screen} onClick={() => (v.screen ? void stopScreenShare() : setPicker(true))}>
+            {v.screen ? <StopScreenShareIcon /> : <ScreenShareIcon />}
+          </ControlButton>
+        )}
         <Tooltip title="Auflegen">
           <Fab color="error" aria-label="Auflegen" onClick={() => leaveVideo()}>
             <CallEndIcon />
@@ -206,6 +288,7 @@ function CallView({ s, room }: { s: MessengerState; room: ChatRoom | undefined }
         </Tooltip>
       </Stack>
       {v.audio && <Audio stream={v.audio} />}
+      <ScreenPicker open={picker} onClose={() => setPicker(false)} />
     </Box>
   )
 }

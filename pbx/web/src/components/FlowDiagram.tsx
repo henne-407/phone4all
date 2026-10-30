@@ -14,6 +14,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import DialpadIcon from '@mui/icons-material/Dialpad'
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
 import FaxIcon from '@mui/icons-material/Fax'
+import SmartToyIcon from '@mui/icons-material/SmartToyOutlined'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import GroupsIcon from '@mui/icons-material/Groups'
 import LoopIcon from '@mui/icons-material/Loop'
@@ -45,6 +46,7 @@ export const NODE_ICONS: Record<DestinationType | 'number', ReactNode> = {
   announcement: <CampaignIcon />,
   external: <CallMadeIcon />,
   fax: <FaxIcon />,
+  ai: <SmartToyIcon />,
   hangup: <CallEndIcon />,
 }
 
@@ -184,6 +186,17 @@ function describe(cfg: PbxConfig, d: Destination): NodeInfo {
     }
     case 'external':
       return { type: 'external', title: d.target || 'Nummer fehlt', subtitle: 'Weiterleitung nach außen', children: [], missing: !d.target }
+    case 'ai': {
+      const a = cfg.aiagents.find((x) => x.id === d.target)
+      if (!a) return missing('KI-Telefonassistent')
+      return {
+        type: 'ai',
+        title: a.name,
+        subtitle: a.targets.length ? `KI-Telefonassistent · verbindet mit ${a.targets.map((t) => t.name).join(', ')}` : 'KI-Telefonassistent · nimmt Rückrufnotizen auf',
+        children: [{ label: 'wenn nicht weiter', dest: a.fallback, save: (x) => ['aiagents', { ...a, fallback: x }] }],
+        onOpen: open('aiagents'),
+      }
+    }
     case 'fax': {
       const f = cfg.faxes.find((x) => x.id === d.target)
       if (!f) return missing('Fax')
@@ -427,6 +440,7 @@ export function FlowPalette() {
     ['Voicemail', 'voicemail', config.extensions.filter((e) => e.voicemail.enabled).map((e) => ({ target: e.id, label: `Voicemail ${e.number}` }))],
     ['Konferenzräume', 'conference', config.conferences.map((c) => ({ target: c.id, label: c.name || `Konferenz ${c.number}` }))],
     ['Fax', 'fax', config.faxes.map((f) => ({ target: f.id, label: f.name }))],
+    ['KI-Telefonassistent', 'ai', config.aiagents.map((a) => ({ target: a.id, label: a.name }))],
     ['Sonstiges', 'hangup', [{ target: '', label: 'Auflegen' }]],
   ]
   return (

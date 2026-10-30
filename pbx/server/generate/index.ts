@@ -38,7 +38,7 @@ const MODULES = [
   'app_dial', 'app_playback', 'app_stack', 'app_voicemail', 'app_queue', 'app_confbridge',
   'app_directed_pickup', 'app_echo', 'app_mixmonitor', 'app_read', 'app_exec', 'app_verbose',
   'app_senddtmf', 'app_playtones', 'app_transfer', 'app_blind_transfer', 'app_sayunixtime',
-  'app_softhangup', 'app_chanspy', 'res_parking', 'res_fax', 'res_fax_spandsp', 'res_pjsip_t38',
+  'app_softhangup', 'app_chanspy', 'res_audiosocket', 'chan_audiosocket', 'res_parking', 'res_fax', 'res_fax_spandsp', 'res_pjsip_t38',
   // Funktionen
   'func_curl', 'func_cut', 'func_strings', 'func_logic', 'func_uri', 'func_callerid', 'func_cdr',
   'func_timeout', 'func_channel', 'func_global', 'func_db', 'func_devstate', 'func_hangupcause',
@@ -185,9 +185,13 @@ function msmtprc(cfg: PbxConfig): string {
     .concat('\n')
 }
 
-function queuesConf(cfg: PbxConfig): string {
+function queuesConf(cfg: PbxConfig, gen: GenContext): string {
   const lines = ['[general]', 'persistentmembers=no', 'autofill=yes', 'shared_lastcall=yes', '']
   for (const g of cfg.groups.filter((g) => g.mode === 'queue')) {
+    // Rückruf statt Warten: Taste 1 verlässt die Schlange in p4a-qcb-<id>, die Ansage kommt regelmäßig
+    const callback = cfg.callback.enabled && g.callback
+    const offer = cfg.announcements.find((a) => a.id === g.callback_announcement)?.file
+    const announce = callback ? (offer ? `${gen.dirs.sounds}/${offer}` : `${gen.dirs.prompts}/qcb-offer`) : ''
     lines.push(
       `[p4a-${g.id}]`,
       `strategy=${g.strategy}`,
@@ -199,7 +203,7 @@ function queuesConf(cfg: PbxConfig): string {
       'leavewhenempty=no',
       'ringinuse=no',
       'announce-frequency=0',
-      'periodic-announce-frequency=0',
+      ...(callback ? [`context=p4a-qcb-${g.id}`, `periodic-announce=${announce}`, 'periodic-announce-frequency=45', 'relative-periodic-announce=yes'] : ['periodic-announce-frequency=0']),
       'setinterfacevar=yes',
     )
     for (const num of g.members) {
@@ -350,7 +354,7 @@ export function generate(cfg: PbxConfig, gen: GenContext): Record<string, string
     'extensions.conf': extensionsConf(cfg, gen),
     'rtp.conf': rtpConf(cfg),
     'voicemail.conf': voicemailConf(cfg, gen),
-    'queues.conf': queuesConf(cfg),
+    'queues.conf': queuesConf(cfg, gen),
     'confbridge.conf': confbridgeConf(),
     'musiconhold.conf': mohConf(gen),
     'cdr.conf': cdrConf(),

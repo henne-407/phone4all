@@ -2,7 +2,8 @@
  * Videoanrufe im Messenger: JsSIP und WebRTC direkt in der Oberfläche. Die App ruft als
  * „<nummer>-video“ die Raum-ID des Chats an; die Anlage legt alle in eine Konferenz und
  * leitet jedes Bild einzeln weiter (SFU). Neue Teilnehmer kommen per Re-INVITE als
- * zusätzliche Videoströme dazu. Ton mischt die Anlage zu einem Strom.
+ * zusätzliche Videoströme dazu. Ton mischt die Anlage zu einem Strom. Beim Teilen des
+ * Bildschirms ersetzt das Bild des Bildschirms das der Kamera (ohne neue Verhandlung).
  */
 
 import JsSIP from 'jssip'
@@ -27,6 +28,8 @@ export interface VideoState {
   audio: MediaStream | null
   muted: boolean
   camera: boolean
+  /** Geteilter Bildschirm (null = keiner) */
+  screen: MediaStream | null
   /** Anrufansicht klein (Chat bleibt bedienbar) */
   minimized: boolean
   since: number
@@ -41,6 +44,7 @@ const IDLE: VideoState = {
   audio: null,
   muted: false,
   camera: true,
+  screen: null,
   minimized: false,
   since: 0,
 }
@@ -94,6 +98,7 @@ function collect(pc: RTCPeerConnection): void {
 
 function cleanup(notice = ''): void {
   for (const t of state.local?.getTracks() ?? []) t.stop()
+  for (const t of state.screen?.getTracks() ?? []) t.stop()
   const s = session
   session = null
   if (s && !s.isEnded()) {
@@ -230,4 +235,47 @@ export function setMinimized(minimized: boolean): void {
 
 export function clearNotice(): void {
   set({ notice: '' })
+}
+
+/** Übertragung des eigenen Bildes (Kamera oder Bildschirm) */
+function videoSender(): RTCRtpSender | undefined {
+  return session?.connection?.getSenders().find((x) => x.track?.kind === 'video')
+}
+
+/**
+ * Bildschirm oder Fenster teilen (id aus api.screenSources). Liefert einen Hinweis, wenn
+ * es nicht geht, sonst ''.
+ */
+export async function startScreenShare(id: string): Promise<string> {
+  const sender = videoSender()
+  if (!sender || state.status !== 'active') return 'Bildschirm teilen geht nur in einem Videoanruf, der mit Kamera begonnen wurde.'
+  await api.chooseScreen(id)
+  let display: MediaStream
+  try {
+    display = await navigator.mediaDevices.getDisplayMedia({ video: { width: { max: 1920 }, height: { max: 1080 }, frameRate: { ideal: 10, max: 15 } }, audio: false })
+  } catch {
+    return 'Der Bildschirm konnte nicht geteilt werden (unter macOS: Bildschirmaufnahme in den Systemeinstellungen erlauben).'
+  }
+  const track = display.getVideoTracks()[0]
+  if (!track || videoSender() !== sender) {
+    for (const t of display.getTracks()) t.stop()
+    return ''
+  }
+  // Text bleibt scharf, dafür weniger Bilder pro Sekunde
+  track.contentHint = 'detail'
+  for (const t of state.screen?.getTracks() ?? []) t.stop()
+  await sender.replaceTrack(track)
+  // Über die Leiste des Systems beendet („Freigabe beenden“)
+  track.addEventListener('ended', () => void stopScreenShare())
+  set({ screen: display })
+  return ''
+}
+
+export async function stopScreenShare(): Promise<void> {
+  const screen = state.screen
+  if (!screen) return
+  set({ screen: null })
+  for (const t of screen.getTracks()) t.stop()
+  const camera = state.local?.getVideoTracks()[0] ?? null
+  await videoSender()?.replaceTrack(camera).catch(() => undefined)
 }

@@ -59,6 +59,7 @@ export const gen: GenContext = {
     db: '/data/db',
     modules: '/usr/lib/asterisk/modules',
     asteriskData: '/usr/share/asterisk',
+    prompts: '/data/sounds/prompts',
   },
   ami: { port: 5038, secret: 'x' },
   httpPort: 8088,

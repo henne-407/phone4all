@@ -40,6 +40,7 @@ import { bytes, ChangesBar, ChipsInput, ConfirmDialog, confirmDiscard, FormGrid,
 import { takeEditRequest } from '../router'
 import { usePbx } from '../state'
 import { CallApi, Features, Offsite, Webhooks } from './SystemExtras'
+import { Monitoring, Sms, Wallboard } from './SystemFeatures'
 import { useStatus } from '../useStatus'
 
 function General() {
@@ -835,6 +836,9 @@ function Interfaces() {
       <HomeAssistant />
       <CallApi />
       <Webhooks />
+      <Sms />
+      <Wallboard />
+      <Monitoring />
     </>
   )
 }

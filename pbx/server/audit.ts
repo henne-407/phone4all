@@ -30,9 +30,13 @@ export function auditText(method: string, urlPath: string, result: unknown): str
 }
 
 export class AuditLog {
+  /** Jeder neue Eintrag (z. B. für Syslog) */
+  onAdd?: (e: AuditEntry) => void
+
   constructor(private file: string) {}
 
   add(ip: string, action: string, now = Date.now(), user?: string): void {
+    this.onAdd?.({ time: now, ip, action, ...(user ? { user } : {}) })
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true })
       if (fs.existsSync(this.file) && fs.statSync(this.file).size > MAX_BYTES) {

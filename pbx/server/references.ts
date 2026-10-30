@@ -13,6 +13,7 @@ const TYPES: Partial<Record<CollectionName, DestinationType[]>> = {
   conferences: ['conference'],
   announcements: ['announcement'],
   faxes: ['fax'],
+  aiagents: ['ai'],
 }
 
 /** Alle Ziele der Konfiguration mit einer Beschreibung, wo sie stehen */
@@ -31,6 +32,7 @@ function destinations(cfg: PbxConfig): [string, Destination][] {
       [`Zeitsteuerung „${t.name}“ (geschlossen)`, t.closed],
     ]),
     ...cfg.announcements.map((a): [string, Destination] => [`Ansage „${a.name}“ (danach)`, a.next]),
+    ...cfg.aiagents.map((a): [string, Destination] => [`KI-Telefonassistent „${a.name}“ (Ausweichziel)`, a.fallback]),
   ]
 }
 
@@ -51,6 +53,8 @@ export function usages(cfg: PbxConfig, kind: CollectionName, id: string): string
       for (const b of cfg.dect) if (b.handsets.includes(ext.number)) found.push(`Mobilteil an der DECT-Basis „${b.name}“`)
       for (const d of cfg.deskphones) if (d.extension === ext.number) found.push(`Tischtelefon „${d.name}“`)
       for (const r of cfg.outbound) if (r.extensions.includes(ext.number)) found.push(`Ausgehende Regel „${r.name}“`)
+      for (const b of cfg.bosses) if (b.boss === ext.number || b.secretary === ext.number) found.push(`Chef und Sekretariat „${b.name || b.boss}“`)
+      for (const r of cfg.reminders) if (r.extension === ext.number) found.push(`Erinnerungsanruf um ${r.time}`)
       for (const e of cfg.extensions) {
         if (e.id !== id && forwardTargets(e).includes(ext.number)) found.push(`Weiterleitung von Nebenstelle ${e.number} (${e.name})`)
       }
@@ -81,6 +85,15 @@ export function renumber(cfg: PbxConfig, from: string, to: string): void {
     e.forward.noanswer = map(e.forward.noanswer)
     for (const r of e.forward.rules) r.target = map(r.target)
   }
+  for (const b of cfg.bosses) {
+    b.boss = map(b.boss)
+    b.secretary = map(b.secretary)
+  }
+  for (const r of cfg.reminders) r.extension = map(r.extension)
+  for (const a of cfg.aiagents) {
+    a.notify_exts = a.notify_exts.map(map)
+    for (const t of a.targets) t.number = map(t.number)
+  }
 }
 
 /** Gelöschte Nebenstelle aus Regeln und Weiterleitungen nehmen (Gruppen/DECT macht der Store) */
@@ -92,5 +105,11 @@ export function forget(cfg: PbxConfig, number: string): void {
     if (e.forward.busy === number) e.forward.busy = ''
     if (e.forward.noanswer === number) e.forward.noanswer = ''
     e.forward.rules = e.forward.rules.filter((r) => r.target !== number)
+  }
+  cfg.bosses = cfg.bosses.filter((b) => b.boss !== number && b.secretary !== number)
+  cfg.reminders = cfg.reminders.filter((r) => r.extension !== number)
+  for (const a of cfg.aiagents) {
+    a.notify_exts = a.notify_exts.filter((n) => n !== number)
+    a.targets = a.targets.filter((t) => t.number !== number)
   }
 }

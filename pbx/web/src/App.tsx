@@ -1,4 +1,5 @@
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
+import AlarmIcon from '@mui/icons-material/Alarm'
 import BlockIcon from '@mui/icons-material/Block'
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
 import CallIcon from '@mui/icons-material/Call'
@@ -21,6 +22,8 @@ import RouteIcon from '@mui/icons-material/Route'
 import ScheduleIcon from '@mui/icons-material/Schedule'
 import SettingsIcon from '@mui/icons-material/Settings'
 import SettingsPhoneIcon from '@mui/icons-material/SettingsPhone'
+import SmartToyIcon from '@mui/icons-material/SmartToy'
+import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount'
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt'
 import {
   Alert,
@@ -49,9 +52,11 @@ import {
 } from '@mui/material'
 import { type ReactNode, useEffect, useState } from 'react'
 import { type SessionUser, type UpdateInfo, api } from './api'
+import AiAgents from './pages/AiAgents'
 import Announcements from './pages/Announcements'
 import AppProfiles from './pages/AppProfiles'
 import Blocking from './pages/Blocking'
+import Bosses from './pages/Bosses'
 import Calendars from './pages/Calendars'
 import Calls from './pages/Calls'
 import Conferences from './pages/Conferences'
@@ -66,6 +71,7 @@ import Ivrs from './pages/Ivrs'
 import Messenger from './pages/Messenger'
 import Outbound from './pages/Outbound'
 import Phonebook from './pages/Phonebook'
+import Reminders from './pages/Reminders'
 import Stats from './pages/Stats'
 import System from './pages/System'
 import TimeConditions from './pages/TimeConditions'
@@ -90,6 +96,8 @@ const NAV: [string, NavItem[]][] = [
       { key: 'groups', label: 'Gruppen', icon: <GroupsIcon />, page: <Groups /> },
       { key: 'deskphones', label: 'Tischtelefone', icon: <DeskphoneIcon />, page: <DeskPhones /> },
       { key: 'dect', label: 'DECT-Telefone', icon: <SettingsPhoneIcon />, page: <Dect /> },
+      { key: 'bosses', label: 'Chef und Sekretariat', icon: <SupervisorAccountIcon />, page: <Bosses /> },
+      { key: 'reminders', label: 'Erinnerungsanrufe', icon: <AlarmIcon />, page: <Reminders /> },
     ],
   ],
   [
@@ -98,6 +106,7 @@ const NAV: [string, NavItem[]][] = [
       { key: 'flows', label: 'Rufabfolgen', icon: <AccountTreeIcon />, page: <Flows /> },
       { key: 'timeconditions', label: 'Zeitsteuerung', icon: <ScheduleIcon />, page: <TimeConditions /> },
       { key: 'ivrs', label: 'Sprachmenüs', icon: <DialpadIcon />, page: <Ivrs /> },
+      { key: 'aiagents', label: 'KI-Telefonassistent', icon: <SmartToyIcon />, page: <AiAgents /> },
       { key: 'announcements', label: 'Ansagen und Musik', icon: <CampaignIcon />, page: <Announcements /> },
       { key: 'blocklist', label: 'Anrufsperren', icon: <BlockIcon />, page: <Blocking /> },
     ],
@@ -133,7 +142,7 @@ const NAV: [string, NavItem[]][] = [
 const ITEMS = NAV.flatMap(([, items]) => items)
 
 /** Seiten für „Personen und Anrufe“ (die Anlage prüft die Rechte selbst noch einmal) */
-const OPERATOR_PAGES = new Set(['dashboard', 'extensions', 'groups', 'deskphones', 'dect', 'blocklist', 'phonebook', 'conferences', 'faxes', 'calls', 'stats'])
+const OPERATOR_PAGES = new Set(['dashboard', 'extensions', 'groups', 'deskphones', 'dect', 'bosses', 'reminders', 'blocklist', 'phonebook', 'conferences', 'faxes', 'calls', 'stats'])
 
 const ROLE_LABEL: Record<SessionUser['role'], string> = { admin: 'Verwaltung', operator: 'Personen und Anrufe', viewer: 'Nur ansehen' }
 

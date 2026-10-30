@@ -86,6 +86,14 @@ den Proxy. `X-Forwarded-For` gilt nur von *vertrauenswürdigen Proxys* (Einstell
 - **Rückfrage** in den Apps mit Makeln, Verbinden und Dreierkonferenz (die Anlage führt
   die Gespräche zusammen)
 - **Durchsage und Gegensprechen** (\*81, \*80): Telefone und Apps nehmen selbst an
+- **Chef und Sekretariat** (\*83), **Rückruf bei besetzt** (\*37) und **Rückruf statt
+  Warteschleife** (Taste 1), **Erinnerungsanrufe** (\*55), **Mithören, Einflüstern,
+  Aufschalten** (\*90–\*92), **Klingelton je Herkunft** (`Alert-Info`)
+- **KI-Telefonassistent** (Asterisk AudioSocket, Spracherkennung, Sprachmodell,
+  Sprachausgabe) und **Zusammenfassungen** aufgezeichneter Gespräche; Sprachmodell über eine
+  OpenAI-kompatible Schnittstelle (z. B. Ollama)
+- **SMS** über sipgate oder eine HTTP-Schnittstelle, eingehend per Webhook in den Messenger
+- **Wallboard** für Warteschlangen, **Prometheus** (`/metrics`) und **Syslog**
 - **Voicemail als Text** (whisper.cpp auf der Anlage oder ein OpenAI-kompatibler Dienst)
 - **Fax per E-Mail**: Empfang als PDF, Senden aus Weboberfläche und Desktop-App, T.38
 - **Tischtelefone** von Yealink und Snom richten sich selbst ein, mit Funktionstasten
@@ -107,11 +115,13 @@ den Proxy. `X-Forwarded-For` gilt nur von *vertrauenswürdigen Proxys* (Einstell
   **Wahlregeln** mit Ausweichkonto
 - **Zentrale Kontakte** (auch CSV-Import) für Anrufernamen, werden an die Apps verteilt
   und stehen per **LDAP** für DECT- und Tischtelefone bereit; dazu externe Quellen
-  (CardDAV, vCard-/CSV-Datei im Netz, Microsoft SQL Server), die die Anlage regelmäßig liest
+  (CardDAV, vCard-/CSV-Datei im Netz, Microsoft SQL Server, Microsoft 365, Google Workspace),
+  die die Anlage regelmäßig liest
 - **DECT-Telefone**: Gigaset N610, N670 und N870 IP PRO richten sich per Auto-Provisioning
   selbst ein (ein SIP-Konto je Mobilteil, Voicemail-Anzeige, Übergabe)
 - **Zentrale Kalender** mit eigenen Terminen (z. B. Betriebsferien), den
-  Feiertagen des Bundeslandes oder aus anderen Kalendern (ICS-Abo, CalDAV); erscheinen in jeder App
+  Feiertagen des Bundeslandes oder aus anderen Kalendern (ICS-Abo, CalDAV, Microsoft 365,
+  Google); erscheinen in jeder App
 - **Messenger** für die Desktop-App: Einzel- und Gruppenchats mit Dateien und
   Videoanrufen (Konferenzraum je Chat, Bilder werden einzeln weitergeleitet)
 - **Mobil-App** für Android und iPhone, auch unterwegs über HTTPS (SIP über WebSocket,
@@ -123,7 +133,8 @@ den Proxy. `X-Forwarded-For` gilt nur von *vertrauenswürdigen Proxys* (Einstell
 - **Webhooks** (signiert) und **Anrufe über die Schnittstelle** für CRM und Automationen
 - **Funktionscodes**: \*97 Voicemail, \*76 Nicht stören, \*21 Rufumleitung,
   \*8 / \*\*Nr. Heranholen, \*28 Nachtschaltung, \*31 anonym, \*43 Echo-Test,
-  \*45 Gruppen an/ab, \*80 Gegensprechen, \*81 Durchsage
+  \*45 Gruppen an/ab, \*80 Gegensprechen, \*81 Durchsage, \*37 Rückruf bei besetzt,
+  \*55 Weckruf, \*83 Chef/Sekretariat, \*90/\*91/\*92 Mithören/Einflüstern/Aufschalten
 - **Sicherheit**: Sperre nach Fehlanmeldungen, erlaubte Netze, TLS/SRTP
 - **Konfiguration als Datei** exportieren und importieren (wahlweise mit Passwörtern
   und Ansagen), tägliche automatische Sicherung (14 Tage, Sicherungen vor Import und Update getrennt davon),
@@ -175,8 +186,11 @@ antwortet mit 410, ein abgemeldetes Gerät mit 404.
 | `GET /provision/<token>/chat/files/<raum>/<id>` | Datei abrufen (nur Mitglieder des Raums) |
 | `GET /provision/<token>/forward` | Umleitungen: `cfu`, `active`, `busy`, `noanswer`, `rules` (`when` = `schedule`/`timecondition`/`dnd`/`calendar`, `action` = `forward`/`dnd`, bei Kalender `calendar` und `keyword`), `permissions`, interne `targets`, `timeconditions`, `calendars`, `mobile` (`{ enabled, number }` oder `null`) |
 | `POST /provision/<token>/phonebook`, `PUT`/`DELETE …/phonebook/<id>` | Telefonbuch bearbeiten (Recht `phonebook_edit`; bearbeitbare Einträge haben im Profil eine `id`) |
-| `GET /provision/<token>/presence` | Besetztanzeige: `extensions` (`number`, `name`, `state` = `idle`/`ringing`/`busy`/`offline`, `dnd`, `forward` = interne Nummer oder `extern`, `note` = Status aus dem Kalender), `parked` (`slot`, `number`, `name`, `by`, `since`, `until`), `voicemail` (`{ unread, revision }` oder `null`), `groups` (eigene Gruppen: `id`, `number`, `name`, `active`), `missed` (`{ open, revision }` oder `null` ohne gemeinsame Liste), `revision` – die Apps fragen alle paar Sekunden |
+| `GET /provision/<token>/presence` | Besetztanzeige: `extensions` (`number`, `name`, `state` = `idle`/`ringing`/`busy`/`offline`, `dnd`, `forward` = interne Nummer oder `extern`, `note` = Status aus dem Kalender), `parked` (`slot`, `number`, `name`, `by`, `since`, `until`), `voicemail` (`{ unread, revision }` oder `null`), `groups` (eigene Gruppen: `id`, `number`, `name`, `active`), `missed` (`{ open, revision }` oder `null` ohne gemeinsame Liste), `boss` (`id`, `name`, `role` = `boss`/`secretary`, `partner`, `active`), `callbacks` (offene Rückrufe: `id`, `to`, `name`, `expires`), `callback_enabled`, `sms` (darf SMS senden), `revision` – die Apps fragen alle paar Sekunden |
 | `GET /provision/<token>/groups`, `PUT …/groups/<id>` | eigene Gruppen; `{ active }` meldet an bzw. ab (wie \*45) |
+| `PUT /provision/<token>/boss/<id>` | Chef und Sekretariat: `{ active }` schaltet ein bzw. aus (wie \*83); Antwort wie `boss` in `presence` |
+| `POST /provision/<token>/callback`, `DELETE …/callback/<id>` | Rückruf, wenn frei: `{ to }` (Nebenstelle) fordert an, `DELETE` nimmt zurück; Antwort ist die Liste wie `callbacks` |
+| `POST /provision/<token>/sms` | SMS senden: `{ to, text }` (Recht `sms`), Antwort `{ ok, to }` mit der Nummer in internationaler Form |
 | `GET /provision/<token>/missed` | verpasste Gruppenanrufe: `id`, `group`, `group_name`, `time`, `number`, `name`, `claimed_by`, `done_by`, `done_how` (`callback`/`answered`/`manual`) |
 | `PUT /provision/<token>/missed/<gruppe>/<id>` | `{ action }` = `claim`, `release`, `done` oder `reopen`; Antwort ist die neue Liste |
 | `POST /provision/<token>/calls/join` | Rückfrage abschließen: `{ mode }` = `transfer` (die beiden Gegenüber verbinden) oder `conference` (Dreierkonferenz); braucht genau zwei Gespräche der Nebenstelle, sonst 409 |
@@ -209,6 +223,10 @@ rooms }`. Die App sendet `history` (`room`, `before`), `send` (`room`, `text`), 
 `typing`, `presence`, `users`, `call` (`room`, `call`: `{ since, by, participants }` oder
 `null` am Ende), `declined` (`room`, `ext`) und `error`; `init` enthält zusätzlich die
 laufenden `calls`. Nachrichten tragen eine je Raum fortlaufende `seq`.
+
+Mit *Klingelton je Herkunft* tragen Anrufe an Telefone und Apps den Kopf
+`Alert-Info: <http://phone4all/ring/<herkunft>>;info=alert-<herkunft>` mit `internal`,
+`external` oder `group`.
 
 Durchsagen und Gegensprechen kommen mit `Call-Info: <sip:phone4all>;answer-after=0` und
 einem Anrufernamen, der mit „Durchsage “ bzw. „Gegensprechen “ beginnt; die Apps nehmen
@@ -390,6 +408,29 @@ Zeitlimit 5 Sekunden, keine Wiederholung, Umleitungen werden nicht verfolgt.
 | `call.blocked` | `from`, `from_name`, `to` |
 | `emergency` | `extension`, `name`, `number`, `time` |
 | `door.ring` | `extension`, `name` |
+| `call.summary` | `call`, `extension`, `other`, `other_name`, `summary`, `error` |
+| `sms.received` | `from`, `from_name`, `text` |
+| `ai.note` | `agent`, `from`, `from_name`, `message` (Rückrufnotiz des KI-Telefonassistenten) |
+
+### Wallboard, Messwerte, SMS-Empfang
+
+| Adresse | Inhalt |
+| --- | --- |
+| `GET /wallboard/<schlüssel>` | Vollbildseite für Warteschlangen; `…/data` liefert die Werte als JSON |
+| `GET /metrics` | Prometheus-Format, `Authorization: Bearer <schlüssel>` (oder `?token=`) |
+| `POST /sms/<schlüssel>` | eingehende SMS als JSON oder Formular mit `from` (auch `sender`, `msisdn`, `originator`) und `text` (auch `message`, `body`) |
+
+Schlüssel vergibt die Anlage unter *System → Schnittstellen*; falsche Schlüssel zählen wie
+Fehlanmeldungen.
+
+### KI-Telefonassistent
+
+Asterisk verbindet den Anruf über den Kanaltreiber AudioSocket mit dem Verwaltungsdienst
+(`127.0.0.1:9093`, änderbar mit `PBX_AUDIOSOCKET_PORT`). Der Dienst erkennt Sprechpausen,
+schickt das Gesagte an die Spracherkennung von *Voicemail als Text*, die Antwort des
+Sprachmodells an die Sprachausgabe (Piper) und spielt sie ab. Verbindet der Assistent,
+übernimmt Asterisk den Anruf wieder und wählt das Ziel; bricht etwas ab, geht der Anruf
+an das Ausweichziel.
 
 ## Daten
 
@@ -409,6 +450,9 @@ Alles liegt im Ordner `data/` neben der `docker-compose.yml`:
 | `whisper/`, `transcripts/` | Modelle der Spracherkennung und Voicemail als Text |
 | `fax/` | empfangene und gesendete Faxe als PDF (30 Tage) |
 | `missed.json` | verpasste Gruppenanrufe |
+| `callbacks.json`, `reminders-state.json` | offene Rückrufe, zuletzt ausgelöste Erinnerungen |
+| `summaries/` | KI-Zusammenfassungen mit Abschrift (gelöscht wie Aufnahmen) |
+| `sounds/prompts/` | Ansagen der Anlage aus der Sprachausgabe (z. B. Rückruf-Angebot) |
 | `users.json` | weitere Zugänge der Weboberfläche (Passwörter als scrypt-Hash) |
 
 Umziehen: `data/` kopieren und auf dem neuen Rechner `docker compose up -d` – oder

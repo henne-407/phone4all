@@ -1,6 +1,6 @@
 /**
  * Zentrale Kontakt- und Kalenderquellen: Die Anlage liest CardDAV-Adressbücher,
- * vCard-/CSV-Dateien, SQL Server sowie ICS-Abos und CalDAV-Kalender regelmäßig und
+ * vCard-/CSV-Dateien, SQL Server, Microsoft 365 und Google sowie ICS-Abos und CalDAV-Kalender regelmäßig und
  * gibt sie wie das eigene Telefonbuch bzw. die eigenen Kalender an alle Apps weiter.
  * Gelesene Kontakte liegen in data/sources/<id>.json, Termine in data/calendars/<id>.json.
  */
@@ -16,6 +16,7 @@ import { parseFileData, parseVcards } from './contactImport'
 import { DavClient, DavError, errorText, hasChild, parseXml, textOf } from './dav'
 import { type RawEvent, expandEvents, parseCalendar } from './ical'
 import type { Contact } from './shared'
+import { cloudContacts, cloudEvents } from './cloud'
 import { MsSqlSource } from './sqlSource'
 
 const DIR = path.join(PATHS.data, 'sources')
@@ -101,11 +102,15 @@ async function readContacts(src: ContactSource): Promise<Found[]> {
       return fileUrl(src)
     case 'mssql':
       return (await new MsSqlSource({ ...src, port: Number(src.port) || 1433 }, src.password).fetch())[0]
+    case 'm365':
+    case 'google':
+      return cloudContacts(src as ContactSource & { type: 'm365' | 'google' })
   }
 }
 
 /** Termine eines ICS-Abos oder CalDAV-Kalenders im Zeitraum */
 export async function readEvents(source: CalendarSource, start: number, end: number): Promise<RawEvent[]> {
+  if (source.type === 'm365' || source.type === 'google') return cloudEvents({ ...source, type: source.type }, start, end)
   if (source.type === 'caldav') {
     const client = new DavClient({ id: '', name: '', url: source.url, user: source.user }, source.password)
     const r = await client.request('REPORT', source.url, reportEvents(utcStamp(start), utcStamp(end)), 1)

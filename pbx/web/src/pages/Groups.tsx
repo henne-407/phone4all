@@ -66,6 +66,26 @@ function GroupForm({ value, onChange }: { value: Group; onChange: (v: Group) => 
         {value.mode === 'queue' && (
           <TextField label="Vor den Anrufernamen setzen" value={value.name_prefix} onChange={(e) => set('name_prefix', e.target.value)} />
         )}
+        {value.mode === 'queue' && (
+          <Full>
+            <FormHeading hint={config.callback.enabled ? undefined : 'Dafür zuerst unter System → Funktionen die Rückrufe einschalten.'}>Rückruf statt Warten</FormHeading>
+            <FormControlLabel
+              control={<Switch checked={value.callback} disabled={!config.callback.enabled && !value.callback} onChange={(e) => set('callback', e.target.checked)} />}
+              label="Anrufer können mit Taste 1 einen Rückruf wählen"
+            />
+            {value.callback && (
+              <Box sx={{ mt: 1.5 }}>
+                <Select
+                  label="Ansage alle 45 Sekunden"
+                  value={value.callback_announcement}
+                  onChange={(v) => set('callback_announcement', v)}
+                  options={[['', 'Standard: „Für einen Rückruf drücken Sie die 1“'], ...config.announcements.map((a): [string, string] => [a.id, a.name])]}
+                  helperText="Die Anlage ruft zurück, sobald jemand frei ist, und stellt den Anrufer an die erste Stelle"
+                />
+              </Box>
+            )}
+          </Full>
+        )}
         <Full>
           <FormHeading>Wenn niemand abnimmt</FormHeading>
           <DestinationPicker label="Weiter zu" value={value.fallback} onChange={(d) => set('fallback', d)} />

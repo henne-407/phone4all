@@ -17,6 +17,7 @@ export type DestinationType =
   | 'announcement'
   | 'external'
   | 'fax'
+  | 'ai'
   | 'hangup'
 
 export interface Destination {
@@ -63,6 +64,8 @@ export interface Extension {
   mobile: MobileRing
   /** Türsprechstelle: diese Nebenstelle ist eine Tür, die Apps zeigen „Tür öffnen“ */
   door: DoorSettings
+  /** Aufgezeichnete Gespräche zusammenfassen (nur mit record, KI unter System → Funktionen) */
+  summary: boolean
 }
 
 /** Handy klingelt bei Anrufen auf die Nebenstelle mit */
@@ -126,6 +129,8 @@ export type AppPermission =
   | 'block_numbers'
   | 'intercom'
   | 'fax_send'
+  | 'spy'
+  | 'sms'
 
 export const APP_PERMISSIONS: [AppPermission, string, string][] = [
   ['forward', 'Umleitung schalten', 'In der App die Sofort-Umleitung ein- und ausschalten'],
@@ -137,6 +142,8 @@ export const APP_PERMISSIONS: [AppPermission, string, string][] = [
   ['block_numbers', 'Rufnummern sperren', 'Anrufer aus dem Verlauf auf die Sperrliste der Anlage setzen'],
   ['intercom', 'Durchsage und Gegensprechen', 'Mit *80 direkt zu einer Nebenstelle sprechen, mit *81 eine Durchsage an eine Gruppe'],
   ['fax_send', 'Faxe senden', 'PDF aus der Desktop-App als Fax verschicken'],
+  ['spy', 'Mithören und Aufschalten', 'Mit *90 mithören, *91 einflüstern, *92 aufschalten (nur wenn unter System → Funktionen eingeschaltet)'],
+  ['sms', 'SMS', 'SMS senden und die SMS-Unterhaltungen im Messenger sehen'],
 ]
 
 export type GroupMode = 'all' | 'sequential' | 'queue'
@@ -158,6 +165,10 @@ export interface Group {
   permissions: AppPermission[]
   /** Verpasste Anrufe als gemeinsame Liste in den Apps der Mitglieder */
   missed_list: boolean
+  /** Warteschlange: Anrufer können mit Taste 1 einen Rückruf anfordern */
+  callback: boolean
+  /** Ansage dazu, regelmäßig während der Wartemusik (ID, leer = aus Text erzeugt, falls Sprachausgabe da ist) */
+  callback_announcement: string
 }
 
 export type NumberFormat = 'e164' | 'national' | 'intl00' | 'e164_no_plus'
@@ -330,7 +341,7 @@ export interface OffsiteSettings {
   passphrase: string
 }
 
-export type WebhookEvent = 'call.ringing' | 'call.answered' | 'call.ended' | 'call.missed' | 'voicemail.new' | 'voicemail.transcribed' | 'call.blocked' | 'emergency' | 'door.ring'
+export type WebhookEvent = 'call.ringing' | 'call.answered' | 'call.ended' | 'call.missed' | 'voicemail.new' | 'voicemail.transcribed' | 'call.blocked' | 'emergency' | 'door.ring' | 'call.summary' | 'sms.received' | 'ai.note'
 
 export const WEBHOOK_EVENTS: [WebhookEvent, string][] = [
   ['call.ringing', 'Anruf klingelt'],
@@ -342,6 +353,9 @@ export const WEBHOOK_EVENTS: [WebhookEvent, string][] = [
   ['call.blocked', 'Anruf gesperrt'],
   ['emergency', 'Notruf gewählt'],
   ['door.ring', 'Türsprechstelle klingelt'],
+  ['call.summary', 'Gespräch zusammengefasst'],
+  ['sms.received', 'SMS empfangen'],
+  ['ai.note', 'Notiz vom KI-Telefonassistenten'],
 ]
 
 /** Webhook: die Anlage meldet Ereignisse per HTTP POST */
@@ -398,6 +412,61 @@ export interface DeskPhone {
   admin_password: string
   /** Geheimer Teil der Provisioning-Adresse, vergibt der Server */
   token: string
+}
+
+/** Chef und Sekretariat: Anrufe für den Chef gehen ans Sekretariat, ausgewählte Anrufer kommen durch */
+export interface BossPair {
+  id: string
+  name: string
+  /** Nebenstelle des Chefs */
+  boss: string
+  /** Nebenstelle des Sekretariats */
+  secretary: string
+  /** secretary: nur das Sekretariat klingelt · both: beide klingeln */
+  mode: 'secretary' | 'both'
+  /** Diese Rufnummern kommen immer direkt durch (Präfix mit * am Ende) */
+  vip: string[]
+  /** Interne Anrufe (Kollegen) kommen direkt durch */
+  internal_direct: boolean
+}
+
+/** Erinnerungsanruf: Das Telefon klingelt zur Uhrzeit und spielt eine Ansage */
+export interface Reminder {
+  id: string
+  extension: string
+  enabled: boolean
+  /** „07:30“ */
+  time: string
+  /** Wochentage 1 = Montag … 7 = Sonntag; leer = einmal am Datum */
+  days: number[]
+  /** Nur bei einmaligen Erinnerungen, „2026-11-02“ */
+  date: string
+  /** Text der Ansage (Sprachausgabe); leer = Signalton */
+  text: string
+}
+
+/** KI-Telefonassistent: nimmt Anrufe an, versteht das Anliegen, verbindet oder notiert einen Rückruf */
+export interface AiAgent {
+  id: string
+  name: string
+  /** Interne Nummer zum Testen (optional) */
+  number: string
+  /** Begrüßung, z. B. „Guten Tag, hier ist die Praxis Muster …“ */
+  greeting: string
+  /** Wissen und Anweisungen: Öffnungszeiten, Leistungen, was der Assistent tun darf */
+  instructions: string
+  /** Stimme der Sprachausgabe (leer = erste geladene) */
+  voice: string
+  /** Wohin der Assistent verbinden darf */
+  targets: { name: string; number: string }[]
+  /** Rückrufnotizen per Messenger an diese Nebenstellen */
+  notify_exts: string[]
+  /** … und per E-Mail */
+  notify_email: string
+  /** Höchstdauer eines Gesprächs in Sekunden */
+  max_seconds: number
+  /** Wenn der Assistent nicht weiterkommt oder nicht verfügbar ist */
+  fallback: Destination
 }
 
 export interface PhonebookEntry {
@@ -584,6 +653,8 @@ export interface ChatRoom {
   seq: number
   /** Zuletzt gelesene Nachricht je Nebenstelle */
   read: Record<string, number>
+  /** SMS-Unterhaltung mit dieser Rufnummer: Nachrichten gehen als SMS hinaus */
+  sms?: string
 }
 
 export interface ChatFile {
@@ -660,20 +731,29 @@ export interface CentralCalendar {
 
 /** Kalender eines anderen Servers, den die Anlage regelmäßig liest */
 export interface CalendarSource {
-  /** ics: Abo-Adresse (.ics, webcal://), caldav: Kalender auf einem CalDAV-Server */
-  type: 'ics' | 'caldav'
+  /** ics: Abo-Adresse (.ics, webcal://), caldav: Kalender auf einem CalDAV-Server, m365/google: Kalender eines Postfachs */
+  type: 'ics' | 'caldav' | 'm365' | 'google'
   url: string
+  /** CalDAV/ICS: Benutzer · Microsoft 365/Google: Postfach (E-Mail-Adresse) */
   user: string
+  /** CalDAV/ICS: Passwort · Microsoft 365: geheimer Clientschlüssel · Google: Schlüsseldatei des Dienstkontos (JSON) */
   password: string
+  /** Microsoft 365: Verzeichnis-ID (Mandant) */
+  tenant?: string
+  /** Microsoft 365: Anwendungs-ID (Client) */
+  client_id?: string
   refresh_minutes: number
 }
 
-/** Externe Kontaktquelle (nur lesen): CardDAV, vCard-/CSV-Datei im Netz oder SQL Server */
+/** Externe Kontaktquelle (nur lesen): CardDAV, vCard-/CSV-Datei im Netz, SQL Server, Microsoft 365 oder Google */
 export interface ContactSource {
   id: string
   name: string
-  type: 'carddav' | 'url' | 'mssql'
+  type: 'carddav' | 'url' | 'mssql' | 'm365' | 'google'
   enabled: boolean
+  /** Microsoft 365: Verzeichnis-ID (Mandant) und Anwendungs-ID; das Postfach steht in user, der Clientschlüssel in password */
+  tenant: string
+  client_id: string
   /** CardDAV-Konto oder -Adressbuch bzw. Adresse einer .vcf-/.csv-Datei */
   url: string
   user: string
@@ -740,6 +820,74 @@ export interface LdapSettings {
   password: string
 }
 
+/** Klingelton je Herkunft: die Anlage kennzeichnet Anrufe (Alert-Info), Telefone und Apps wählen danach den Ton */
+export interface RingSettings {
+  enabled: boolean
+}
+
+/** Mithören, Einflüstern, Aufschalten (Recht „spy“); in Deutschland nur mit Information der Beteiligten */
+export interface SpySettings {
+  enabled: boolean
+  /** Die Nebenstelle erfährt im Messenger, wer mitgehört oder sich aufgeschaltet hat */
+  notify: boolean
+}
+
+/** Rückruf bei besetzt: *37 nach dem Besetztzeichen oder in der App */
+export interface CallbackSettings {
+  enabled: boolean
+  /** So lange wartet die Anlage, bis der Kollege frei ist (Minuten) */
+  minutes: number
+}
+
+/** Überwachung von außen: Prometheus und Syslog */
+export interface MonitoringSettings {
+  /** /metrics mit Zugriffsschlüssel */
+  metrics: boolean
+  /** Zugriffsschlüssel (Bearer), vergibt der Server */
+  token: string
+  syslog: boolean
+  syslog_host: string
+  syslog_port: number
+  syslog_proto: 'udp' | 'tcp'
+}
+
+/** Live-Anzeige für Warteschlangen (Vollbild im Büro) */
+export interface WallboardSettings {
+  enabled: boolean
+  /** Geheimer Teil der Adresse, vergibt der Server */
+  token: string
+}
+
+/** SMS über einen Anbieter (sipgate oder beliebige HTTP-Schnittstelle) */
+export interface SmsSettings {
+  enabled: boolean
+  provider: 'sipgate' | 'http'
+  /** sipgate: Token-ID · HTTP: Benutzer (optional, Basic Auth) */
+  user: string
+  /** sipgate: Token · HTTP: Passwort */
+  password: string
+  /** sipgate: SMS-ID (s0 …) · HTTP: Absender */
+  sender: string
+  /** HTTP: Adresse, an die gesendet wird */
+  url: string
+  /** HTTP: Inhalt mit {to}, {text}, {from} (JSON oder Formular) */
+  body: string
+  /** Geheimer Teil der Adresse für eingehende SMS, vergibt der Server */
+  inbound_token: string
+}
+
+/** KI: Sprachmodell (OpenAI-kompatibel) für Zusammenfassungen und den Telefonassistenten */
+export interface AiSettings {
+  /** Adresse bis /v1, z. B. http://ollama:11434/v1 oder https://api.openai.com/v1 */
+  url: string
+  key: string
+  model: string
+  /** Aufgezeichnete Gespräche zusammenfassen (Nebenstellen mit „Zusammenfassen“) */
+  summaries: boolean
+  /** Hinweisansage für Anrufer vor aufgezeichneten Gesprächen (ID der Ansage, leer = keine) */
+  record_notice: string
+}
+
 export interface PbxConfig {
   version: number
   system: SystemSettings
@@ -761,6 +909,9 @@ export interface PbxConfig {
   dect: DectBase[]
   faxes: FaxBox[]
   deskphones: DeskPhone[]
+  bosses: BossPair[]
+  reminders: Reminder[]
+  aiagents: AiAgent[]
   mail: MailSettings
   security: SecuritySettings
   updates: UpdateSettings
@@ -779,6 +930,13 @@ export interface PbxConfig {
   offsite: OffsiteSettings
   transcription: TranscriptionSettings
   portal: PortalSettings
+  ring: RingSettings
+  spy: SpySettings
+  callback: CallbackSettings
+  monitoring: MonitoringSettings
+  wallboard: WallboardSettings
+  sms: SmsSettings
+  ai: AiSettings
 }
 
 export const HANGUP: Destination = { type: 'hangup', target: '' }
@@ -820,6 +978,9 @@ export const DEFAULT_CONFIG: PbxConfig = {
   dect: [],
   faxes: [],
   deskphones: [],
+  bosses: [],
+  reminders: [],
+  aiagents: [],
   mail: { host: '', port: 587, tls: 'starttls', user: '', password: '', from: '' },
   security: {
     ban_enabled: true,
@@ -854,6 +1015,13 @@ export const DEFAULT_CONFIG: PbxConfig = {
   offsite: { enabled: false, type: 'webdav', url: '', user: '', password: '', bucket: '', region: '', folder: 'phone4all', keep: 30, passphrase: '' },
   transcription: { enabled: false, engine: 'local', model: 'small-q5_1', api_url: '', api_key: '', api_model: 'whisper-1', email: true },
   portal: { enabled: false, remote: false },
+  ring: { enabled: true },
+  spy: { enabled: false, notify: true },
+  callback: { enabled: true, minutes: 30 },
+  monitoring: { metrics: false, token: '', syslog: false, syslog_host: '', syslog_port: 514, syslog_proto: 'udp' },
+  wallboard: { enabled: false, token: '' },
+  sms: { enabled: false, provider: 'sipgate', user: '', password: '', sender: '', url: '', body: '', inbound_token: '' },
+  ai: { url: '', key: '', model: '', summaries: false, record_notice: '' },
 }
 
 /** Listen der Konfiguration, die die Weboberfläche einheitlich bearbeitet. */
@@ -876,12 +1044,16 @@ export const COLLECTIONS = [
   'dect',
   'faxes',
   'deskphones',
+  'bosses',
+  'reminders',
+  'aiagents',
 ] as const
 export type CollectionName = (typeof COLLECTIONS)[number]
 
 export const SECTIONS = [
   'system', 'mail', 'security', 'updates', 'provisioning', 'remote', 'watchdog', 'integration', 'ldap', 'messenger', 'storage',
-  'blocking', 'parking', 'emergency', 'offsite', 'transcription', 'portal',
+  'blocking', 'parking', 'emergency', 'offsite', 'transcription', 'portal', 'ring', 'spy', 'callback', 'monitoring', 'wallboard',
+  'sms', 'ai',
 ] as const
 export type SectionName = (typeof SECTIONS)[number]
 
@@ -895,6 +1067,7 @@ export const DESTINATION_LABELS: Record<DestinationType, string> = {
   announcement: 'Ansage',
   external: 'Externe Rufnummer',
   fax: 'Fax an E-Mail',
+  ai: 'KI-Telefonassistent',
   hangup: 'Auflegen',
 }
 
@@ -942,6 +1115,7 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         app_profile: '',
         mobile: { enabled: false, number: '', delay: 0, confirm: true },
         door: { enabled: false, dtmf: '' },
+        summary: false,
       } satisfies Omit<Extension, 'id'>
     case 'groups':
       return {
@@ -957,6 +1131,8 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         fallback: HANGUP,
         permissions: [],
         missed_list: true,
+        callback: false,
+        callback_announcement: '',
       } satisfies Omit<Group, 'id'>
     case 'trunks':
       return {
@@ -1046,13 +1222,15 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
         color: '#1a73e8',
         kind: 'events',
         writable: true,
-        source: { type: 'ics', url: '', user: '', password: '', refresh_minutes: 60 },
+        source: { type: 'ics', url: '', user: '', password: '', tenant: '', client_id: '', refresh_minutes: 60 },
       } satisfies Omit<CentralCalendar, 'id'>
     case 'contactsources':
       return {
         name: '',
         type: 'carddav',
         enabled: true,
+        tenant: '',
+        client_id: '',
         url: '',
         user: '',
         password: '',
@@ -1073,6 +1251,23 @@ export function blankItem(kind: CollectionName): Record<string, unknown> {
       return { name: '', number: '', email: '', station: '', header: '', cid: '' } satisfies Omit<FaxBox, 'id'>
     case 'deskphones':
       return { name: '', vendor: 'yealink', mac: '', extension: '', keys: [], admin_password: '', token: '' } satisfies Omit<DeskPhone, 'id'>
+    case 'bosses':
+      return { name: '', boss: '', secretary: '', mode: 'secretary', vip: [], internal_direct: true } satisfies Omit<BossPair, 'id'>
+    case 'reminders':
+      return { extension: '', enabled: true, time: '07:00', days: [1, 2, 3, 4, 5], date: '', text: '' } satisfies Omit<Reminder, 'id'>
+    case 'aiagents':
+      return {
+        name: '',
+        number: '',
+        greeting: 'Guten Tag, Sie sprechen mit dem digitalen Assistenten. Wie kann ich helfen?',
+        instructions: '',
+        voice: '',
+        targets: [],
+        notify_exts: [],
+        notify_email: '',
+        max_seconds: 300,
+        fallback: HANGUP,
+      } satisfies Omit<AiAgent, 'id'>
   }
 }
 

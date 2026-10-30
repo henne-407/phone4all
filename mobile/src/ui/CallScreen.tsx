@@ -13,6 +13,9 @@ import { PersonAvatar } from './common'
 import { Keypad } from './DialScreen'
 import { CALL_GREEN, CALL_RED } from './theme'
 
+
+const ORIGIN: Record<string, string> = { internal: 'Interner Anruf', external: 'Anruf von außen', group: 'Gruppenanruf' }
+
 function statusText(c: Call, now: number): string {
   switch (c.status) {
     case 'incoming':
@@ -86,9 +89,9 @@ export function CallScreen() {
           <Text variant="headlineMedium" style={styles.center} numberOfLines={2}>
             {call.name || call.number}
           </Text>
-          {call.name ? (
+          {call.name || call.origin ? (
             <Text variant="titleMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-              {call.number}
+              {[call.name && call.number, call.status === 'incoming' && call.origin ? ORIGIN[call.origin] : ''].filter(Boolean).join(' · ')}
             </Text>
           ) : null}
           <Text variant="titleMedium" style={{ color: ended && call.reason ? CALL_RED : theme.colors.primary, marginTop: 8 }}>

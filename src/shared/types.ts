@@ -219,6 +219,26 @@ export interface PbxGroup {
   active: boolean
 }
 
+/** Chef und Sekretariat, an dem die eigene Nebenstelle beteiligt ist */
+export interface PbxBoss {
+  id: string
+  name: string
+  role: 'boss' | 'secretary'
+  /** Nebenstelle des anderen */
+  partner: string
+  /** eingeschaltet: Anrufe für den Chef gehen ans Sekretariat */
+  active: boolean
+}
+
+/** Offener Rückruf bei besetzt („Rückruf, wenn frei“) */
+export interface PbxCallback {
+  id: string
+  /** Nebenstelle, die zurückruft, sobald sie frei ist */
+  to: string
+  name: string
+  expires: number
+}
+
 /** Verpasster Anruf an eine Gruppe (gemeinsame Liste) */
 export interface GroupMissed {
   id: string
@@ -432,6 +452,12 @@ export interface AppState {
   groups: PbxGroup[] | null
   /** Verpasste Gruppenanrufe: offene, version ändert sich bei jeder Änderung (null = keine Liste) */
   groupMissed: { open: number; version: string } | null
+  /** Chef und Sekretariat (leer = nicht beteiligt) */
+  boss: PbxBoss[]
+  /** Offene Rückrufe bei besetzt (null = Rückruf auf der Anlage ausgeschaltet) */
+  callbacks: PbxCallback[] | null
+  /** SMS senden erlaubt */
+  sms: boolean
 }
 
 /** Stand der App-Aktualisierung */
