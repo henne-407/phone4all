@@ -1,0 +1,85 @@
+# Phone4all Testumgebung: Test-Anlage, simulierter Anbieter (Fake-Carrier) und Testtelefone (sipp)
+#
+#   cp .env.example .env            # Passwörter setzen (setup-fedora.sh macht das selbst)
+#   podman compose up -d pbx carrier          # oder: docker compose …
+#   podman compose run --rm e2e               # alle Anruftests, Ergebnisse in ./results
+#
+# Getrennt von der echten Anlage: eigenes Netz, eigener Datenordner (./data), andere Ports.
+# Weboberfläche: http://<rechner>:18080 (Passwort PBX_ADMIN_PASSWORD aus .env)
+
+name: phone4all-test
+
+services:
+  pbx:
+    image: ${PBX_IMAGE:-ghcr.io/henne-407/phone4all-pbx:latest}
+    # „compose build pbx“ bzw. „up --build“ baut das Abbild aus diesem Repo
+    build:
+      context: ..
+      dockerfile: pbx/Dockerfile
+    container_name: p4a-test-pbx
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Berlin
+      PBX_ADMIN_PASSWORD: ${PBX_ADMIN_PASSWORD:?PBX_ADMIN_PASSWORD in .env setzen}
+      PBX_HTTPS_PORT: '0'
+      # Ausführliches Log (SIP-Mitschnitt in debug.log) dauerhaft an
+      PBX_DEBUG: '1'
+    # tcpdump und sngrep im Container (Mitschnitt unter System → Diagnose)
+    cap_add: [NET_RAW]
+    volumes:
+      - ./data:/data:Z
+    networks:
+      test:
+        ipv4_address: 172.30.40.10
+    # SIP und Sprache mit denselben Ports wie im Container, damit echte Telefone im LAN
+    # (DECT, Handy, Desktop-App) die Test-Anlage nutzen können; dazu PBX_EXTERNAL_ADDRESS setzen
+    ports:
+      - ${P4A_BIND:-0.0.0.0}:18080:8080/tcp
+      - ${P4A_BIND:-0.0.0.0}:5070:5070/udp
+      - ${P4A_BIND:-0.0.0.0}:5070:5070/tcp
+      - ${P4A_BIND:-0.0.0.0}:20000-20099:20000-20099/udp
+
+  carrier:
+    build:
+      context: .
+      dockerfile: carrier/Dockerfile
+    image: localhost/phone4all-test-carrier
+    container_name: p4a-test-carrier
+    restart: unless-stopped
+    environment:
+      CARRIER_PASSWORD: ${CARRIER_PASSWORD:?CARRIER_PASSWORD in .env setzen}
+    cap_add: [NET_RAW]
+    networks:
+      test:
+        ipv4_address: 172.30.40.20
+
+  e2e:
+    build:
+      context: .
+      dockerfile: e2e/Dockerfile
+    image: localhost/phone4all-test-e2e
+    profiles: [e2e]
+    depends_on: [pbx, carrier]
+    environment:
+      PBX_URL: http://172.30.40.10:8080
+      PBX_SIP_HOST: 172.30.40.10
+      PBX_SIP_PORT: '5070'
+      E2E_RTP: 20000-20099
+      PBX_EXTERNAL_ADDRESS: ${PBX_EXTERNAL_ADDRESS:-}
+      E2E_LOCAL_NETS: 172.30.40.0/24
+      PBX_ADMIN_PASSWORD: ${PBX_ADMIN_PASSWORD}
+      CARRIER_HOST: 172.30.40.20
+      CARRIER_PORT: '5060'
+      CARRIER_PASSWORD: ${CARRIER_PASSWORD}
+    cap_add: [NET_RAW]
+    volumes:
+      - ./results:/results:Z
+    networks:
+      test:
+        ipv4_address: 172.30.40.30
+
+networks:
+  test:
+    ipam:
+      config:
+        - subnet: 172.30.40.0/24

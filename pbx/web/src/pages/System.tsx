@@ -34,6 +34,7 @@ import {
 } from '@mui/material'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MailSettings, PortalSettings, RemoteSettings, SecuritySettings, StorageSettings, SystemSettings, UpdateSettings, WatchdogSettings } from '../../../server/model'
+import type { DebugStatus } from '../../../server/debug'
 import type { StorageReport } from '../../../server/storage'
 import { type UpdateInfo, type WatchEvent, type WatchdogResponse, api } from '../api'
 import { bytes, ChangesBar, ChipsInput, ConfirmDialog, confirmDiscard, FormGrid, Full, NumberField, PageHeader, PermissionChecks, Section, Select, useDraft } from '../components/common'
@@ -1062,6 +1063,7 @@ function Diagnose() {
           <Typography sx={{ color: 'text.secondary' }}>Keine Ereignisse.</Typography>
         )}
       </Section>
+      <Troubleshoot />
       <Section title="Änderungsprotokoll" description="Anmeldungen und Änderungen in der Weboberfläche mit Adresse, neueste zuerst.">
         {changes.length ? (
           <List dense disablePadding sx={{ maxHeight: 420, overflow: 'auto' }}>
@@ -1184,6 +1186,78 @@ function Storage() {
       />
       <ChangesBar dirty={d.dirty} onApply={() => saveSection('storage', st)} onDiscard={d.reset} />
     </>
+  )
+}
+
+/** Ausführliches Log, Netzwerk-Mitschnitt und Diagnose-Paket (nur Verwaltung) */
+function Troubleshoot() {
+  const { toast } = usePbx()
+  const [st, setSt] = useState<DebugStatus | null>(null)
+  const [minutes, setMinutes] = useState(30)
+  const [seconds, setSeconds] = useState(60)
+  const load = (): void => void api.get<DebugStatus>('/api/debug').then(setSt).catch(() => setSt(null))
+  useEffect(() => {
+    load()
+    const t = setInterval(load, 3000)
+    return () => clearInterval(t)
+  }, [])
+  if (!st) return null
+  const run = (p: Promise<DebugStatus>): void => void p.then(setSt).catch((e: Error) => toast(e.message, 'error'))
+  const time = (ms: number): string => new Date(ms).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return (
+    <Section
+      title="Fehlersuche"
+      description="Für die Suche nach einem bestimmten Fehler: ausführliches Log mit allen SIP-Nachrichten, Mitschnitt von SIP und Sprache für Wireshark und ein Diagnose-Paket mit Logs und Konfiguration ohne Passwörter."
+      action={
+        <Button startIcon={<DownloadIcon />} href="/api/debug/bundle">
+          Diagnose-Paket
+        </Button>
+      }
+    >
+      <Stack sx={{ gap: 2 }}>
+        <Stack direction="row" sx={{ gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={st.verbose}
+                disabled={st.forced}
+                onChange={(e) => run(api.put<DebugStatus>('/api/debug', { verbose: e.target.checked, minutes }))}
+              />
+            }
+            label="Ausführliches Log"
+          />
+          {!st.verbose && <TextField size="small" type="number" label="Minuten" value={minutes} onChange={(e) => setMinutes(Number(e.target.value) || 30)} slotProps={{ htmlInput: { min: 1, max: 240 } }} sx={{ width: 120 }} />}
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            {st.forced ? 'Dauerhaft an (PBX_DEBUG=1)' : st.verbose ? `An bis ${time(st.until)}` : 'Aus'}
+            {st.log_bytes ? ` · ${bytes(st.log_bytes)}` : ''}
+          </Typography>
+          <Button disabled={!st.log_bytes} href="/api/debug/log">
+            Log herunterladen
+          </Button>
+        </Stack>
+        <Stack direction="row" sx={{ gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+          {st.capture.running ? (
+            <Button color="error" variant="outlined" onClick={() => run(api.del<DebugStatus>('/api/debug/capture'))}>
+              Mitschnitt beenden
+            </Button>
+          ) : (
+            <>
+              <Button variant="outlined" disabled={!st.capture.available} onClick={() => run(api.post<DebugStatus>('/api/debug/capture', { seconds }))}>
+                Mitschnitt starten
+              </Button>
+              <TextField size="small" type="number" label="Sekunden" value={seconds} onChange={(e) => setSeconds(Number(e.target.value) || 60)} slotProps={{ htmlInput: { min: 5, max: 600 } }} sx={{ width: 120 }} />
+            </>
+          )}
+          <Typography variant="body2" sx={{ color: st.capture.error ? 'error.main' : 'text.secondary' }}>
+            {st.capture.error ||
+              (!st.capture.available ? 'tcpdump fehlt' : st.capture.running ? `Läuft bis ${time(st.capture.until)} · ${bytes(st.capture.bytes)}` : st.capture.bytes ? bytes(st.capture.bytes) : '')}
+          </Typography>
+          <Button disabled={st.capture.running || !st.capture.bytes} href="/api/debug/capture">
+            pcap herunterladen
+          </Button>
+        </Stack>
+      </Stack>
+    </Section>
   )
 }
 

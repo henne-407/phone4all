@@ -29,6 +29,7 @@ import { type MissedAction, MissedList } from './missed'
 import { integrationReport, validToken } from './integration'
 import { LdapServer } from './ldap'
 import { aiReady, llmChat } from './llm'
+import { Debug } from './debug'
 import { CLIENT_CSP, CLIENT_PERMISSIONS, HttpError, type Request, Router, clientIp, makeRequest, proxyHints, sendFile, sendJson, sendText, serveStatic, setTrustedProxies, socketIp } from './http'
 import { type MailAttachment, sendMail } from './mail'
 import { PORTAL_COOKIE, PORTAL_JS, PORTAL_MAX_AGE, PortalSessions, portalPage } from './portal'
@@ -109,6 +110,9 @@ setTrustedProxies(() => store.config.security.trusted_proxies)
 const auth = new Auth()
 const users = new UserStore(PATHS.users)
 const asterisk = new Asterisk()
+const debug = new Debug(asterisk.ami, PATHS.log)
+asterisk.on('running', () => void debug.apply())
+asterisk.on('reloaded', () => void debug.apply())
 const turn = new Turn()
 const ws = new WsProxy(() => webrtcEnabled(store.config), (ip) => guard.isBanned(ip))
 // Fehlanmeldungen über den WebSocket-Proxy der echten Adresse des Telefons zuordnen
@@ -2326,6 +2330,49 @@ api.post('/api/storage/cleanup', () => {
 })
 
 api.get('/api/log', () => tailLog())
+
+// Fehlersuche (System → Diagnose): ausführliches Log, Mitschnitt, Diagnose-Paket
+api.get('/api/debug', () => debug.status())
+api.put('/api/debug', async (r) => {
+  const { verbose, minutes } = await r.json<{ verbose: boolean; minutes?: number }>()
+  if (verbose) await debug.enable(minutes ?? 30)
+  else if (!debug.forced) await debug.disable()
+  return debug.status()
+})
+api.get('/api/debug/log', (r) => {
+  if (!fs.existsSync(debug.logFile)) throw new HttpError(404, 'Noch kein ausführliches Log.')
+  sendFile(r.res, debug.logFile, 'debug.log')
+})
+api.post('/api/debug/capture', async (r) => {
+  const { seconds } = await r.json<{ seconds?: number }>()
+  const s = store.config.system
+  try {
+    debug.startCapture(seconds ?? 60, { sipPorts: [s.sip_port, s.tls_port, 15060], rtpStart: s.rtp_start, rtpEnd: s.rtp_end })
+  } catch (e) {
+    throw new HttpError(409, (e as Error).message)
+  }
+  return debug.status()
+})
+api.delete('/api/debug/capture', () => {
+  debug.stopCapture()
+  return debug.status()
+})
+api.get('/api/debug/capture', (r) => {
+  if (debug.status().capture.running) throw new HttpError(409, 'Der Mitschnitt läuft noch.')
+  sendFile(r.res, debug.captureFile, `mitschnitt-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.pcap`)
+})
+api.get('/api/debug/bundle', async (r) => {
+  const cli = async (cmd: string): Promise<string> => (asterisk.ami.connected ? asterisk.ami.command(cmd).catch((e: Error) => e.message) : 'Asterisk läuft nicht')
+  const commands = ['core show version', 'core show uptime', 'pjsip show endpoints', 'pjsip show contacts', 'pjsip show registrations', 'pjsip show transports', 'core show channels verbose']
+  const asteriskText = (await Promise.all(commands.map(async (c) => `### ${c}\n${await cli(c)}\n`))).join('\n')
+  const file = await debug.bundle({
+    'config.json': JSON.stringify(configFor('viewer'), null, 2),
+    'status.json': JSON.stringify({ ...(await asterisk.status()), version: SETTINGS.version, debug: debug.status(), watchdog: watchdog.status() }, null, 2),
+    'watchdog.json': JSON.stringify([...watchdog.events], null, 2),
+    'asterisk.txt': asteriskText,
+  })
+  sendFile(r.res, file, `phone4all-diagnose-${new Date().toISOString().slice(0, 10)}.tar.gz`)
+})
 
 api.post('/api/asterisk/restart', async () => {
   await asterisk.restart()

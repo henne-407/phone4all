@@ -258,6 +258,8 @@ export class Asterisk extends EventEmitter {
       await this.ami.command('core restart when convenient').catch(() => undefined)
     } else {
       await this.ami.command('core reload').catch(() => undefined)
+      // Laufzeit-Einstellungen wie Log-Kanäle der Fehlersuche gehen beim Neuladen verloren
+      this.emit('reloaded')
     }
   }
 

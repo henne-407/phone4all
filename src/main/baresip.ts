@@ -15,7 +15,7 @@ import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import type { AccountSettings } from '../shared/types'
-import { resourcePath } from './paths'
+import { DEBUG, resourcePath } from './paths'
 
 const MODULE_DIRS = [
   '/usr/lib64/baresip/modules',
@@ -261,12 +261,13 @@ export class Baresip extends EventEmitter {
 
     fs.mkdirSync(path.dirname(this.logPath), { recursive: true })
     // Anhängen (eine beendete Instanz schreibt evtl. noch), bei mehr als 2 MB neu beginnen
-    if (fs.existsSync(this.logPath) && fs.statSync(this.logPath).size > 2_000_000) fs.rmSync(this.logPath)
+    if (fs.existsSync(this.logPath) && fs.statSync(this.logPath).size > (DEBUG ? 50_000_000 : 2_000_000)) fs.rmSync(this.logPath)
     const log = fs.openSync(this.logPath, 'a')
     fs.writeSync(log, `\n--- ${new Date().toISOString()} Start ---\n`)
     let proc: ChildProcess
     try {
-      proc = spawn(this.engine.binary, ['-f', this.runtimeDir], {
+      // Fehlersuche: -v ausführlich, -s alle SIP-Nachrichten ins Log
+      proc = spawn(this.engine.binary, ['-f', this.runtimeDir, ...(DEBUG ? ['-v', '-s'] : [])], {
         stdio: ['ignore', log, log],
         windowsHide: true,
       })

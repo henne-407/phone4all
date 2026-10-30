@@ -1,0 +1,56 @@
+name: Anruftests
+
+# Testumgebung aus testenv/: Anlage (aus diesem Stand gebaut), Fake-Carrier und sipp-Testtelefone.
+# Spielt echte SIP-Anrufe durch (intern, nach außen, von außen, besetzt, Voicemail) und hängt
+# Logs, debug.log, pcap und Diagnose-Paket als Artefakt an.
+
+on:
+  pull_request:
+    paths: ['pbx/**', 'src/**', 'testenv/**', '.github/workflows/e2e.yml']
+  push:
+    branches: [main]
+    paths: ['pbx/**', 'src/**', 'testenv/**', '.github/workflows/e2e.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  calls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: testenv
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Anlage bauen
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: pbx/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: localhost/phone4all-pbx:e2e
+          cache-from: type=gha
+      - name: Testumgebung starten
+        run: |
+          printf 'PBX_ADMIN_PASSWORD=%s\nCARRIER_PASSWORD=%s\nPBX_IMAGE=localhost/phone4all-pbx:e2e\n' "$(openssl rand -hex 12)" "$(openssl rand -hex 12)" > .env
+          docker compose --profile e2e build carrier e2e
+          docker compose up -d --no-build pbx carrier
+      - name: Anruftests
+        run: docker compose run --rm e2e
+      - name: Logs der Container
+        if: always()
+        run: |
+          mkdir -p results
+          docker compose logs --no-color pbx > results/pbx-container.log 2>&1 || true
+          docker compose logs --no-color carrier > results/carrier-container.log 2>&1 || true
+          sudo chown -R "$(id -u)" results data || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: anruftests
+          path: testenv/results
+          retention-days: 14
