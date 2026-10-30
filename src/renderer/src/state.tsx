@@ -67,6 +67,8 @@ export function useTick(active: boolean): number {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     if (!active) return
+    // Sofort aktualisieren: Sonst zeigt ein gerade angenommener Anruf eine Sekunde lang die Zeit vom Klingeln (negative Dauer)
+    setNow(Date.now())
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [active])

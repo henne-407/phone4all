@@ -43,6 +43,7 @@ ENV = {
 }
 cfg = {k: os.environ.get(k, v) for k, v in ENV.items()}
 SCEN = Path(cfg['E2E_SCENARIOS'])
+DTMF_DIR = next((d for d in ('/usr/share/sip-tester', '/usr/share/sipp', '/usr/share/doc/sipp/pcap') if Path(d, 'dtmf_2833_1.pcap').exists()), '/usr/share/sip-tester')
 RESULTS = Path(cfg['E2E_RESULTS'])
 # Je Lauf andere Ports: Asterisk merkt sich nicht erreichbare Kontakte früherer Läufe
 PORT = int(cfg['E2E_PORT_BASE']) + (int(time.time()) % 40) * 50
@@ -107,6 +108,8 @@ class Api:
 
 
 TRUNK = ''
+# IDs der angelegten Testeinträge (Nebenstellen nach Nummer, sonst Kurzname)
+IDS: dict[str, str] = {}
 
 
 def seed_system(api: Api) -> bool:
@@ -142,13 +145,13 @@ def seed(api: Api) -> None:
     for num, secret in EXT.items():
         ids[num] = upsert('extensions', {
             'number': num, 'name': f'Test {num}', 'secret': secret,
-            'permission': 'international', 'ring_seconds': 8,
+            'permission': 'internal' if num == '12' else 'international', 'ring_seconds': 8,
             'voicemail': {'enabled': True, 'pin': '1234', 'attach': False},
         }, 'number')
     TRUNK = upsert('trunks', {
         'name': 'Fake-Carrier', 'provider': 'generic', 'enabled': True, 'register': True,
         'registrar': cfg['CARRIER_HOST'], 'port': int(cfg['CARRIER_PORT']), 'transport': 'udp',
-        'username': 'p4a', 'password': cfg['CARRIER_PASSWORD'], 'numbers': ['030 555000', '030 555001'],
+        'username': 'p4a', 'password': cfg['CARRIER_PASSWORD'], 'numbers': ['030 555000', '030 555001', '030 555002', '030 555003'],
         'number_format': 'e164', 'did_source': 'ruri',
         'inbound_default': {'type': 'extension', 'target': ids['11']},
     }, 'name')
@@ -157,6 +160,25 @@ def seed(api: Api) -> None:
         'caller': '', 'name_prefix': '', 'destination': {'type': 'extension', 'target': ids['12']},
     }, 'name')
     upsert('outbound', {'name': 'Test: alles über Fake-Carrier', 'prefixes': [], 'trunks': [TRUNK], 'extensions': []}, 'name')
+    to = lambda kind, target: {'type': kind, 'target': target}  # noqa: E731
+    vm10 = to('voicemail', ids['10'])
+    IDS.update(ids)
+    IDS['g20'] = upsert('groups', {'number': '20', 'name': 'Test: alle', 'members': ['11', '12'], 'mode': 'all', 'timeout': 10, 'fallback': vm10}, 'number')
+    IDS['g21'] = upsert('groups', {'number': '21', 'name': 'Test: reihum', 'members': ['11', '12'], 'mode': 'sequential', 'member_seconds': 4, 'timeout': 20, 'fallback': vm10}, 'number')
+    # Durchsage und Gegensprechen brauchen das Recht „intercom“ (hier über die Gruppe)
+    IDS['g22'] = upsert('groups', {'number': '22', 'name': 'Test: Durchsage', 'members': ['10', '11'], 'mode': 'all', 'timeout': 10, 'fallback': vm10, 'permissions': ['intercom']}, 'number')
+    IDS['ivr'] = upsert('ivrs', {
+        'number': '40', 'name': 'Test-Menü', 'options': [{'digit': '1', 'destination': to('extension', ids['12'])}, {'digit': '2', 'destination': to('group', IDS['g20'])}],
+        'timeout': 5, 'repeats': 1, 'direct_dial': False, 'timeout_destination': vm10, 'invalid_destination': vm10,
+    }, 'number')
+    IDS['conf'] = upsert('conferences', {'number': '30', 'name': 'Test-Konferenz', 'pin': '', 'admin_pin': '', 'max_members': 5, 'record': False}, 'number')
+    IDS['tc'] = upsert('timeconditions', {
+        'name': 'Test-Zeitsteuerung', 'rules': [{'days': [1, 2, 3, 4, 5, 6, 7], 'from': '00:00', 'to': '23:59'}], 'holidays': False, 'closed_dates': [],
+        'override': 'auto', 'open': to('extension', ids['11']), 'closed': vm10,
+    }, 'name')
+    upsert('inbound', {'name': 'Test: Zeitsteuerung', 'number': '030 555002', 'trunk': TRUNK, 'caller': '', 'name_prefix': '', 'destination': to('timecondition', IDS['tc'])}, 'name')
+    upsert('inbound', {'name': 'Test: Sprachmenü', 'number': '030 555003', 'trunk': TRUNK, 'caller': '', 'name_prefix': '', 'destination': to('ivr', IDS['ivr'])}, 'name')
+    upsert('blocklist', {'number': '0309999*', 'note': 'Test-Sperre'}, 'number')
     try:
         api.call('PUT', '/api/debug', {'verbose': True, 'minutes': 240})
     except RuntimeError as e:
@@ -194,7 +216,7 @@ class Sipp:
         out = RESULTS / 'sipp'
         out.mkdir(parents=True, exist_ok=True)
         self.cmd = [
-            'sipp', '-sf', str(SCEN / scenario), target, '-i', local_ip(), '-p', str(port), '-m', '1',
+            'sipp', '-sf', scenario if scenario.startswith('/') else str(SCEN / scenario), target, '-i', local_ip(), '-p', str(port), '-m', '1',
             '-nostdin', '-trace_err', '-trace_msg', '-message_file', str(out / f'{name}-messages.log'),
             '-error_file', str(out / f'{name}-errors.log'),
             '-min_rtp_port', str(port + 10000), '-max_rtp_port', str(port + 10001), *args,
@@ -249,11 +271,29 @@ class Phone:
             register(self.num, self.port, expires=0)
 
 
-def call(name: str, src: str | None, dest: str, target: str, hold_ms=2000, timeout=45) -> None:
-    """Anruf von Nebenstelle src (None = Testanrufer beim Fake-Carrier) an dest"""
+def call(name: str, src: str | None, dest: str, target: str, hold_ms=2000, timeout=45, dtmf='', caller='0301234567') -> None:
+    """Anruf von Nebenstelle src (None = Testanrufer caller beim Fake-Carrier) an dest;
+    dtmf: Tasten, die nach dem Annehmen als RFC 4733 gesendet werden"""
     args = ['-s', dest, '-d', str(hold_ms)]
-    args += ['-key', 'from', src, '-au', src, '-ap', EXT[src]] if src else ['-key', 'from', '0301234567']
-    Sipp(name, 'uac.xml', target, args, next_port()).run(timeout)
+    args += ['-key', 'from', src, '-au', src, '-ap', EXT[src]] if src else ['-key', 'from', caller]
+    scenario = 'uac.xml'
+    if dtmf:
+        steps = ''.join(f'  <pause milliseconds="1500"/>\n  <nop><action><exec play_pcap_audio="{DTMF_DIR}/dtmf_2833_{d}.pcap"/></action></nop>\n' for d in dtmf)
+        scenario = str(RESULTS / f'uac-dtmf-{dtmf}.xml')
+        Path(scenario).write_text((SCEN / 'uac.xml').read_text().replace('<!--DTMF-->', steps + '  <pause milliseconds="1000"/>'))
+    Sipp(name, scenario, target, args, next_port()).run(timeout)
+
+
+def last_call(api: Api, settle=2.0) -> dict:
+    """Neuester Eintrag der Anrufliste (die Anlage schreibt ihn kurz nach dem Auflegen)"""
+    time.sleep(settle)
+    calls = api.get('/api/calls?limit=1')
+    return calls[0] if calls else {}
+
+
+def expect_answered_by(api: Api, who: str) -> None:
+    rec = last_call(api)
+    assert rec.get('answeredBy') == who, f'angenommen von {rec.get("answeredBy")!r} statt {who!r}: {rec}'
 
 
 def expect_status(name: str, status: str, fn) -> None:
@@ -310,6 +350,117 @@ def t_voicemail(api: Api) -> None:
     call('voicemail-12', '10', '12', pbx(), hold_ms=3000, timeout=40)
 
 
+def feature(code: str, src='11') -> None:
+    """Funktionscode wählen (*76, *21… ); die Anlage nimmt an, sagt etwas an und legt auf"""
+    try:
+        call(f'code-{code.strip("*")}-{src}', src, code, pbx(), hold_ms=1500, timeout=20)
+    except AssertionError as e:
+        # Die Anlage legt nach der Ansage selbst auf; dann bekommt sipp ein BYE statt 200 auf sein BYE
+        if 'keine Antwort' in str(e):
+            raise
+
+
+def t_group_all(api: Api) -> None:
+    callee = Phone('12')
+    call('gruppe-alle-20', '10', '20', pbx())
+    callee.wait()
+    expect_answered_by(api, '12')
+
+
+def t_group_sequential(api: Api) -> None:
+    # 11 ist nicht angemeldet: reihum klingelt nach member_seconds die 12
+    callee = Phone('12')
+    call('gruppe-reihum-21', '10', '21', pbx(), timeout=30)
+    callee.wait(25)
+    expect_answered_by(api, '12')
+
+
+def t_dnd(api: Api) -> None:
+    feature('*76')
+    assert '11' in api.get('/api/status')['dnd'], 'Nicht stören (*76) ist nicht an'
+    call('nicht-stoeren-10-11', '10', '11', pbx())
+    expect_answered_by(api, 'Voicemail')
+    feature('*76')
+    assert '11' not in api.get('/api/status')['dnd'], 'Nicht stören (*76) geht nicht wieder aus'
+
+
+def t_forward(api: Api) -> None:
+    feature('*2112')
+    assert api.get('/api/status')['cfu'].get('11') == '12', f"Umleitung *21 nicht gesetzt: {api.get('/api/status')['cfu']}"
+    callee = Phone('12')
+    call('umleitung-10-11-12', '10', '11', pbx())
+    callee.wait()
+    expect_answered_by(api, '12')
+    feature('*21')
+    assert '11' not in api.get('/api/status')['cfu'], 'Umleitung *21 lässt sich nicht löschen'
+
+
+def t_ivr(api: Api) -> None:
+    callee = Phone('12')
+    call('sprachmenue-taste-1', None, '+4930555003', carrier(), dtmf='1', hold_ms=2000, timeout=40)
+    callee.wait(25)
+    expect_answered_by(api, '12')
+
+
+def t_timecondition(api: Api) -> None:
+    tc = IDS['tc']
+    callee = Phone('11')
+    call('zeitsteuerung-offen', None, '+4930555002', carrier())
+    callee.wait()
+    expect_answered_by(api, '11')
+    conf = api.get('/api/config')['config']
+    item = next(t for t in conf['timeconditions'] if t['id'] == tc)
+    api.call('POST', '/api/timeconditions', {**item, 'override': 'closed'})
+    time.sleep(4)
+    try:
+        call('zeitsteuerung-geschlossen', None, '+4930555002', carrier())
+        expect_answered_by(api, 'Voicemail')
+    finally:
+        api.call('POST', '/api/timeconditions', {**item, 'override': 'auto'})
+        time.sleep(4)
+
+
+def t_conference(api: Api) -> None:
+    first = Sipp('konferenz-10', 'uac.xml', pbx(), ['-s', '30', '-d', '6000', '-key', 'from', '10', '-au', '10', '-ap', EXT['10']], next_port()).start()
+    time.sleep(2)
+    call('konferenz-11', '11', '30', pbx(), hold_ms=2000)
+    first.wait(30)
+
+
+def t_blocklist(api: Api) -> None:
+    try:
+        call('gesperrt', None, '+4930555000', carrier(), caller='03099991234', timeout=20)
+    except AssertionError:
+        pass
+    rec = last_call(api)
+    assert rec.get('answeredBy') not in ('11',), f'Gesperrter Anrufer kam durch: {rec}'
+
+
+def t_intercom(api: Api) -> None:
+    callee = Phone('11')
+    call('gegensprechen-10-11', '10', '*8011', pbx())
+    callee.wait()
+    callee = Phone('11')
+    call('durchsage-gruppe-22', '10', '*8122', pbx())
+    callee.wait()
+
+
+def t_permission(api: Api) -> None:
+    # 12 darf nur intern telefonieren: die Anlage sagt ab, statt nach außen zu wählen
+    try:
+        call('nur-intern-12', '12', '0301234567', pbx(), timeout=20)
+    except AssertionError:
+        pass
+    rec = last_call(api)
+    assert rec.get('status') != 'answered' or rec.get('answeredBy') != 'Anlage' or rec.get('direction') != 'out', f'Nur-intern-Nebenstelle kam nach außen: {rec}'
+    print('   ', rec)
+
+
+def t_echo_and_mailbox(api: Api) -> None:
+    call('echotest', '10', '*43', pbx())
+    call('voicemail-abfrage', '10', '*97', pbx())
+
+
 def t_calllist(api: Api) -> None:
     time.sleep(2)
     calls = api.get('/api/calls')
@@ -334,6 +485,17 @@ TESTS = [
     ('Von außen an die Hauptnummer → 11', t_inbound),
     ('Von außen an die Durchwahl → 12', t_inbound_route),
     ('Voicemail', t_voicemail),
+    ('Gruppe: alle gleichzeitig', t_group_all),
+    ('Gruppe: reihum', t_group_sequential),
+    ('Nicht stören (*76)', t_dnd),
+    ('Umleitung (*21)', t_forward),
+    ('Sprachmenü mit Taste 1', t_ivr),
+    ('Zeitsteuerung offen/geschlossen', t_timecondition),
+    ('Konferenz', t_conference),
+    ('Sperrliste', t_blocklist),
+    ('Gegensprechen (*80) und Durchsage (*81)', t_intercom),
+    ('Berechtigung nur intern', t_permission),
+    ('Echotest und Voicemail-Abfrage', t_echo_and_mailbox),
     ('Anrufliste', t_calllist),
     ('Diagnose-Paket und Log', t_diagnose),
 ]

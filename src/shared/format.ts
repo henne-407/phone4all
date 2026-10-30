@@ -6,7 +6,7 @@ const pad = (n: number): string => String(n).padStart(2, '0')
 const WEEKDAYS_SHORT = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']
 
 export function formatDuration(seconds: number): string {
-  const s = Math.floor(seconds)
+  const s = Math.max(0, Math.floor(seconds))
   const h = Math.floor(s / 3600)
   const m = Math.floor((s % 3600) / 60)
   const sec = s % 60

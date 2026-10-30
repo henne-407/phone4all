@@ -8,7 +8,7 @@ Eine vollständige Telefonanlage zum Testen und zur Fehlersuche, getrennt von de
 | `carrier` | Fake-Carrier: Asterisk als simulierter Telefonanbieter | 172.30.40.20:5060 |
 | `e2e` | Testtelefone (sipp) und das Testprogramm `e2e/run.py` | 172.30.40.30 |
 
-Die Anlage meldet sich beim Fake-Carrier mit den Rufnummern 030 555000 und 030 555001
+Die Anlage meldet sich beim Fake-Carrier mit den Rufnummern 030 555000 bis 030 555003
 an. Der Fake-Carrier verhält sich je nach gewählter Nummer:
 
 | Nummer (von der Anlage aus) | Ergebnis |
@@ -33,13 +33,17 @@ veröffentlichte Abbild; `podman compose build pbx` baut es aus diesem Stand des
 ## Anruftests
 
 `e2e/run.py` richtet die Anlage über die Verwaltungs-API ein (Nebenstellen 10–12, SIP-Konto
-beim Fake-Carrier, Rufabfolgen) und spielt dann durch:
+beim Fake-Carrier, Gruppen, Sprachmenü, Zeitsteuerung, Konferenz, Rufabfolgen) und spielt dann durch:
 
 - Anmeldung einer Nebenstelle
 - Interner Anruf 10 → 11
 - Anruf nach außen über den Fake-Carrier und nach außen auf eine besetzte Nummer
 - Anruf von außen an die Hauptnummer (→ 11) und an eine Durchwahl (→ 12)
 - Voicemail bei nicht erreichbarer Nebenstelle
+- Gruppen (alle gleichzeitig und reihum), Nicht stören (`*76`), Umleitung (`*21`)
+- Sprachmenü mit Tastendruck, Zeitsteuerung (geöffnet und geschlossen), Konferenzraum, Sperrliste
+- Gegensprechen (`*80`) und Durchsage (`*81`), Berechtigung „nur intern“
+- Echotest (`*43`) und Voicemail-Abfrage (`*97`)
 - Anrufliste und Diagnose-Paket
 
 Einzelne Tests: `podman compose run --rm e2e voicemail`. Ein zweiter Lauf legt nichts doppelt

@@ -112,6 +112,13 @@ export function checkNewSecret(secret: string): void {
   if (secret.length < 12) throw new ValidationError('Das SIP-Passwort braucht mindestens 12 Zeichen (oder leer lassen für ein zufälliges).')
 }
 
+/** Kontakte im Telefonbuch brauchen Name und Nummer (nur der gespeicherte Eintrag, alte Einträge bleiben) */
+export function checkContact(c: Record<string, unknown>): void {
+  const text = (v: unknown): string => String(v ?? '').trim()
+  if (!text(c.name)) throw new ValidationError('Der Kontakt braucht einen Namen.')
+  if (!text(c.phone) && !text(c.mobile)) throw new ValidationError(`Kontakt ${text(c.name)}: Telefon oder Mobil angeben.`)
+}
+
 export function newPin(digits = 6): string {
   return Array.from({ length: digits }, () => randomInt(10)).join('')
 }
@@ -713,6 +720,7 @@ export class ConfigStore {
           }
         }
       }
+      if (kind === 'phonebook') checkContact(saved)
       Object.assign(draft, withDefaults(draft))
     })
     if (moved) this.renumberState(...(moved as [string, string]))

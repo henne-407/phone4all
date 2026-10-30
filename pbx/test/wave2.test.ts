@@ -193,7 +193,10 @@ describe('Durchsage und Gegensprechen', () => {
     const conf = extensionsConf(sampleConfig(), gen)
     expect(conf).toContain('exten => _*80X.,1,Set(PT=${EXTEN:3})')
     expect(conf).toContain('exten => *45,1,Gosub(p4a-feature,s,1(away,))')
-    expect(conf).toContain('isb(p4a-autoanswer^s^1),20)')
+    expect(conf).toContain('ib(p4a-autoanswer^s^1),20)')
+    // Option s prüfte den Zustand einzelner Kontakte (PJSIP/11/sip:…) und ließ jedes Telefon aus
+    expect(conf).not.toContain('isb(p4a-autoanswer')
+    expect(conf).toContain('${DEVICE_STATE(PJSIP/${M})}')
     expect(conf).toContain('Set(PJSIP_HEADER(add,Call-Info)=<sip:phone4all>\\;answer-after=0)')
   })
 })

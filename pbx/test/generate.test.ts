@@ -49,3 +49,28 @@ describe('Asterisk-Konfiguration', () => {
     expect(files['manager.conf']).toMatch(/bindaddr ?= ?127.0.0.1/)
   })
 })
+
+describe('Geladene Module', () => {
+  // Anwendung im Wählplan → Modul (leer = im Kern von Asterisk)
+  const APP_MODULE: Record<string, string> = {
+    Answer: '', BackGround: '', Background: '', Busy: '', Congestion: '', ExecIf: '', Goto: '', GotoIf: '', Hangup: '', NoOp: '',
+    Set: '', Wait: '', WaitExten: '', Ringing: '', Progress: '', ImportVar: '', Return: 'app_stack', Gosub: 'app_stack',
+    Dial: 'app_dial', Playback: 'app_playback', VoiceMail: 'app_voicemail', VoiceMailMain: 'app_voicemail', Queue: 'app_queue',
+    ConfBridge: 'app_confbridge', Pickup: 'app_directed_pickup', Echo: 'app_echo', MixMonitor: 'app_mixmonitor', Read: 'app_read',
+    Exec: 'app_exec', Verbose: 'app_verbose', SendDTMF: 'app_senddtmf', PlayTones: 'app_playtones', Transfer: 'app_transfer',
+    BlindTransfer: 'app_blind_transfer', SayUnixTime: 'app_sayunixtime', SoftHangup: 'app_softhangup', ChanSpy: 'app_chanspy',
+    UserEvent: 'app_userevent', Page: 'app_page', AudioSocket: 'res_audiosocket', Park: 'res_parking', ParkedCall: 'res_parking',
+    ReceiveFAX: 'res_fax', SendFAX: 'res_fax', SayDigits: '', SayNumber: '',
+  }
+
+  it('lädt für jede Anwendung im Wählplan das passende Modul', () => {
+    const files = generate(sampleConfig(), gen)
+    const loaded = new Set([...files['modules.conf'].matchAll(/load => (\w+)\.so/g)].map((m) => m[1]))
+    const used = new Set([...files['extensions.conf'].matchAll(/(?:=>|\)|,)\s*(?:\([\w-]+\))?([A-Z][A-Za-z]+)\(/g)].map((m) => m[1]))
+    expect(used).toContain('UserEvent')
+    for (const app of used) {
+      expect(APP_MODULE, `Anwendung ${app} fehlt in der Liste dieses Tests`).toHaveProperty(app)
+      if (APP_MODULE[app]) expect(loaded, `${app} braucht ${APP_MODULE[app]}`).toContain(APP_MODULE[app])
+    }
+  })
+})
