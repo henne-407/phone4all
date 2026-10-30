@@ -58,7 +58,6 @@ services:
       context: .
       dockerfile: e2e/Dockerfile
     image: localhost/phone4all-test-e2e
-    profiles: [e2e]
     depends_on: [pbx, carrier]
     environment:
       PBX_URL: http://172.30.40.10:8080

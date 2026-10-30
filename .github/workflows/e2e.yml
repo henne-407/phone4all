@@ -37,7 +37,7 @@ jobs:
       - name: Testumgebung starten
         run: |
           printf 'PBX_ADMIN_PASSWORD=%s\nCARRIER_PASSWORD=%s\nPBX_IMAGE=localhost/phone4all-pbx:e2e\n' "$(openssl rand -hex 12)" "$(openssl rand -hex 12)" > .env
-          docker compose --profile e2e build carrier e2e
+          docker compose build carrier e2e
           docker compose up -d --no-build pbx carrier
       - name: Anruftests
         run: docker compose run --rm e2e
